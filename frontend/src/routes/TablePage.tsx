@@ -51,7 +51,54 @@ interface ExtendedHandData extends HandData {
   votingOpen?: boolean;
   votes?: Record<string, string>;
   winnerId?: string | null;
-  winnerIds?: string[];  // ✅ Aggiungi questa riga
+  winnerIds?: string[];
+}
+
+interface PotInfo {
+  amount: number;
+  eligiblePlayers: string[];
+}
+
+// Funzione per calcolare i pot (duplicata da firestoreApi per uso in UI)
+function calculatePotsUI(
+  players: Array<{ userId: string; isFolded: boolean; isSittingOut: boolean }>,
+  totalBets: Record<string, number>
+): PotInfo[] {
+  const pots: PotInfo[] = [];
+  
+  const activePlayers = players.filter(p => !p.isFolded && !p.isSittingOut);
+  if (activePlayers.length === 0) return pots;
+
+  const remainingBets: Record<string, number> = { ...totalBets };
+  let remainingPlayerIds = activePlayers.map(p => p.userId);
+
+  while (remainingPlayerIds.length > 0) {
+    const minBet = Math.min(
+      ...remainingPlayerIds.map(id => remainingBets[id] || 0).filter(b => b > 0)
+    );
+    
+    if (minBet <= 0) break;
+
+    let potAmount = 0;
+    const eligiblePlayers = [...remainingPlayerIds];
+
+    remainingPlayerIds.forEach(playerId => {
+      const bet = remainingBets[playerId] || 0;
+      const contribution = Math.min(bet, minBet);
+      potAmount += contribution;
+      remainingBets[playerId] = bet - contribution;
+    });
+
+    if (potAmount > 0) {
+      pots.push({ amount: potAmount, eligiblePlayers });
+    }
+
+    remainingPlayerIds = remainingPlayerIds.filter(
+      id => (remainingBets[id] || 0) > 0
+    );
+  }
+
+  return pots;
 }
 
 export default function TablePage() {
@@ -72,6 +119,32 @@ export default function TablePage() {
   const [betAmount, setBetAmount] = useState<number>(0);
 
   const navigate = useNavigate();
+
+  // Wake Lock per evitare che lo schermo si spenga su mobile
+  useEffect(() => {
+    let wakeLock: any = null;
+
+    const requestWakeLock = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await (navigator as any).wakeLock.request('screen');
+          console.log('Wake Lock attivato');
+        }
+      } catch (err) {
+        console.log('Wake Lock non supportato o errore:', err);
+      }
+    };
+
+    requestWakeLock();
+
+    return () => {
+      if (wakeLock) {
+        wakeLock.release().then(() => {
+          console.log('Wake Lock rilasciato');
+        });
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!tableId) return;
@@ -172,6 +245,8 @@ export default function TablePage() {
           pot: d.pot,
           currentBet: d.currentBet,
           roundBets: d.roundBets || {},
+          totalBets: d.totalBets || {},
+          allInPlayers: d.allInPlayers || [],
           firstToActIndex: d.firstToActIndex ?? 0,
           votingOpen: d.votingOpen ?? false,
           votes: d.votes || {},
@@ -236,7 +311,8 @@ export default function TablePage() {
   const diffToCall = Math.max(0, currentBet - myRoundBet);
 
   const canCheck = isMyTurn && diffToCall === 0;
-  const canCall = isMyTurn && diffToCall > 0 && (myPlayer?.stack ?? 0) >= diffToCall;
+  // Permetti CALL anche se lo stack è minore (andrà all-in automaticamente)
+  const canCall = isMyTurn && diffToCall > 0 && (myPlayer?.stack ?? 0) > 0;
   const canBetOrRaise =
     isMyTurn && myPlayer && myPlayer.stack > 0 && currentHand != null;
 
@@ -465,7 +541,7 @@ async function handleEndGame() {
       setActionError("Importo bet/raise non valido.");
       return;
     }
-    if (currentBet % 5 !== 0) {
+    if (betAmount % 5 !== 0) {
       setActionError("La puntata deve essere multipla di 5");
       return;
     }
@@ -796,7 +872,31 @@ async function handleConfirmWinners() {
           </h1>
           <p style={{ fontSize: "0.85rem", color: "#cbd5f5" }}>
             Mano #{currentHand?.handNumber ?? "-"} •{" "}
-            {currentHand?.stage ?? "N/A"} • Pot: {currentHand?.pot ?? 0} •
+            {currentHand?.stage ?? "N/A"} •{" "}
+            {(() => {
+              if (!currentHand) return `Pot: 0`;
+              
+              const totalBets = currentHand.totalBets || {};
+              const hasTotalBets = Object.keys(totalBets).length > 0;
+              
+              if (!hasTotalBets) {
+                return `Pot: ${currentHand.pot ?? 0}`;
+              }
+              
+              const allPlayers = players.map(p => ({
+                userId: p.id,
+                isFolded: !!p.isFolded,
+                isSittingOut: !!p.isSittingOut
+              }));
+              
+              const pots = calculatePotsUI(allPlayers, totalBets);
+              
+              if (pots.length <= 1) {
+                return `Pot: ${currentHand.pot ?? 0}`;
+              }
+              
+              return `Main: ${pots[0]?.amount ?? 0} + ${pots.length - 1} Side`;
+            })()} •
             Puntata attuale: {currentHand?.currentBet ?? 0}
           </p>
           <p style={{ fontSize: "0.8rem", color: "#9ca3af" }}>
@@ -1000,6 +1100,8 @@ async function handleConfirmWinners() {
                   ? currentHand.roundBets[p.userId]
                   : 0;
 
+              const isAllIn = currentHand && currentHand.allInPlayers?.includes(p.userId);
+
               return (
                 <div
                   key={p.id}
@@ -1017,14 +1119,20 @@ async function handleConfirmWinners() {
                       padding: "0.4rem 0.6rem",
                       backgroundColor: isMe
                         ? "rgba(34,197,94,0.15)"
+                        : isAllIn
+                        ? "rgba(251,191,36,0.2)"
                         : "rgba(15,23,42,0.9)",
                       border: isTurn
                         ? "2px solid #22c55e"
-                        : selectedWinners.includes(p.userId) && votingOpen  // ✅ Cambia questa condizione
+                        : selectedWinners.includes(p.userId) && votingOpen
                         ? "2px solid #22c55e"
+                        : isAllIn
+                        ? "2px solid #fbbf24"
                         : "1px solid #1e293b",
                       boxShadow: isTurn
                         ? "0 0 15px rgba(34,197,94,0.6)"
+                        : isAllIn
+                        ? "0 0 15px rgba(251,191,36,0.4)"
                         : "0 0 8px rgba(15,23,42,0.6)",
                       fontSize: "0.7rem",
                       cursor:
@@ -1034,7 +1142,7 @@ async function handleConfirmWinners() {
                     }}
                     onClick={() => {
                       if (votingOpen && currentHand?.stage === "SHOWDOWN") {
-                        toggleWinnerSelection(p.userId);  // ✅ Cambia da handleVote a toggleWinnerSelection
+                        toggleWinnerSelection(p.userId);
                       }
                     }}
                   >
@@ -1062,6 +1170,7 @@ async function handleConfirmWinners() {
                     >
                       {p.stack} • {roundBet}
                       {p.isFolded && " • Foldato"}
+                      {isAllIn && " • ALL-IN"}
                       {votingOpen && myVoteTargetId === p.userId &&
                         " • (tua scelta)"}
                     </div>
@@ -1164,7 +1273,40 @@ async function handleConfirmWinners() {
                 color: "#cbd5f5"
               }}
             >
-              <span>Pot: {currentHand?.pot ?? 0}</span>
+              {/* Display pot con side pot */}
+              {(() => {
+                if (!currentHand) return <span>Pot: 0</span>;
+                
+                const totalBets = currentHand.totalBets || {};
+                const hasTotalBets = Object.keys(totalBets).length > 0;
+                
+                if (!hasTotalBets) {
+                  return <span>Pot: {currentHand.pot ?? 0}</span>;
+                }
+                
+                const allPlayers = players.map(p => ({
+                  userId: p.id,
+                  isFolded: !!p.isFolded,
+                  isSittingOut: !!p.isSittingOut
+                }));
+                
+                const pots = calculatePotsUI(allPlayers, totalBets);
+                
+                if (pots.length <= 1) {
+                  return <span>Pot: {currentHand.pot ?? 0}</span>;
+                }
+                
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <span style={{ fontWeight: 'bold' }}>Main Pot: {pots[0]?.amount ?? 0}</span>
+                    {pots.slice(1).map((pot, idx) => (
+                      <span key={idx} style={{ fontSize: '0.85em', color: '#fbbf24' }}>
+                        Side Pot {idx + 1}: {pot.amount}
+                      </span>
+                    ))}
+                  </div>
+                );
+              })()}
               <span>
                 Puntata corrente: {currentHand?.currentBet ?? 0} • La tua:{" "}
                 {myRoundBet}
@@ -1222,7 +1364,9 @@ async function handleConfirmWinners() {
                 {!isMyTurn
                   ? "In attesa..."
                   : canCall
-                  ? `Call ${diffToCall}`
+                  ? (myPlayer?.stack ?? 0) < diffToCall
+                    ? `All-in ${myPlayer?.stack ?? 0}` 
+                    : `Call ${diffToCall}`
                   : canCheck
                   ? "Check"
                   : "—"}
@@ -1305,6 +1449,12 @@ async function handleConfirmWinners() {
                   style={quickBetButtonStyle}
                 >
                   Pot
+                </button>
+                <button
+                  onClick={() => setBetAmount(myRoundBet + myPlayer.stack)}
+                  style={{...quickBetButtonStyle, backgroundColor: "#fbbf24", color: "#020617", fontWeight: 600}}
+                >
+                  ALL-IN
                 </button>
               </div>
 
