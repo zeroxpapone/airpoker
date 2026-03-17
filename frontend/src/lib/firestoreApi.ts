@@ -10,11 +10,10 @@ import {
   orderBy,
   updateDoc,
   writeBatch,
-  where
+  where,
 } from "firebase/firestore";
 import type { User } from "firebase/auth";
 import { db } from "./firebase";
-
 
 export interface CreateTableInput {
   name: string;
@@ -34,12 +33,14 @@ export interface HandData {
   pot: number;
   currentBet: number;
   roundBets: Record<string, number>;
+  totalBets: Record<string, number>; // Totale puntato in tutta la mano (per side pot)
+  allInPlayers: string[]; // Array di userId dei giocatori all-in
   firstToActIndex: number;
   lastAggressorIndex?: number;
   votingOpen?: boolean;
-  winnerId?: string | null;  // Per retrocompatibilità (singolo vincitore)
-  winnerIds?: string[];      // Array di vincitori (per split pot)
-  confirmedAt?: any;         // Timestamp di conferma
+  winnerId?: string | null; // Per retrocompatibilità (singolo vincitore)
+  winnerIds?: string[]; // Array di vincitori (per split pot)
+  confirmedAt?: any; // Timestamp di conferma
 }
 
 /**
@@ -113,7 +114,11 @@ export async function createTable(data: CreateTableInput, user: User | null) {
 /**
  * Entra in un tavolo esistente aggiungendo il giocatore se non è già seduto.
  */
-export async function joinTable(tableId: string, user: User | null, password?: string) {
+export async function joinTable(
+  tableId: string,
+  user: User | null,
+  password?: string
+) {
   if (!user) throw new Error("User non presente durante il join del tavolo");
 
   const tableRef = doc(db, "tables", tableId);
@@ -153,7 +158,7 @@ export async function joinTable(tableId: string, user: User | null, password?: s
     seatIndex,
     isReady: false,
     isFolded: false,
-    joinedAt: serverTimestamp()
+    joinedAt: serverTimestamp(),
   });
 }
 
@@ -190,7 +195,7 @@ export async function leaveTable(tableId: string, user: User) {
  * - crea la PRIMA mano con dealer, SB, BB, currentTurn
  * - setta lo stato del tavolo a IN_GAME + currentHandId
  * - resetta isReady per tutti
- * 
+ *
  * REGOLE:
  * - Con 2 giocatori (heads-up): giocatore 0 = BB, giocatore 1 = SB/Dealer
  * - Con 3+ giocatori: giocatore 0 = Dealer, 1 = SB, 2 = BB
@@ -218,7 +223,7 @@ export async function startGame(tableId: string) {
     return {
       id: d.id,
       ref: d.ref,
-      ...data
+      ...data,
     };
   });
 
@@ -237,11 +242,11 @@ export async function startGame(tableId: string) {
 
   // CASO HEADS-UP (2 giocatori): player 0 = BB, player 1 = SB/Dealer
   if (numPlayers === 2) {
-    dealerIndex = 1;      // giocatore 1 è dealer e SB
-    smallBlindIndex = 1;  // stesso giocatore
-    bigBlindIndex = 0;    // giocatore 0 è BB
-    firstToActIndex = 1;  // SB/Dealer agisce per primo preflop in heads-up
-  } 
+    dealerIndex = 1; // giocatore 1 è dealer e SB
+    smallBlindIndex = 1; // stesso giocatore
+    bigBlindIndex = 0; // giocatore 0 è BB
+    firstToActIndex = 1; // SB/Dealer agisce per primo preflop in heads-up
+  }
   // CASO 3+ GIOCATORI: player 0 = Dealer, 1 = SB, 2 = BB
   else {
     dealerIndex = 0;
@@ -281,21 +286,23 @@ export async function startGame(tableId: string) {
     pot,
     currentBet,
     roundBets,
+    totalBets: { ...roundBets }, // Inizializza con le blind
+    allInPlayers: [], // Nessuno all-in inizialmente
     firstToActIndex,
-    lastAggressorIndex: bigBlindIndex  // Il BB è l'aggressore iniziale preflop
+    lastAggressorIndex: bigBlindIndex, // Il BB è l'aggressore iniziale preflop
   };
 
   // Crea una nuova hand nella subcollection "hands"
   const handsRef = collection(db, "tables", tableId, "hands");
   const handRef = await addDoc(handsRef, {
     ...handData,
-    createdAt: serverTimestamp()
+    createdAt: serverTimestamp(),
   });
 
   // Aggiorna il tavolo: IN_GAME + currentHandId
   await updateDoc(tableRef, {
     state: "IN_GAME",
-    currentHandId: handRef.id
+    currentHandId: handRef.id,
   });
 
   // Reset isReady di tutti i giocatori e scala le blind dagli stack
@@ -313,13 +320,12 @@ export async function startGame(tableId: string) {
     batch.update(p.ref, {
       isReady: false,
       stack: newStack,
-      isFolded: false
+      isFolded: false,
     });
   });
 
   await batch.commit();
 }
-
 
 /**
  * Scambia i seatIndex di due giocatori (usato dall'host per riordinare).
@@ -362,7 +368,7 @@ export async function endGame(tableId: string) {
   const tableRef = doc(db, "tables", tableId);
   await updateDoc(tableRef, {
     state: "SUMMARY",
-    endedAt: serverTimestamp()
+    endedAt: serverTimestamp(),
   });
 }
 
@@ -408,7 +414,7 @@ export async function startNextHand(tableId: string, user: User) {
       stack: Number(data.stack) || 0,
       seatIndex: data.seatIndex,
       isFolded: !!data.isFolded,
-      isSittingOut: !!data.isSittingOut
+      isSittingOut: !!data.isSittingOut,
     };
   });
 
@@ -469,20 +475,22 @@ export async function startNextHand(tableId: string, user: User) {
     pot,
     currentBet,
     roundBets,
+    totalBets: { ...roundBets }, // Inizializza con le blind
+    allInPlayers: [], // Reset all-in per nuova mano
     firstToActIndex,
-    lastAggressorIndex: bigBlindIndex
+    lastAggressorIndex: bigBlindIndex,
   };
 
   const newHandRef = await addDoc(handsRef, {
     ...newHand,
-    createdAt: serverTimestamp()
+    createdAt: serverTimestamp(),
   });
 
   const batch = writeBatch(db);
 
   // Aggiorniamo il tavolo con la nuova mano corrente
   batch.update(tableRef, {
-    currentHandId: newHandRef.id
+    currentHandId: newHandRef.id,
   });
 
   // Reset stato giocatori per la nuova mano (isFolded false)
@@ -498,25 +506,24 @@ export async function startNextHand(tableId: string, user: User) {
 
     batch.update(p.ref, {
       isFolded: false,
-      stack: newStack
+      stack: newStack,
     });
   });
 
   await batch.commit();
 }
 
-
 export type PlayerActionType = "CHECK" | "CALL" | "BET" | "FOLD";
 
 /**
  * Esegue una azione di gioco per il player corrente.
- * 
+ *
  * LOGICA CHIUSURA ROUND:
- * 
+ *
  * PREFLOP:
  * - Il round chiude quando il giocatore PRIMA dell'ultimo aggressore ha agito
  *   e tutti hanno matched la puntata
- * 
+ *
  * POST-FLOP (FLOP/TURN/RIVER):
  * - Se tutti checkano: chiude quando il giocatore prima dello SB checka
  * - Se qualcuno raisa: chiude quando il giocatore prima del raiser calla
@@ -556,7 +563,8 @@ export async function playerAction(
 
   const handData = handSnap.data() as any as HandData;
 
-  let lastAggressorIndex: number = handData.lastAggressorIndex ?? handData.bigBlindIndex;
+  let lastAggressorIndex: number =
+    handData.lastAggressorIndex ?? handData.bigBlindIndex;
 
   if (handData.currentTurnIndex == null || handData.currentTurnIndex < 0) {
     throw new Error("Non è il turno di nessuno al momento");
@@ -577,7 +585,7 @@ export async function playerAction(
       stack: Number(data.stack) || 0,
       seatIndex: data.seatIndex,
       isFolded: !!data.isFolded,
-      isSittingOut: !!data.isSittingOut
+      isSittingOut: !!data.isSittingOut,
     };
   });
 
@@ -587,7 +595,7 @@ export async function playerAction(
 
   const numPlayers = players.length;
   const currentIndex = handData.currentTurnIndex;
-  
+
   if (currentIndex < 0 || currentIndex >= numPlayers) {
     throw new Error("Indice turno non valido");
   }
@@ -601,21 +609,26 @@ export async function playerAction(
     throw new Error("Sei già foldato in questa mano");
   }
 
-  // Round bets
+  // Round bets e total bets
   const roundBets: Record<string, number> = {
-    ...(handData.roundBets || {})
+    ...(handData.roundBets || {}),
   };
+  const totalBets: Record<string, number> = {
+    ...(handData.totalBets || {}),
+  };
+  const allInPlayers: string[] = handData.allInPlayers || [];
 
   const myBet = roundBets[user.uid] || 0;
   let pot = handData.pot;
   let currentBet = handData.currentBet;
 
-  // Helper per trovare il prossimo giocatore attivo
+  // Helper per trovare il prossimo giocatore attivo (salta all-in e folded)
   function getNextActiveIndex(fromIndex: number): number {
     for (let i = 1; i <= numPlayers; i++) {
       const idx = (fromIndex + i) % numPlayers;
       const p = players[idx];
-      if (!p.isFolded && !p.isSittingOut && p.stack > 0) {
+      const isAllIn = allInPlayers.includes(p.userId);
+      if (!p.isFolded && !p.isSittingOut && !isAllIn && p.stack > 0) {
         return idx;
       }
     }
@@ -626,7 +639,8 @@ export async function playerAction(
     for (let i = 1; i <= numPlayers; i++) {
       const idx = (fromIndex - i + numPlayers) % numPlayers;
       const p = players[idx];
-      if (!p.isFolded && !p.isSittingOut && p.stack > 0) {
+      const isAllIn = allInPlayers.includes(p.userId);
+      if (!p.isFolded && !p.isSittingOut && !isAllIn && p.stack > 0) {
         return idx;
       }
     }
@@ -634,11 +648,15 @@ export async function playerAction(
   }
 
   // Eseguiamo l'azione
+  let wentAllIn = false;
+
   switch (action) {
     case "CHECK": {
       if (myBet !== currentBet) {
         throw new Error("Non puoi fare check: devi ancora coprire la puntata.");
       }
+      // Registra il check nel roundBets (importante per la logica di chiusura round)
+      roundBets[user.uid] = myBet;
       break;
     }
 
@@ -648,15 +666,21 @@ export async function playerAction(
       }
 
       const diff = currentBet - myBet;
-      if (currentPlayer.stack < diff) {
-        throw new Error(
-          "Stack insufficiente per il call (all-in non ancora gestito)."
-        );
-      }
 
-      roundBets[user.uid] = myBet + diff;
-      pot += diff;
-      currentPlayer.stack -= diff;
+      // Gestione all-in: se non ha abbastanza per callare, va all-in
+      if (currentPlayer.stack < diff) {
+        const allInAmount = myBet + currentPlayer.stack;
+        roundBets[user.uid] = allInAmount;
+        totalBets[user.uid] = (totalBets[user.uid] || 0) + currentPlayer.stack;
+        pot += currentPlayer.stack;
+        currentPlayer.stack = 0;
+        wentAllIn = true;
+      } else {
+        roundBets[user.uid] = currentBet;
+        totalBets[user.uid] = (totalBets[user.uid] || 0) + diff;
+        pot += diff;
+        currentPlayer.stack -= diff;
+      }
       break;
     }
 
@@ -668,36 +692,39 @@ export async function playerAction(
 
       const maxFinal = myBet + currentPlayer.stack;
       if (target > maxFinal) {
+        throw new Error("Non puoi puntare più del tuo stack.");
+      }
+
+      // Validazione minimo raise
+      if (currentBet > 0 && target <= currentBet) {
         throw new Error(
-          "Non puoi puntare più del tuo stack (all-in non ancora gestito)."
+          "Il raise deve essere maggiore della puntata corrente."
         );
       }
 
-      if (currentBet === 0) {
-        if (target <= 0) {
-          throw new Error("La puntata deve essere maggiore di zero.");
-        }
-      } else {
-        if (target <= currentBet) {
-          throw new Error(
-            "Il raise deve essere maggiore della puntata corrente."
-          );
-        }
-      }
-
       const diff = target - myBet;
-
       if (diff <= 0) {
-        throw new Error("La nuova puntata deve aumentare il totale che hai investito.");
+        throw new Error(
+          "La nuova puntata deve aumentare il totale che hai investito."
+        );
       }
 
       roundBets[user.uid] = target;
+      totalBets[user.uid] = (totalBets[user.uid] || 0) + diff;
       pot += diff;
-      currentBet = target;
       currentPlayer.stack -= diff;
 
-      // L'ultimo aggressore diventa chi effettua questa bet/raise
-      lastAggressorIndex = currentIndex;
+      // Se ha puntato tutto, è all-in
+      if (currentPlayer.stack === 0) {
+        wentAllIn = true;
+      } else {
+        // Solo se non è all-in diventa l'aggressore (un all-in non riapre il betting)
+        if (target > currentBet) {
+          currentBet = target;
+          lastAggressorIndex = currentIndex;
+        }
+      }
+
       break;
     }
 
@@ -710,39 +737,100 @@ export async function playerAction(
       throw new Error("Azione non supportata");
   }
 
-  const activePlayers = players.filter(
-    (p) => !p.isFolded && !p.isSittingOut
+  // Se il giocatore è andato all-in, aggiungilo alla lista
+  if (wentAllIn && !allInPlayers.includes(user.uid)) {
+    allInPlayers.push(user.uid);
+  }
+
+  // Giocatori che possono ancora agire (non folded, not sitting out, not all-in)
+  const activePlayers = players.filter((p) => !p.isFolded && !p.isSittingOut);
+
+  // Giocatori che possono ancora fare betting (esclude all-in)
+  const bettingPlayers = activePlayers.filter(
+    (p) => !allInPlayers.includes(p.userId) && p.stack > 0
   );
 
   let newStage = handData.stage;
   let nextTurnIndex = getNextActiveIndex(currentIndex);
+  let autoWinnerId: string | null = null;
 
   // Se rimane solo 1 giocatore attivo (o meno), andiamo subito a SHOWDOWN
-  // e assegniamo automaticamente la vincita
   if (activePlayers.length <= 1) {
     newStage = "SHOWDOWN";
     nextTurnIndex = -1;
-    
-    // Assegna automaticamente il piatto all'unico giocatore rimasto
+
     if (activePlayers.length === 1) {
       const winner = activePlayers[0];
       winner.stack += pot;
+      autoWinnerId = winner.userId;
     }
-  } else {
-    // Verifica se tutti hanno matched la puntata corrente
-    const allMatched = activePlayers.every((p) => {
-      const b = roundBets[p.userId] || 0;
-      return b === currentBet;
+  }
+  // Se rimane solo 1 giocatore che può fare betting (tutti gli altri all-in), vai a SHOWDOWN
+  else if (bettingPlayers.length <= 1) {
+    newStage = "SHOWDOWN";
+    nextTurnIndex = -1;
+  }
+  // Altrimenti verifichiamo se il round di betting è completo
+  else if (bettingPlayers.length > 1) {
+    // Tutti i giocatori che possono agire devono aver agito E matched la puntata
+    const allMatched = bettingPlayers.every((p) => {
+      const b = roundBets[p.userId];
+      // Il giocatore deve aver agito (b !== undefined) E aver matched il currentBet
+      return b !== undefined && b === currentBet;
     });
 
-    if (handData.stage === "PREFLOP") {
-      // PREFLOP: logica speciale
-      if (allMatched) {
-        if (currentBet === Number(tableData.bigBlind)) {
-          // Se NON c'è stato raise (tutti hanno solo chiamato il BB)
-          // chiude quando il BB ha agito
-          if (currentIndex === handData.bigBlindIndex) {
+    if (allMatched) {
+      // PREFLOP: regole speciali
+      if (handData.stage === "PREFLOP") {
+        // Contiamo quanti giocatori possono ancora agire
+        if (bettingPlayers.length === 1) {
+          // Solo un giocatore può agire: chiudi il round
+          nextTurnIndex = -1;
+        } else if (
+          lastAggressorIndex !== undefined &&
+          lastAggressorIndex !== handData.bigBlindIndex
+        ) {
+          // C'è stato un raise dopo il BB (da un altro giocatore)
+          // Il round chiude quando tutti dopo il raiser hanno agito (callato/foldato)
+          const closerIndex = getPreviousActiveIndex(lastAggressorIndex);
+          if (closerIndex !== -1 && currentIndex === closerIndex) {
             nextTurnIndex = -1;
+          }
+        } else {
+          // lastAggressorIndex === bigBlindIndex o undefined
+          // Dobbiamo verificare se il BB ha raisato o no
+          const bbAmount = Number(tableData.bigBlind) || 0;
+
+          if (currentBet > bbAmount) {
+            // Il BB ha raisato: il round chiude quando il giocatore prima del BB ha agito
+            const closerIndex = getPreviousActiveIndex(handData.bigBlindIndex);
+            if (closerIndex !== -1 && currentIndex === closerIndex) {
+              nextTurnIndex = -1;
+            }
+          } else {
+            // Nessun raise o solo il blind del BB
+            // Il BB ha l'opzione di checkare: chiude quando il BB checka
+            const bbPlayer = players[handData.bigBlindIndex];
+            const bbIsActive =
+              !bbPlayer.isFolded &&
+              !bbPlayer.isSittingOut &&
+              !allInPlayers.includes(bbPlayer.userId);
+
+            if (bbIsActive && currentIndex === handData.bigBlindIndex) {
+              // Il BB ha appena agito: se ha checkato, chiudi
+              const bbBet = roundBets[bbPlayer.userId] || 0;
+              if (bbBet === currentBet) {
+                nextTurnIndex = -1;
+              }
+            } else if (!bbIsActive) {
+              // Il BB non può agire (folded/all-in): chiudi quando siamo tornati al BB
+              if (
+                currentIndex === handData.bigBlindIndex ||
+                currentIndex === getPreviousActiveIndex(handData.bigBlindIndex)
+              ) {
+                nextTurnIndex = -1;
+              }
+            }
           }
         } else {
           // Se c'è stato un raise e tutti gli attivi hanno fatto call (allMatched = true),
@@ -750,26 +838,30 @@ export async function playerAction(
           nextTurnIndex = -1;
         }
       }
-    } else {
-      // POST-FLOP (FLOP, TURN, RIVER)
-      if (allMatched) {
+      // POST-FLOP: regole normali
+      else {
         if (currentBet === 0) {
-          // Solo check/fold: per calcolare correttamente l'ultimo a dover agire, 
-          // fingiamo temporaneamente che il currentPlayer non sia foldato (se l'ha appena fatto).
-          const wasFolded = currentPlayer.isFolded;
-          currentPlayer.isFolded = false;
-          const originalCloser = getPreviousActiveIndex(handData.smallBlindIndex);
-          currentPlayer.isFolded = wasFolded;
-
-          if (originalCloser !== -1 && currentIndex === originalCloser) {
+          // Tutti hanno checkato: chiude quando il giocatore prima del firstToAct checka
+          const beforeFirst = getPreviousActiveIndex(handData.firstToActIndex);
+          if (beforeFirst !== -1 && currentIndex === beforeFirst) {
             nextTurnIndex = -1;
           }
         } else {
-          // C'è stata aggressione, e tutti hanno matched. Round over immediato.
-          nextTurnIndex = -1;
+          // C'è stata aggressione: chiude quando il giocatore prima dell'aggressore calla
+          if (lastAggressorIndex !== undefined) {
+            const closerIndex = getPreviousActiveIndex(lastAggressorIndex);
+            if (closerIndex !== -1 && currentIndex === closerIndex) {
+              nextTurnIndex = -1;
+            }
+          }
         }
       }
     }
+  }
+  // Se non ci sono betting players ma ci sono all-in, vai a showdown
+  else {
+    newStage = "SHOWDOWN";
+    nextTurnIndex = -1;
   }
 
   // Applichiamo gli update
@@ -782,7 +874,7 @@ export async function playerAction(
     const newStack = p.stack;
     batch.update(ref, {
       isFolded,
-      stack: newStack
+      stack: newStack,
     });
   });
 
@@ -791,20 +883,27 @@ export async function playerAction(
     pot,
     currentBet,
     roundBets,
+    totalBets,
+    allInPlayers,
     currentTurnIndex: nextTurnIndex,
     stage: newStage,
-    lastAggressorIndex
+    lastAggressorIndex,
   };
 
   // Se siamo andati in SHOWDOWN per fold e c'è un solo vincitore,
   // impostiamo il winnerId direttamente (senza votazione)
-  if (newStage === "SHOWDOWN" && activePlayers.length === 1) {
-    handUpdate.winnerId = activePlayers[0].userId;
-    handUpdate.winnerIds = [activePlayers[0].userId];  // ✅ Aggiungi anche questo
+  if (newStage === "SHOWDOWN" && autoWinnerId) {
+    handUpdate.winnerId = autoWinnerId;
+    handUpdate.winnerIds = [autoWinnerId];
     handUpdate.votingOpen = false;
-    handUpdate.confirmedAt = serverTimestamp();  // ✅ Aggiungi anche questo
+    handUpdate.confirmedAt = serverTimestamp();
   }
-
+  // Se siamo andati in SHOWDOWN ma ci sono più giocatori attivi (side pot scenario),
+  // apriamo la votazione per selezionare i vincitori
+  else if (newStage === "SHOWDOWN" && !autoWinnerId) {
+    handUpdate.votingOpen = true;
+    handUpdate.winnerIds = [];
+  }
 
   batch.update(handRef, handUpdate);
 
@@ -813,7 +912,7 @@ export async function playerAction(
 
 /**
  * Avanza la mano allo stage successivo (PREFLOP -> FLOP -> TURN -> RIVER -> SHOWDOWN).
- * 
+ *
  * IMPORTANTE: Post-flop, la prima mossa è SEMPRE dello SB (o del primo giocatore
  * attivo dopo lo SB se lo SB ha foldato).
  */
@@ -855,7 +954,7 @@ export async function advanceStage(tableId: string, user: User) {
       return {
         seatIndex: data.seatIndex,
         isFolded: !!data.isFolded,
-        isSittingOut: !!data.isSittingOut
+        isSittingOut: !!data.isSittingOut,
       };
     });
 
@@ -894,7 +993,7 @@ export async function advanceStage(tableId: string, user: User) {
     currentBet: 0,
     roundBets: {},
     currentTurnIndex: nextStage === "SHOWDOWN" ? -1 : firstToActIndex,
-    firstToActIndex
+    firstToActIndex,
   };
 
   if (lastAggressorIndex !== undefined) {
@@ -916,22 +1015,97 @@ export async function advanceStage(tableId: string, user: User) {
       const winner = activePlayers[0];
       const winnerData = winner.data() as any;
       const newStack = (Number(winnerData.stack) || 0) + (hand.pot || 0);
-      
+
       // Aggiorna lo stack del vincitore
       await updateDoc(winner.ref, { stack: newStack });
-      
+
       updateData.winnerId = winner.id;
-      updateData.winnerIds = [winner.id];  // ✅ Aggiungi anche questo
+      updateData.winnerIds = [winner.id]; // ✅ Aggiungi anche questo
       updateData.votingOpen = false;
-      updateData.confirmedAt = serverTimestamp();  // ✅ Aggiungi anche questo
+      updateData.confirmedAt = serverTimestamp(); // ✅ Aggiungi anche questo
     } else {
       // Più di un giocatore: l'host dovrà confermare i vincitori
       updateData.votingOpen = true;
-      updateData.winnerIds = [];  // ✅ Inizializza array vuoto
+      updateData.winnerIds = []; // ✅ Inizializza array vuoto
     }
   }
 
   await updateDoc(handRef, updateData);
+}
+
+/**
+ * Calcola i pot (main pot + side pot) in base alle puntate totali di ogni giocatore.
+ *
+ * @param players - Array di giocatori con le loro puntate totali
+ * @param totalBets - Record delle puntate totali per userId
+ * @returns Array di pot, ognuno con l'importo e i giocatori eleggibili
+ */
+interface PotInfo {
+  amount: number;
+  eligiblePlayers: string[]; // userId dei giocatori che possono vincere questo pot
+}
+
+function calculatePots(
+  players: Array<{ userId: string; isFolded: boolean; isSittingOut: boolean }>,
+  totalBets: Record<string, number>
+): PotInfo[] {
+  // Giocatori ancora in gioco (non folded)
+  const activePlayers = players.filter((p) => !p.isFolded && !p.isSittingOut);
+
+  if (activePlayers.length === 0) return [];
+  if (activePlayers.length === 1) {
+    // Un solo giocatore: vince tutto
+    const totalPot = Object.values(totalBets).reduce(
+      (sum, bet) => sum + bet,
+      0
+    );
+    return [
+      {
+        amount: totalPot,
+        eligiblePlayers: [activePlayers[0].userId],
+      },
+    ];
+  }
+
+  const pots: PotInfo[] = [];
+  const remainingBets: Record<string, number> = { ...totalBets };
+  let remainingPlayers = [...activePlayers];
+
+  while (remainingPlayers.length > 0) {
+    // Trova la puntata minima tra i giocatori rimasti
+    const minBet = Math.min(
+      ...remainingPlayers
+        .map((p) => remainingBets[p.userId] || 0)
+        .filter((bet) => bet > 0)
+    );
+
+    if (minBet <= 0) break;
+
+    // Crea un pot con l'importo minimo da ogni giocatore rimasto
+    let potAmount = 0;
+    const eligiblePlayers: string[] = [];
+
+    remainingPlayers.forEach((p) => {
+      const bet = remainingBets[p.userId] || 0;
+      if (bet > 0) {
+        const contribution = Math.min(bet, minBet);
+        potAmount += contribution;
+        remainingBets[p.userId] = bet - contribution;
+        eligiblePlayers.push(p.userId);
+      }
+    });
+
+    if (potAmount > 0) {
+      pots.push({ amount: potAmount, eligiblePlayers });
+    }
+
+    // Rimuovi i giocatori che hanno esaurito le loro chips (all-in completo)
+    remainingPlayers = remainingPlayers.filter(
+      (p) => (remainingBets[p.userId] || 0) > 0
+    );
+  }
+
+  return pots;
 }
 
 /**
@@ -947,14 +1121,16 @@ export async function voteWinner(
   return confirmWinners(tableId, user, [votedUserId]);
 }
 
-
 /**
  * Permette all'host di confermare il/i vincitore/i della mano.
- * Se ci sono più vincitori, il piatto viene diviso equamente tra loro.
- * 
+ * Gestisce automaticamente main pot e side pot in base agli all-in.
+ *
+ * IMPORTANTE: winnerIds deve contenere i vincitori ordinati per forza della mano,
+ * dal più forte al più debole. Il sistema distribuirà i pot di conseguenza.
+ *
  * @param tableId - ID del tavolo
  * @param user - Utente che conferma (deve essere l'host)
- * @param winnerIds - Array di userId dei vincitori selezionati
+ * @param winnerIds - Array di userId ordinati per forza mano (migliore per primo)
  */
 export async function confirmWinners(
   tableId: string,
@@ -968,10 +1144,9 @@ export async function confirmWinners(
   const tableRef = doc(db, "tables", tableId);
   const tableSnap = await getDoc(tableRef);
   if (!tableSnap.exists()) throw new Error("Tavolo inesistente.");
-  
+
   const tableData = tableSnap.data() as any;
 
-  // Solo l'host può confermare i vincitori
   if (tableData.hostId !== user.uid) {
     throw new Error("Solo l'host può confermare i vincitori.");
   }
@@ -984,76 +1159,106 @@ export async function confirmWinners(
   if (!handSnap.exists()) throw new Error("Mano non trovata.");
 
   const hand = handSnap.data() as any as HandData;
-  
+
   if (hand.stage !== "SHOWDOWN") {
     throw new Error("Puoi confermare i vincitori solo durante lo SHOWDOWN.");
   }
 
-  // Verifica che i vincitori selezionati siano giocatori validi e non foldati
+  // Prendi tutti i giocatori
   const playersRef = collection(db, "tables", tableId, "players");
   const playersSnap = await getDocs(playersRef);
   const players = playersSnap.docs.map((d) => ({
     id: d.id,
+    userId: d.id,
     ref: d.ref,
-    data: d.data() as any
+    data: d.data() as any,
+    isFolded: !!(d.data() as any).isFolded,
+    isSittingOut: !!(d.data() as any).isSittingOut,
   }));
 
-  const validPlayerIds = players.map(p => p.id);
-  const invalidWinners = winnerIds.filter(id => !validPlayerIds.includes(id));
-  
+  const validPlayerIds = players.map((p) => p.id);
+  const invalidWinners = winnerIds.filter((id) => !validPlayerIds.includes(id));
+
   if (invalidWinners.length > 0) {
-    throw new Error("Uno o più vincitori selezionati non sono giocatori validi.");
+    throw new Error(
+      "Uno o più vincitori selezionati non sono giocatori validi."
+    );
   }
 
-  // Verifica che nessun vincitore abbia foldato
-  const foldedWinners = winnerIds.filter(id => {
-    const p = players.find(player => player.id === id);
-    return p ? p.data.isFolded : false;
-  });
+  const totalBets = hand.totalBets || {};
 
-  if (foldedWinners.length > 0) {
-    throw new Error("Uno o più vincitori selezionati hanno foldato.");
+  // Calcola i pot (main pot + eventuali side pot)
+  const pots = calculatePots(players, totalBets);
+
+  if (pots.length === 0) {
+    throw new Error("Errore nel calcolo dei pot.");
   }
-
-  const pot = hand.pot || 0;
-  const numWinners = winnerIds.length;
-  
-  // Calcola la quota per ogni vincitore (dividi equamente il piatto)
-  const sharePerWinner = Math.floor(pot / numWinners);
-  const remainder = pot % numWinners; // Eventuali chip rimanenti
 
   const batch = writeBatch(db);
 
-  // Distribuisci il piatto ai vincitori
-  winnerIds.forEach((winnerId, index) => {
-    const winner = players.find(p => p.id === winnerId);
+  // Per ogni pot, trova il vincitore con la mano più forte tra quelli eleggibili
+  const winningsPerPlayer: Record<string, number> = {};
+
+  pots.forEach((pot, potIndex) => {
+    // Se il pot ha solo 1 giocatore eleggibile, è automaticamente il vincitore
+    if (pot.eligiblePlayers.length === 1) {
+      const autoWinner = pot.eligiblePlayers[0];
+      winningsPerPlayer[autoWinner] =
+        (winningsPerPlayer[autoWinner] || 0) + pot.amount;
+      return;
+    }
+
+    // Trova i vincitori eleggibili per questo pot (ordinati per forza mano)
+    const eligibleWinners = winnerIds.filter((wId) =>
+      pot.eligiblePlayers.includes(wId)
+    );
+
+    if (eligibleWinners.length === 0) {
+      // Nessun vincitore eleggibile: non dovrebbe accadere, ma gestiamolo
+      console.warn(`Pot ${potIndex} senza vincitori eleggibili`);
+      return;
+    }
+
+    // Split pot: tutti i vincitori eleggibili dividono il pot
+    // Se winnerIds contiene più giocatori, significa che hanno la stessa mano
+    // e quindi dividono equamente ogni pot a cui sono eleggibili
+    const potWinners = eligibleWinners;
+
+    const sharePerWinner = Math.floor(pot.amount / potWinners.length);
+    const remainder = pot.amount % potWinners.length;
+
+    potWinners.forEach((winnerId, index) => {
+      const winAmount = sharePerWinner + (index === 0 ? remainder : 0);
+      winningsPerPlayer[winnerId] =
+        (winningsPerPlayer[winnerId] || 0) + winAmount;
+    });
+  });
+
+  // Applica le vincite agli stack dei giocatori
+  Object.entries(winningsPerPlayer).forEach(([winnerId, amount]) => {
+    const winner = players.find((p) => p.id === winnerId);
     if (winner) {
       const currentStack = Number(winner.data.stack) || 0;
-      // Il primo vincitore prende anche l'eventuale resto
-      const winAmount = sharePerWinner + (index === 0 ? remainder : 0);
-      const newStack = currentStack + winAmount;
-      
+      const newStack = currentStack + amount;
       batch.update(winner.ref, { stack: newStack });
     }
   });
 
   // Aggiorna la mano: imposta i vincitori e chiude la votazione
   const handUpdate: any = {
-    winnerIds: winnerIds, // Array di vincitori
+    winnerIds: winnerIds,
     votingOpen: false,
-    confirmedAt: serverTimestamp()
+    confirmedAt: serverTimestamp(),
   };
 
-  // Manteniamo anche winnerId per retrocompatibilità (primo vincitore)
+  // Manteniamo winnerId per retrocompatibilità (primo vincitore)
   if (winnerIds.length === 1) {
     handUpdate.winnerId = winnerIds[0];
   } else {
-    handUpdate.winnerId = null; // Split pot
+    handUpdate.winnerId = null;
   }
 
   batch.update(handRef, handUpdate);
 
   await batch.commit();
 }
-
-
