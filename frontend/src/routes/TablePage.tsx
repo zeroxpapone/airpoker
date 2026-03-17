@@ -1011,33 +1011,34 @@ async function handleConfirmWinners() {
                     minWidth: "50px",
                   }}
                 >
-                  <div
-                    style={{
-                      borderRadius: "999px",
-                      padding: "0.4rem 0.6rem",
-                      backgroundColor: isMe
-                        ? "rgba(34,197,94,0.15)"
-                        : "rgba(15,23,42,0.9)",
-                      border: isTurn
-                        ? "2px solid #22c55e"
-                        : selectedWinners.includes(p.userId) && votingOpen  // ✅ Cambia questa condizione
-                        ? "2px solid #22c55e"
-                        : "1px solid #1e293b",
-                      boxShadow: isTurn
-                        ? "0 0 15px rgba(34,197,94,0.6)"
-                        : "0 0 8px rgba(15,23,42,0.6)",
-                      fontSize: "0.7rem",
-                      cursor:
-                        votingOpen && currentHand?.stage === "SHOWDOWN"
-                          ? "pointer"
-                          : "default"
-                    }}
-                    onClick={() => {
-                      if (votingOpen && currentHand?.stage === "SHOWDOWN") {
-                        toggleWinnerSelection(p.userId);  // ✅ Cambia da handleVote a toggleWinnerSelection
-                      }
-                    }}
-                  >
+                    <div
+                      style={{
+                        borderRadius: "999px",
+                        padding: "0.4rem 0.6rem",
+                        backgroundColor: isMe
+                          ? "rgba(34,197,94,0.15)"
+                          : "rgba(15,23,42,0.9)",
+                        border: isTurn
+                          ? "2px solid #22c55e"
+                          : selectedWinners.includes(p.userId) && votingOpen
+                          ? "2px solid #22c55e"
+                          : "1px solid #1e293b",
+                        boxShadow: isTurn
+                          ? "0 0 15px rgba(34,197,94,0.6)"
+                          : "0 0 8px rgba(15,23,42,0.6)",
+                        fontSize: "0.7rem",
+                        cursor:
+                          votingOpen && currentHand?.stage === "SHOWDOWN" && !p.isFolded
+                            ? "pointer"
+                            : "default",
+                        opacity: p.isFolded ? 0.6 : 1
+                      }}
+                      onClick={() => {
+                        if (votingOpen && currentHand?.stage === "SHOWDOWN" && !p.isFolded) {
+                          toggleWinnerSelection(p.userId);
+                        }
+                      }}
+                    >
                     <div style={{ display: "flex", alignItems: "center" }}>
                       <span
                         style={{

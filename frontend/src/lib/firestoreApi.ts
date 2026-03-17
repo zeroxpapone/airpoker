@@ -738,37 +738,35 @@ export async function playerAction(
     if (handData.stage === "PREFLOP") {
       // PREFLOP: logica speciale
       if (allMatched) {
-        // Se c'è stato un raise (lastAggressorIndex diverso dal BB iniziale)
-        // chiude quando il giocatore prima del raiser ha agito
-        if (lastAggressorIndex !== handData.bigBlindIndex) {
-          const closerIndex = getPreviousActiveIndex(lastAggressorIndex);
-          if (closerIndex !== -1 && currentIndex === closerIndex) {
-            nextTurnIndex = -1;
-          }
-        } 
-        // Se NON c'è stato raise (tutti hanno solo callato/checkato),
-        // chiude quando il BB ha checkato
-        else {
+        if (currentBet === Number(tableData.bigBlind)) {
+          // Se NON c'è stato raise (tutti hanno solo chiamato il BB)
+          // chiude quando il BB ha agito
           if (currentIndex === handData.bigBlindIndex) {
             nextTurnIndex = -1;
           }
+        } else {
+          // Se c'è stato un raise e tutti gli attivi hanno fatto call (allMatched = true),
+          // il round si chiude immediatamente perché non c'è più nessuno che deve chiamare.
+          nextTurnIndex = -1;
         }
       }
     } else {
       // POST-FLOP (FLOP, TURN, RIVER)
       if (allMatched) {
         if (currentBet === 0) {
-          // Solo check: chiude quando chi ha appena agito è il giocatore prima dello SB
-          const beforeSB = getPreviousActiveIndex(handData.smallBlindIndex);
-          if (beforeSB !== -1 && currentIndex === beforeSB) {
+          // Solo check/fold: per calcolare correttamente l'ultimo a dover agire, 
+          // fingiamo temporaneamente che il currentPlayer non sia foldato (se l'ha appena fatto).
+          const wasFolded = currentPlayer.isFolded;
+          currentPlayer.isFolded = false;
+          const originalCloser = getPreviousActiveIndex(handData.smallBlindIndex);
+          currentPlayer.isFolded = wasFolded;
+
+          if (originalCloser !== -1 && currentIndex === originalCloser) {
             nextTurnIndex = -1;
           }
         } else {
-          // C'è stata aggressione: chiude quando chi ha appena agito è il giocatore prima dell'aggressore
-          const closerIndex = getPreviousActiveIndex(lastAggressorIndex);
-          if (closerIndex !== -1 && currentIndex === closerIndex) {
-            nextTurnIndex = -1;
-          }
+          // C'è stata aggressione, e tutti hanno matched. Round over immediato.
+          nextTurnIndex = -1;
         }
       }
     }
@@ -991,7 +989,7 @@ export async function confirmWinners(
     throw new Error("Puoi confermare i vincitori solo durante lo SHOWDOWN.");
   }
 
-  // Verifica che i vincitori selezionati siano giocatori validi
+  // Verifica che i vincitori selezionati siano giocatori validi e non foldati
   const playersRef = collection(db, "tables", tableId, "players");
   const playersSnap = await getDocs(playersRef);
   const players = playersSnap.docs.map((d) => ({
@@ -1005,6 +1003,16 @@ export async function confirmWinners(
   
   if (invalidWinners.length > 0) {
     throw new Error("Uno o più vincitori selezionati non sono giocatori validi.");
+  }
+
+  // Verifica che nessun vincitore abbia foldato
+  const foldedWinners = winnerIds.filter(id => {
+    const p = players.find(player => player.id === id);
+    return p ? p.data.isFolded : false;
+  });
+
+  if (foldedWinners.length > 0) {
+    throw new Error("Uno o più vincitori selezionati hanno foldato.");
   }
 
   const pot = hand.pot || 0;
