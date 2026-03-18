@@ -55,9 +55,9 @@ export default function JoinTablePage() {
           gap: "1rem"
         }}
       >
-        <h2 style={{ fontSize: "1.4rem", fontWeight: 600 }}>
-          Entra in un tavolo
-        </h2>
+        <h1 style={{ fontSize: "1.4rem", fontWeight: 600 }}>
+          Entra in un tavolo di Poker Gratis
+        </h1>
 
         <form
           onSubmit={handleSubmit}

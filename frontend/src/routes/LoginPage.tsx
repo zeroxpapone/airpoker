@@ -71,18 +71,19 @@ export default function LoginPage() {
               letterSpacing: "0.02em"
             }}
           >
-            AirPoker
+            AirPoker - Poker Online
           </h1>
-          <p
+          <h2
             style={{
               marginTop: "0.4rem",
               fontSize: "0.9rem",
+              fontWeight: 400,
               color: "#9ca3af"
             }}
           >
             Texas Hold&apos;em tra amici, senza fiches.<br/> Solo carte e
-            telefoni.
-          </p>
+            telefoni. Gioca a poker gratis ora!
+          </h2>
         </div>
 
         <div

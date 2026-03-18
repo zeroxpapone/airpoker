@@ -1055,5 +1055,3 @@ export async function confirmWinners(
 
   await batch.commit();
 }
-
-

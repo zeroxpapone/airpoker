@@ -8,7 +8,7 @@ export default function CreateTablePage() {
   const navigate = useNavigate();
 
   const [name, setName] = useState("");
-  const [initialStack, setInitialStack] = useState(100);
+  const [initialStack, setInitialStack] = useState(200);
   const [smallBlind, setSmallBlind] = useState(5);
   const [bigBlind, setBigBlind] = useState(10);
   const [password, setPassword] = useState("");
@@ -67,9 +67,9 @@ export default function CreateTablePage() {
           gap: "1rem"
         }}
       >
-        <h2 style={{ fontSize: "1.4rem", fontWeight: 600 }}>
-          Crea un tavolo
-        </h2>
+        <h1 style={{ fontSize: "1.4rem", fontWeight: 600 }}>
+          Crea un tavolo di AirPoker
+        </h1>
 
         <form
           onSubmit={handleSubmit}

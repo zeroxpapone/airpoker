@@ -59,13 +59,18 @@ async function handleLogout() {
         }}
       >
         <header style={{ display: "grid", gap: "0.25rem" }}>
-          <h1 style={{ fontSize: "1.6rem", fontWeight: 700 }}>AirPoker</h1>
-          <p style={{ fontSize: "0.9rem", color: "#9ca3af" }}>
+          <h1 style={{ fontSize: "1.6rem", fontWeight: 700, lineHeight: 1.2 }}>
+            Benvenuto su AirPoker - La tua piattaforma di poker online
+          </h1>
+          <h2 style={{ fontSize: "1rem", fontWeight: 400, color: "#9ca3af", marginTop: "0.25rem" }}>
+            Gioca a poker gratis con i tuoi amici e gestisci il tavolo dal telefono.
+          </h2>
+          <p style={{ fontSize: "0.9rem", color: "#9ca3af", marginTop: "0.5rem" }}>
             Ciao{" "}
             <span style={{ color: "#22c55e", fontWeight: 600 }}>
               {nickname}
             </span>
-            , che si fa?
+            , pronto per la prossima partita?
           </p>
         </header>
 
