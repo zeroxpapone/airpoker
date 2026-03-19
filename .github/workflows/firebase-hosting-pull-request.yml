@@ -3,6 +3,10 @@
 
 name: Deploy to Firebase Hosting on PR
 on: pull_request
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 permissions:
   checks: write
   contents: read

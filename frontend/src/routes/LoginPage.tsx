@@ -102,7 +102,7 @@ export default function LoginPage() {
               nickname
             </span>{" "}
             con cui gli altri ti vedranno al tavolo. Non servono email,
-            password o registrazioni.
+            password o registrazioni!
           </p>
         </div>
 
