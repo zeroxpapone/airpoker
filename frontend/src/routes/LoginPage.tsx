@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 export default function LoginPage() {
   const { login, loading } = useAuth();
@@ -8,6 +8,7 @@ export default function LoginPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
 
   async function handleLogin(e?: React.FormEvent) {
@@ -23,7 +24,13 @@ export default function LoginPage() {
     try {
       setSubmitting(true);
       await login(name);
-      navigate("/home");
+      
+      const redirect = searchParams.get("redirect");
+      if (redirect) {
+        navigate(redirect);
+      } else {
+        navigate("/home");
+      }
       // Non facciamo redirect qui: il resto dell'app gestisce le route
       // in base alla presenza di user.
     } catch (err: any) {

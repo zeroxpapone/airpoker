@@ -153,8 +153,19 @@ export async function joinTable(tableId: string, user: User | null, password?: s
     seatIndex,
     isReady: false,
     isFolded: false,
+    isSittingOut: data.state === "IN_GAME",
     joinedAt: serverTimestamp()
   });
+}
+
+function getNextActivePlayerIndex(players: any[], fromIndex: number): number {
+  const numPlayers = players.length;
+  for (let i = 1; i <= numPlayers; i++) {
+      const idx = (fromIndex + i) % numPlayers;
+      const p = players[idx];
+      if (!p.isSittingOut && p.stack > 0) return idx;
+  }
+  return -1;
 }
 
 /**
@@ -222,11 +233,12 @@ export async function startGame(tableId: string) {
     };
   });
 
-  if (players.length < 2) {
-    throw new Error("Servono almeno 2 giocatori per iniziare");
+  const activePlayersCount = players.filter(p => !p.isSittingOut && p.stack > 0).length;
+
+  if (activePlayersCount < 2) {
+    throw new Error("Servono almeno 2 giocatori attivi per iniziare");
   }
 
-  const numPlayers = players.length;
   const sbAmount = Number(tableData.smallBlind) || 0;
   const bbAmount = Number(tableData.bigBlind) || 0;
 
@@ -235,19 +247,23 @@ export async function startGame(tableId: string) {
   let bigBlindIndex: number;
   let firstToActIndex: number;
 
-  // CASO HEADS-UP (2 giocatori): player 0 = BB, player 1 = SB/Dealer
-  if (numPlayers === 2) {
-    dealerIndex = 1;      // giocatore 1 è dealer e SB
-    smallBlindIndex = 1;  // stesso giocatore
-    bigBlindIndex = 0;    // giocatore 0 è BB
-    firstToActIndex = 1;  // SB/Dealer agisce per primo preflop in heads-up
+  const p1 = getNextActivePlayerIndex(players, -1);
+  const p2 = getNextActivePlayerIndex(players, p1);
+  const p3 = getNextActivePlayerIndex(players, p2);
+
+  // CASO HEADS-UP (2 giocatori attivi): player 1 è BB, player 2 è SB/Dealer
+  if (activePlayersCount === 2) {
+    dealerIndex = p2;
+    smallBlindIndex = p2;
+    bigBlindIndex = p1;
+    firstToActIndex = p2; 
   } 
-  // CASO 3+ GIOCATORI: player 0 = Dealer, 1 = SB, 2 = BB
+  // CASO 3+ GIOCATORI:
   else {
-    dealerIndex = 0;
-    smallBlindIndex = 1;
-    bigBlindIndex = 2;
-    firstToActIndex = (bigBlindIndex + 1) % numPlayers; // UTG (giocatore dopo BB)
+    dealerIndex = p1;
+    smallBlindIndex = p2;
+    bigBlindIndex = p3;
+    firstToActIndex = getNextActivePlayerIndex(players, p3);
   }
 
   const currentTurnIndex = firstToActIndex;
@@ -346,16 +362,8 @@ export async function setSittingOut(
   user: User,
   isSittingOut: boolean
 ) {
-  const playersRef = collection(db, "tables", tableId, "players");
-  const q = query(playersRef, where("userId", "==", user.uid));
-  const snap = await getDocs(q);
-
-  const batch = writeBatch(db);
-  snap.forEach((docSnap) => {
-    batch.update(docSnap.ref, { isSittingOut });
-  });
-
-  await batch.commit();
+  const playerRef = doc(db, "tables", tableId, "players", user.uid);
+  await setDoc(playerRef, { isSittingOut }, { merge: true });
 }
 
 export async function endGame(tableId: string) {
@@ -412,31 +420,31 @@ export async function startNextHand(tableId: string, user: User) {
     };
   });
 
-  if (players.length < 2) {
-    throw new Error("Servono almeno 2 giocatori per una nuova mano.");
+  const activePlayersCount = players.filter(p => !p.isSittingOut && p.stack > 0).length;
+
+  if (activePlayersCount < 2) {
+    throw new Error("Servono almeno 2 giocatori attivi per una nuova mano.");
   }
 
-  const numPlayers = players.length;
   const sbAmount = Number(tableData.smallBlind) || 0;
   const bbAmount = Number(tableData.bigBlind) || 0;
 
-  // Ruotiamo dealer, SB e BB di uno rispetto alla mano precedente
   let dealerIndex: number;
   let smallBlindIndex: number;
   let bigBlindIndex: number;
   let firstToActIndex: number;
 
-  if (numPlayers === 2) {
-    // Heads-up: ruotiamo semplicemente i ruoli
-    dealerIndex = (prevHand.dealerIndex + 1) % numPlayers;
+  if (activePlayersCount === 2) {
+    // Heads-up: ruotiamo semplicemente i ruoli tramite i giocatori attivi presenti
+    dealerIndex = getNextActivePlayerIndex(players, prevHand.dealerIndex);
     smallBlindIndex = dealerIndex;
-    bigBlindIndex = (dealerIndex + 1) % numPlayers;
+    bigBlindIndex = getNextActivePlayerIndex(players, dealerIndex);
     firstToActIndex = smallBlindIndex;
   } else {
-    dealerIndex = (prevHand.dealerIndex + 1) % numPlayers;
-    smallBlindIndex = (dealerIndex + 1) % numPlayers;
-    bigBlindIndex = (dealerIndex + 2) % numPlayers;
-    firstToActIndex = (bigBlindIndex + 1) % numPlayers;
+    dealerIndex = getNextActivePlayerIndex(players, prevHand.dealerIndex);
+    smallBlindIndex = getNextActivePlayerIndex(players, dealerIndex);
+    bigBlindIndex = getNextActivePlayerIndex(players, smallBlindIndex);
+    firstToActIndex = getNextActivePlayerIndex(players, bigBlindIndex);
   }
 
   let pot = 0;
@@ -485,7 +493,7 @@ export async function startNextHand(tableId: string, user: User) {
     currentHandId: newHandRef.id
   });
 
-  // Reset stato giocatori per la nuova mano (isFolded false)
+  // Reset stato giocatori per la nuova mano
   players.forEach((p, index) => {
     let newStack = p.stack;
 
@@ -497,7 +505,7 @@ export async function startNextHand(tableId: string, user: User) {
     }
 
     batch.update(p.ref, {
-      isFolded: false,
+      isFolded: !!p.isSittingOut || newStack === 0,
       stack: newStack
     });
   });

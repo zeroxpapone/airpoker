@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { QRCodeSVG } from "qrcode.react";
 import {
   collection,
   doc,
@@ -55,12 +56,15 @@ interface ExtendedHandData extends HandData {
 }
 
 export default function TablePage() {
-  const { tableId } = useParams();
+  const { tableId: rawTableId } = useParams();
+  const tableId = rawTableId?.toLowerCase();
   const { user } = useAuth();
 
   const [selectedWinners, setSelectedWinners] = useState<string[]>([]);
   const [table, setTable] = useState<TableData | null>(null);
   const [players, setPlayers] = useState<PlayerData[]>([]);
+  const [playersLoaded, setPlayersLoaded] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const [currentHand, setCurrentHand] = useState<ExtendedHandData | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -122,10 +126,12 @@ export default function TablePage() {
             seatIndex: d.seatIndex,
             isReady: d.isReady,
             userId: d.userId,
-            isFolded: !!d.isFolded
+            isFolded: !!d.isFolded,
+            isSittingOut: !!d.isSittingOut
           });
         });
         setPlayers(list);
+        setPlayersLoaded(true);
       },
       (err) => {
         console.error("Errore nel listener dei giocatori:", err);
@@ -137,6 +143,13 @@ export default function TablePage() {
       unsubPlayers();
     };
   }, [tableId]);
+
+  // Redirezione automatica per gli spettatori
+  useEffect(() => {
+    if (playersLoaded && user?.uid && !players.find((p) => p.userId === user.uid) && table?.state !== "SUMMARY") {
+      navigate(`/join?tableId=${tableId}`);
+    }
+  }, [playersLoaded, user?.uid, players, navigate, tableId, table?.state]);
 
   // Listener sulla mano corrente
   useEffect(() => {
@@ -250,6 +263,17 @@ export default function TablePage() {
   const myVoteTargetId =
     currentHand && user ? currentHand.votes?.[user.uid] ?? null : null;
 
+  let disableSitToggle = false;
+  if (inGame && currentHand && !myPlayer?.isSittingOut) {
+    if (!myPlayer?.isFolded && !(currentHand.stage === "SHOWDOWN" && hasWinner)) {
+      // Giocatore attivo: bloccato durante tutta la mano finché il vincitore non è assegnato
+      disableSitToggle = true;
+    }
+  }
+
+  // Host bloccato dal terminare la partita durante una mano, sbloccato solo a vincitore assegnato
+  const disableEndGame = inGame && !!currentHand && !(currentHand.stage === "SHOWDOWN" && hasWinner);
+
   const allReady =
     table.state === "LOBBY" &&
     players.length > 0 &&
@@ -326,10 +350,17 @@ export default function TablePage() {
 async function handleToggleSittingOut() {
   if (!user || !tableId) return;
   if (!myPlayer) return;
+  const newValue = !myPlayer.isSittingOut;
+  // Aggiornamento ottimistico
+  setPlayers(prev => prev.map(p => p.id === myPlayer.id ? { ...p, isSittingOut: newValue } : p));
   try {
-    await setSittingOut(tableId, user, !myPlayer.isSittingOut);
-  } catch (err) {
+    await setSittingOut(tableId, user, newValue);
+  } catch (err: any) {
     console.error(err);
+    // Revert ottimistico
+    setPlayers(prev => prev.map(p => p.id === myPlayer.id ? { ...p, isSittingOut: !newValue } : p));
+    setActionError(err.message || "Errore nel gestire lo stato di pausa.");
+    window.alert("ATTENZIONE! Firebase ha scartato la richiesta: " + err.message);
   }
 }
 
@@ -590,13 +621,35 @@ async function handleConfirmWinners() {
         }}
       >
         <header style={{ display: "grid", gap: "0.25rem" }}>
-          <h1 style={{ fontSize: "1.4rem", fontWeight: 600 }}>
-            {table.name}{" "}
-            <span style={{ fontSize: "0.9rem", opacity: 0.7 }}>
-              (ID: {tableId})
-            </span>
-          </h1>
-          <div
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.25rem" }}>
+            <h1 style={{ fontSize: "1.4rem", fontWeight: 600, margin: 0 }}>
+              {table.name}{" "}
+              <span style={{ fontSize: "0.9rem", opacity: 0.7 }}>
+                (ID: {tableId})
+              </span>
+            </h1>
+            <button
+              onClick={() => setShowShareModal(true)}
+              style={{
+                padding: "0.4rem 0.8rem",
+                borderRadius: "0.5rem",
+                border: "1px solid #3b82f6",
+                backgroundColor: "rgba(59, 130, 246, 0.1)",
+                color: "#60a5fa",
+                cursor: "pointer",
+                fontSize: "0.85rem",
+                fontWeight: 600,
+                display: "flex",
+                alignItems: "center",
+                gap: "0.4rem"
+              }}
+            >
+              <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+              Invita
+            </button>
+          </div>
+          
+        <div
   style={{
     marginTop: "0.5rem",
     display: "flex",
@@ -699,7 +752,8 @@ async function handleConfirmWinners() {
                     }}
                 >
                     <div>
-                    <span style={{ fontWeight: 500 }}>
+                    <span style={{ fontWeight: 500, color: p.isSittingOut ? "#9ca3af" : "#e5e7eb" }}>
+                        {p.isSittingOut && <span style={{ color: "#facc15" }}>[Pausa] </span>}
                         {p.displayName}
                         {isMe && " (tu)"}
                     </span>
@@ -803,62 +857,66 @@ async function handleConfirmWinners() {
             Bui {table?.smallBlind}/{table?.bigBlind}
           </p>
           <div
-  style={{
-    marginTop: "0.4rem",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    fontSize: "0.8rem"
-  }}
->
-  <button
-    onClick={() => navigate("/home")}
-    style={{
-      padding: "0.3rem 0.6rem",
-      borderRadius: "999px",
-      border: "1px solid #4b5563",
-      backgroundColor: "transparent",
-      color: "#9ca3af",
-      cursor: "pointer"
-    }}
-  >
-    Home
-  </button>
+            style={{
+              marginTop: "0.4rem",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              fontSize: "0.8rem"
+            }}
+          >
+            <button
+              onClick={() => navigate("/home")}
+              style={{
+                padding: "0.3rem 0.6rem",
+                borderRadius: "999px",
+                border: "1px solid #4b5563",
+                backgroundColor: "transparent",
+                color: "#9ca3af",
+                cursor: "pointer"
+              }}
+            >
+              Home
+            </button>
 
-  <div style={{ display: "flex", gap: "0.4rem" }}>
-    <button
-      onClick={handleToggleSittingOut}
-      style={{
-        padding: "0.3rem 0.6rem",
-        borderRadius: "999px",
-        border: "1px solid #4b5563",
-        backgroundColor: "transparent",
-        color: myPlayer?.isSittingOut ? "#f97316" : "#e5e7eb",
-        cursor: "pointer"
-      }}
-    >
-      {myPlayer?.isSittingOut ? "Rientra al tavolo" : "Alzati dal tavolo"}
-    </button>
+            <div style={{ display: "flex", gap: "0.4rem" }}>
+              <button
+                onClick={handleToggleSittingOut}
+                disabled={!!disableSitToggle}
+                style={{
+                  padding: "0.3rem 0.6rem",
+                  borderRadius: "999px",
+                  border: "1px solid #f59e0b",
+                  backgroundColor: "transparent",
+                  color: disableSitToggle ? "#6b7280" : "#fcd34d",
+                  cursor: disableSitToggle ? "default" : "pointer",
+                  fontSize: "0.8rem",
+                  opacity: disableSitToggle ? 0.5 : 1
+                }}
+              >
+                {myPlayer?.isSittingOut ? "Siediti al tavolo" : "Alzati dal tavolo"}
+              </button>
 
-
-    {isHost && (
-      <button
-        onClick={handleEndGame}
-        style={{
-          padding: "0.3rem 0.6rem",
-          borderRadius: "999px",
-          border: "none",
-          backgroundColor: "#ef4444",
-          color: "#020617",
-          cursor: "pointer",
-          fontWeight: 600
-        }}
-      >
-        Termina partita
-      </button>
-    )}
-  </div>
-</div>
+              {isHost && (
+                <button
+                  onClick={handleEndGame}
+                  disabled={disableEndGame}
+                  style={{
+                    padding: "0.3rem 0.6rem",
+                    borderRadius: "999px",
+                    border: "none",
+                    backgroundColor: "#ef4444",
+                    color: disableEndGame ? "#fca5a5" : "#020617",
+                    cursor: disableEndGame ? "default" : "pointer",
+                    opacity: disableEndGame ? 0.5 : 1,
+                    fontWeight: 600
+                  }}
+                >
+                  Termina partita
+                </button>
+              )}
+            </div>
+          </div>
 
         </header>
 
@@ -1028,13 +1086,13 @@ async function handleConfirmWinners() {
                           : "0 0 8px rgba(15,23,42,0.6)",
                         fontSize: "0.7rem",
                         cursor:
-                          votingOpen && currentHand?.stage === "SHOWDOWN" && !p.isFolded
+                          votingOpen && currentHand?.stage === "SHOWDOWN" && !p.isFolded && !p.isSittingOut
                             ? "pointer"
                             : "default",
-                        opacity: p.isFolded ? 0.6 : 1
+                        opacity: p.isSittingOut ? 0.4 : p.isFolded ? 0.6 : 1
                       }}
                       onClick={() => {
-                        if (votingOpen && currentHand?.stage === "SHOWDOWN" && !p.isFolded) {
+                        if (votingOpen && currentHand?.stage === "SHOWDOWN" && !p.isFolded && !p.isSittingOut) {
                           toggleWinnerSelection(p.userId);
                         }
                       }}
@@ -1043,12 +1101,13 @@ async function handleConfirmWinners() {
                       <span
                         style={{
                           fontWeight: 500,
-                          color: p.isFolded ? "#6b7280" : "#e5e7eb",
-                          textDecoration: p.isFolded
+                          color: p.isSittingOut ? "#9ca3af" : p.isFolded ? "#6b7280" : "#e5e7eb",
+                          textDecoration: p.isFolded && !p.isSittingOut
                             ? "line-through"
                             : "none"
                         }}
                       >
+                        {p.isSittingOut && <span style={{ color: "#facc15" }}>[Pausa] </span>}
                         {p.displayName}
                         {isMe && " (tu)"}
                         {renderRoleBadges(index)}
@@ -1426,8 +1485,7 @@ async function handleConfirmWinners() {
           <div>Durata sessione: {durata}</div>
           <div>Mani giocate: {handsPlayed}</div>
           <div style={{ fontSize: "0.8rem", color: "#9ca3af" }}>
-            Statistiche avanzate (percentuali di vittoria, ecc.) arriveranno
-            quando implementiamo la selezione del vincitore per mano.
+            Le statistiche avanzate (percentuali di vittoria, ecc.) verranno implementate in futuro.
           </div>
         </div>
 
@@ -1495,9 +1553,51 @@ async function handleConfirmWinners() {
   
   // ---------- RENDER ROOT ----------
 
-if (inLobby) return renderLobby();
-if (inGame) return renderGame();
-if (inSummary) return renderSummary();
+  const modalUI = showShareModal && (
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+      background: "rgba(2, 6, 23, 0.8)", backdropFilter: "blur(8px)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999
+    }}>
+      <div style={{
+        background: "rgba(15,23,42,0.95)", border: "1px solid #1e293b",
+        borderRadius: "1.5rem", padding: "2rem", display: "grid", gap: "1.5rem",
+        textAlign: "center", maxWidth: "340px", width: "90%",
+        boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.7)"
+      }}>
+        <h2 style={{ fontSize: "1.4rem", margin: 0, color: "#e2e8f0" }}>Invita al tavolo</h2>
+        <div style={{ background: "white", padding: "1.2rem", borderRadius: "1rem", display: "inline-block", margin: "0 auto" }}>
+          <QRCodeSVG value={`${window.location.origin}/table/${tableId}`} size={200} />
+        </div>
+        <p style={{ margin: 0, fontSize: "0.9rem", color: "#9ca3af" }}>
+          Copia il link qui sotto o fai inquadrare questo QR ai tuoi amici.
+        </p>
+        <button 
+          onClick={() => {
+            navigator.clipboard.writeText(`${window.location.origin}/table/${tableId}`);
+            alert("Link copiato negli appunti!");
+          }}
+          style={{
+            background: "linear-gradient(135deg, #3b82f6, #2563eb)", color: "#ffffff", border: "none", padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontWeight: 700, fontSize: "0.95rem"
+          }}
+        >
+          Copia Link
+        </button>
+        <button 
+          onClick={() => setShowShareModal(false)}
+          style={{
+            background: "transparent", color: "#9ca3af", border: "none", padding: "0.5rem", cursor: "pointer", fontWeight: 600, fontSize: "0.9rem"
+          }}
+        >
+          Chiudi
+        </button>
+      </div>
+    </div>
+  );
+
+if (inLobby) return <>{renderLobby()}{modalUI}</>;
+if (inGame) return <>{renderGame()}{modalUI}</>;
+if (inSummary) return <>{renderSummary()}{modalUI}</>;
 return <p>Stato tavolo non supportato.</p>;
 }
 

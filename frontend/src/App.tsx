@@ -1,10 +1,20 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useParams, useLocation } from "react-router-dom";
 import LoginPage from "./routes/LoginPage";
 import HomePage from "./routes/HomePage";
 import CreateTablePage from "./routes/CreateTablePage";
 import JoinTablePage from "./routes/JoinTablePage";
 import TablePage from "./routes/TablePage";
 import { useAuth } from "./hooks/useAuth";
+
+function ProtectedTableRoute() {
+  const { tableId } = useParams();
+  const { user } = useAuth();
+  
+  if (!user) {
+    return <Navigate to={`/?redirect=/table/${tableId}`} replace />;
+  }
+  return <TablePage />;
+}
 
 function App() {
   const { user, loading } = useAuth();
@@ -31,7 +41,7 @@ function App() {
       />
       <Route
         path="/table/:tableId"
-        element={user ? <TablePage /> : <Navigate to="/" replace />}
+        element={<ProtectedTableRoute />}
       />
       {/* eventuale 404 */}
       <Route path="*" element={<Navigate to="/" replace />} />

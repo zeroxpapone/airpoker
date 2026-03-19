@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { joinTable } from "../lib/firestoreApi";
 
 export default function JoinTablePage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
-  const [tableId, setTableId] = useState("");
+  const [tableId, setTableId] = useState(() => searchParams.get("tableId") || "");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -68,8 +69,8 @@ export default function JoinTablePage() {
               style={inputStyle}
               type="text"
               value={tableId}
-              onChange={(e) => setTableId(e.target.value)}
-              placeholder="Es: 5RgsAQKSnVNuyMqwOB6D"
+              onChange={(e) => setTableId(e.target.value.toLowerCase())}
+              placeholder="Es: za9jt"
               required
             />
           </Field>
