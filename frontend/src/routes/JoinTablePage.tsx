@@ -70,7 +70,7 @@ export default function JoinTablePage() {
               type="text"
               value={tableId}
               onChange={(e) => setTableId(e.target.value.toLowerCase())}
-              placeholder="Es: za9jt"
+              placeholder="Es: a1b2c"
               required
             />
           </Field>
