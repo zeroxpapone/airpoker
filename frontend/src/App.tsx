@@ -2,8 +2,9 @@ import { lazy, Suspense } from "react";
 import { Routes, Route, Navigate, useParams } from "react-router-dom";
 import { useAuth } from "./hooks/useAuth";
 
-const LoginPage = lazy(() => import("./routes/LoginPage"));
-const HomePage = lazy(() => import("./routes/HomePage"));
+import LoginPage from "./routes/LoginPage";
+import HomePage from "./routes/HomePage";
+
 const CreateTablePage = lazy(() => import("./routes/CreateTablePage"));
 const JoinTablePage = lazy(() => import("./routes/JoinTablePage"));
 const TablePage = lazy(() => import("./routes/TablePage"));
