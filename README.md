@@ -129,11 +129,9 @@ Hosting<br>
 <br>
 Copy the config into frontend/src/lib/firebase.ts<br>
 
-### 4. Deploy
-bash<br>
-Copy code<br>
-firebase deploy<br>
-
+### 4. Local Testing & PRs
+Run the app locally to test features, understand the architecture, or develop improvements. If you build something cool (e.g., side pot improvements), feel free to open a Pull Request!
+**Note:** You are NOT permitted to deploy your own public instance of AirPoker or use this codebase to create a competing product. See the LICENSE file.
 ---
 
 ## 🧪 Development Roadmap (MVP → Advanced)
@@ -172,7 +170,8 @@ If you want to improve logic such as side pot calculation or add new features, f
 ---
 
 ## 📜 License
-MIT License. Free to use, modify, or adapt.
+**Custom Restrictive License.** 
+The code is strictly open for educational viewing, local testing, and contributing to the official repository. You may **not** host, distribute, monetize, or use this codebase (or its database structure) to create your own competing platform or copycat website. See the `LICENSE` file for full details.
 
 ---
 
