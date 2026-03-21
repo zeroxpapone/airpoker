@@ -10,6 +10,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../hooks/useAuth";
+import { useWakeLock } from "../hooks/useWakeLock";
 import {
   setPlayerReady,
   startGame,
@@ -56,6 +57,8 @@ interface ExtendedHandData extends HandData {
 }
 
 export default function TablePage() {
+  useWakeLock();
+
   const { tableId: rawTableId } = useParams();
   const tableId = rawTableId?.toLowerCase();
   const { user } = useAuth();
@@ -1526,23 +1529,51 @@ async function handleConfirmWinners() {
               gap: "0.3rem"
             }}
           >
-            {players.map((p) => (
-              <li
-                key={p.id}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  padding: "0.4rem 0.6rem",
-                  borderRadius: "0.5rem",
-                  backgroundColor: "rgba(15,23,42,0.9)",
-                  border: "1px solid #1e293b",
-                  fontSize: "0.9rem"
-                }}
-              >
-                <span>{p.displayName}</span>
-                <span>{p.stack}</span>
-              </li>
-            ))}
+            {players.map((p) => {
+              const diff = p.stack - (table?.initialStack || 0);
+              const isPositive = diff > 0;
+              const isNegative = diff < 0;
+
+              let diffText = "-";
+              let diffColor = "#9ca3af";
+
+              if (isPositive) {
+                diffText = `+${diff}`;
+                diffColor = "#22c55e";
+              } else if (isNegative) {
+                diffText = `${diff}`;
+                diffColor = "#ef4444";
+              }
+
+              return (
+                <li
+                  key={p.id}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    padding: "0.4rem 0.6rem",
+                    borderRadius: "0.5rem",
+                    backgroundColor: "rgba(15,23,42,0.9)",
+                    border: "1px solid #1e293b",
+                    fontSize: "0.9rem"
+                  }}
+                >
+                  <span>{p.displayName}</span>
+                  <span>
+                    {p.stack}{" "}
+                    <span
+                      style={{
+                        color: diffColor,
+                        fontSize: "0.8rem",
+                        marginLeft: "0.3rem"
+                      }}
+                    >
+                      • {diffText}
+                    </span>
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </div>
 

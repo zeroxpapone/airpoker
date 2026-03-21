@@ -3,6 +3,18 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { createTable } from "../lib/firestoreApi";
 
+const RANDOM_TABLE_NAMES = [
+  "no doccia",
+  "del cacco",
+  "PALAU",
+  "del Burger",
+  "del McDonald's",
+  "dai dai",
+  "del Jack al River",
+  "degli ebrei",
+  "sognateli boy"
+];
+
 export default function CreateTablePage() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -25,9 +37,12 @@ export default function CreateTablePage() {
 
     try {
       setLoading(true);
+      const randomName =
+        RANDOM_TABLE_NAMES[Math.floor(Math.random() * RANDOM_TABLE_NAMES.length)];
+        
       const id = await createTable(
         {
-          name: name.trim() || "Tavolo senza nome",
+          name: name.trim() || `Tavolo ${randomName}`,
           initialStack,
           smallBlind,
           bigBlind,
