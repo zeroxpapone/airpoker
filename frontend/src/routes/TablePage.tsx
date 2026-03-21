@@ -74,6 +74,7 @@ export default function TablePage() {
 
   const [showBetPanel, setShowBetPanel] = useState(false);
   const [betAmount, setBetAmount] = useState<number>(0);
+  const [bbClicks, setBbClicks] = useState<number>(0);
 
   const navigate = useNavigate();
 
@@ -454,6 +455,7 @@ async function handleEndGame() {
     const min = Math.min(baseMin, myMaxFinal);
     const defaultValue = Math.max(baseMin, currentBet || baseMin);
 
+    setBbClicks(0);
     setBetAmount(
       Math.max(min, Math.min(defaultValue, myMaxFinal))
     );
@@ -470,20 +472,39 @@ async function handleEndGame() {
     const bb = table.bigBlind || 10;
     const pot = currentHand.pot;
     const myMaxFinal = myRoundBet + myPlayer.stack;
+    const baseMin =
+      currentBet === 0
+        ? bb
+        : currentBet + (table.smallBlind || 5);
 
     let target = 0;
     if (type === "1BB") {
-      target = currentBet === 0 ? bb : Math.max(currentBet + bb);
-    } else if (type === "HALF_POT") {
-      target = Math.max(currentBet || 0, Math.floor(pot / 2));
-    } else if (type === "POT") {
-      target = Math.max(currentBet || 0, pot);
+      const newClicks = bbClicks + 1;
+      setBbClicks(newClicks);
+      target = currentBet === 0 ? (bb * newClicks) : currentBet + (bb * newClicks);
+    } else {
+      setBbClicks(0); // L'utente ha selezionato altro, resettiamo la serie
+      // Calcolo Pot-sized Raise
+      const callDiff = currentBet - myRoundBet;
+      const potAfterCall = pot + callDiff;
+
+      if (type === "HALF_POT") {
+        const raiseAmt = Math.floor(potAfterCall / 2);
+        const roundedRaise = Math.floor(raiseAmt / 5) * 5;
+        target = currentBet + roundedRaise;
+      } else if (type === "POT") {
+        const raiseAmt = potAfterCall;
+        const roundedRaise = Math.floor(raiseAmt / 5) * 5;
+        target = currentBet + roundedRaise;
+      }
+
+      // Nei calcoli Pot/Half-Pot, assicura che il rilancio raggiunga almeno il minimo legale
+      target = Math.max(target, baseMin);
     }
 
     // Clamp al massimo consentito
     target = Math.min(target, myMaxFinal);
     if (target <= myRoundBet) {
-      // non ha senso ridurre la propria bet
       target = myRoundBet;
     }
 
@@ -496,7 +517,7 @@ async function handleEndGame() {
       setActionError("Importo bet/raise non valido.");
       return;
     }
-    if (currentBet % 5 !== 0) {
+    if (betAmount % 5 !== 0) {
       setActionError("La puntata deve essere multipla di 5");
       return;
     }
@@ -860,25 +881,11 @@ async function handleConfirmWinners() {
             style={{
               marginTop: "0.4rem",
               display: "flex",
-              justifyContent: "space-between",
+              justifyContent: "flex-end",
               alignItems: "center",
               fontSize: "0.8rem"
             }}
           >
-            <button
-              onClick={() => navigate("/home")}
-              style={{
-                padding: "0.3rem 0.6rem",
-                borderRadius: "999px",
-                border: "1px solid #4b5563",
-                backgroundColor: "transparent",
-                color: "#9ca3af",
-                cursor: "pointer"
-              }}
-            >
-              Home
-            </button>
-
             <div style={{ display: "flex", gap: "0.4rem" }}>
               <button
                 onClick={handleToggleSittingOut}
@@ -1227,80 +1234,88 @@ async function handleConfirmWinners() {
               <span>Pot: {currentHand?.pot ?? 0}</span>
               <span>
                 Puntata corrente: {currentHand?.currentBet ?? 0} • La tua:{" "}
-                {myRoundBet}
+                {showBetPanel ? (
+                  <span style={{ color: "#22c55e", fontWeight: "bold" }}>
+                    {betAmount}
+                  </span>
+                ) : (
+                  myRoundBet
+                )}
               </span>
             </div>
 
             {/* Pulsanti azione */}
-            <div
-              style={{
-                display: "flex",
-                gap: "0.5rem",
-                alignItems: "center"
-              }}
-            >
-              {/* Fold sempre disponibile se è il tuo turno */}
-              <button
-                disabled={!isMyTurn || actionLoading}
-                onClick={() => doAction("FOLD")}
+            {!showBetPanel && (
+              <div
                 style={{
-                  ...circleActionButton,
-                  backgroundColor: 
-                    isMyTurn 
-                      ? "#ef4444ff"
-                      : "#ef444473"
+                  display: "flex",
+                  gap: "0.5rem",
+                  alignItems: "center"
                 }}
               >
-                F
-              </button>
+                {/* Fold sempre disponibile se è il tuo turno */}
+                <button
+                  disabled={!isMyTurn || actionLoading}
+                  onClick={() => doAction("FOLD")}
+                  style={{
+                    ...circleActionButton,
+                    backgroundColor: 
+                      isMyTurn 
+                        ? "#ef4444ff"
+                        : "#ef444473"
+                  }}
+                >
+                  F
+                </button>
 
-              {/* Bottone centrale: Check o Call */}
-              <button
-                disabled={!isMyTurn || actionLoading || (!canCheck && !canCall)}
-                onClick={() =>
-                  canCall ? doAction("CALL") : canCheck ? doAction("CHECK") : null
-                }
-                style={{
-                  flex: 1,
-                  padding: "0.6rem 0.9rem",
-                  borderRadius: "999px",
-                  border: "none",
-                  cursor:
-                    isMyTurn && (canCheck || canCall) && !actionLoading
-                      ? "pointer"
-                      : "default",
-                  backgroundColor:
-                    isMyTurn && (canCheck || canCall)
-                      ? "#e5e7eb"
-                      : "#4b5563",
-                  color: "#020617",
-                  fontWeight: 600,
-                  fontSize: "0.9rem",
-                  textAlign: "center"
-                }}
-              >
-                {!isMyTurn
-                  ? "In attesa..."
-                  : canCall
-                  ? `Call ${diffToCall}`
-                  : canCheck
-                  ? "Check"
-                  : "—"}
-              </button>
+                {/* Bottone centrale: Check o Call */}
+                <button
+                  disabled={!isMyTurn || actionLoading || (!canCheck && !canCall)}
+                  onClick={() =>
+                    canCall ? doAction("CALL") : canCheck ? doAction("CHECK") : null
+                  }
+                  style={{
+                    flex: 1,
+                    padding: "0.6rem 0.9rem",
+                    borderRadius: "999px",
+                    border: "none",
+                    cursor:
+                      isMyTurn && (canCheck || canCall) && !actionLoading
+                        ? "pointer"
+                        : "default",
+                    backgroundColor:
+                      isMyTurn && (canCheck || canCall)
+                        ? "#e5e7eb"
+                        : "#4b5563",
+                    color: "#020617",
+                    fontWeight: 600,
+                    fontSize: "0.9rem",
+                    textAlign: "center"
+                  }}
+                >
+                  {!isMyTurn
+                    ? "In attesa..."
+                    : canCall
+                    ? `Call ${diffToCall}`
+                    : canCheck
+                    ? "Check"
+                    : "—"}
+                </button>
 
-              {/* Bottone Bet/Raise + pannello */}
-              <button
-                disabled={!isMyTurn || actionLoading || !canBetOrRaise}
-                onClick={openBetPanel}
-                style={{
-                  ...pillActionButton,
-                  backgroundColor:
-                    isMyTurn && canBetOrRaise ? "#22c55e" : "#4b5563"
-                }}
-              >
-                {currentBet === 0 && myRoundBet === 0 ? "Bet" : "Raise"}
-              </button>
-            </div>
+                {/* Bottone Bet/Raise + pannello */}
+                <button
+                  disabled={!isMyTurn || actionLoading || !canBetOrRaise}
+                  onClick={openBetPanel}
+                  style={{
+                    ...pillActionButton,
+                    backgroundColor:
+                      isMyTurn && canBetOrRaise ? "#22c55e" : "#4b5563"
+                  }}
+                >
+                  {currentBet === 0 && myRoundBet === 0 ? "Bet" : "Raise"}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* pannello bet/raise */}
@@ -1338,7 +1353,10 @@ async function handleConfirmWinners() {
                 step={5}
                 max={myRoundBet + myPlayer.stack}
                 value={betAmount}
-                onChange={(e) => setBetAmount(Number(e.target.value))}
+                onChange={(e) => {
+                  setBetAmount(Number(e.target.value));
+                  setBbClicks(0);
+                }}
               />
 
               <div
