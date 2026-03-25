@@ -1,36 +1,84 @@
 import { type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
+import { useNavigate, useLocation } from "react-router-dom";
+import { Home } from "lucide-react";
 
 interface Props {
   children: ReactNode;
 }
 
 export default function Layout({ children }: Props) {
+  const { i18n } = useTranslation();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const currentLang = i18n.resolvedLanguage;
+  const toggleLanguage = () => {
+    i18n.changeLanguage(currentLang === "it" ? "en" : "it");
+  };
+
+  const showHomeBtn = location.pathname !== "/home" && location.pathname !== "/";
+
   return (
     <div
       style={{
-        minHeight: "100vh",
-        backgroundColor: "#020617",
-        color: "#e2e8f0",
+        minHeight: "100dvh",
         display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontFamily:
-          "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        flexDirection: "column",
+        background: "radial-gradient(circle at center, #0f172a 0%, #000000 100%)",
+        color: "#e2e8f0",
+        fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
       }}
     >
-      <div style={{ width: "100%", maxWidth: "720px", padding: "1.5rem" }}>
-        <div
+      <header style={{ 
+        display: "flex", 
+        justifyContent: "flex-end", 
+        padding: "1.2rem 1.2rem 0 1.2rem", 
+        gap: "0.5rem",
+        zIndex: 10
+      }}>
+        {showHomeBtn && (
+          <button
+            onClick={() => navigate("/home")}
+            style={{
+              background: "rgba(15, 23, 42, 0.7)",
+              color: "#e2e8f0",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: "0.5rem",
+              padding: "0.4rem 0.6rem",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.5)"
+            }}
+            title="Home"
+          >
+            <Home size={18} />
+          </button>
+        )}
+
+        <button
+          onClick={toggleLanguage}
           style={{
-            backgroundColor: "rgba(15, 23, 42, 0.85)",
-            borderRadius: "1.25rem",
-            border: "1px solid #1e293b",
-            boxShadow: "0 20px 45px rgba(0, 0, 0, 0.5)",
-            padding: "1.5rem"
+            background: "rgba(15, 23, 42, 0.7)",
+            color: "#e2e8f0",
+            border: "1px solid rgba(255,255,255,0.1)",
+            borderRadius: "0.5rem",
+            padding: "0.4rem 0.7rem",
+            fontSize: "0.85rem",
+            cursor: "pointer",
+            fontWeight: 600,
+            boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.5)"
           }}
         >
-          {children}
-        </div>
-      </div>
+          {currentLang === "it" ? "🇮🇹 IT" : "🇬🇧 EN"}
+        </button>
+      </header>
+      
+      <main style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+        {children}
+      </main>
     </div>
   );
 }

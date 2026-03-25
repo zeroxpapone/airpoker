@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "../hooks/useAuth";
 import { createTable } from "../lib/firestoreApi";
 
@@ -18,6 +19,7 @@ const RANDOM_TABLE_NAMES = [
 export default function CreateTablePage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   const [name, setName] = useState("");
   const [initialStack, setInitialStack] = useState(200);
@@ -28,7 +30,7 @@ export default function CreateTablePage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   if (!user) {
-    return <p>Devi effettuare il login per creare un tavolo.</p>;
+    return <p>{t("createTable.errorNotLoggedIn")}</p>;
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -42,7 +44,7 @@ export default function CreateTablePage() {
         
       const id = await createTable(
         {
-          name: name.trim() || `Tavolo ${randomName}`,
+          name: name.trim() || `${t("createTable.randomPrefix")} ${randomName}`,
           initialStack,
           smallBlind,
           bigBlind,
@@ -53,7 +55,7 @@ export default function CreateTablePage() {
       navigate(`/table/${id}`);
     } catch (err: any) {
       console.error(err);
-      setErrorMsg(err.message || "Errore durante la creazione del tavolo.");
+      setErrorMsg(err.message || t("createTable.errorGeneric"));
     } finally {
       setLoading(false);
     }
@@ -62,11 +64,11 @@ export default function CreateTablePage() {
   return (
     <div
       style={{
-        minHeight: "100vh",
+        flex: 1,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: "1rem"
+        padding: "1rem 1rem 3rem 1rem"
       }}
     >
       <div
@@ -83,7 +85,7 @@ export default function CreateTablePage() {
         }}
       >
         <h1 style={{ fontSize: "1.4rem", fontWeight: 600 }}>
-          Crea un tavolo di AirPoker
+          {t("createTable.title")}
         </h1>
 
         <form
@@ -91,21 +93,21 @@ export default function CreateTablePage() {
           style={{ display: "grid", gap: "0.85rem" }}
         >
           <Field
-            label="Nome tavolo"
-            description="Es: Vigili @ Desio, Night Session, Fast Food, ecc."
+            label={t("createTable.nameLabel")}
+            description={t("createTable.nameDesc")}
           >
             <input
               style={inputStyle}
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Es: Vigili @ Desio"
+              placeholder={t("createTable.namePlaceholder")}
             />
           </Field>
 
           <Field
-            label="Stack iniziale"
-            description="Quante fiches virtuali ha ogni giocatore all'ingresso."
+            label={t("createTable.stackLabel")}
+            description={t("createTable.stackDesc")}
           >
             <input
               style={inputStyle}
@@ -124,7 +126,7 @@ export default function CreateTablePage() {
               gap: "0.75rem"
             }}
           >
-            <Field label="Small Blind">
+            <Field label={t("createTable.smallBlindLabel")}>
               <input
                 style={inputStyle}
                 type="text"
@@ -134,7 +136,7 @@ export default function CreateTablePage() {
                 onChange={(e) => setSmallBlind(Number(e.target.value))}
               />
             </Field>
-            <Field label="Big Blind">
+            <Field label={t("createTable.bigBlindLabel")}>
               <input
                 style={inputStyle}
                 type="text"
@@ -147,15 +149,15 @@ export default function CreateTablePage() {
           </div>
 
           <Field
-            label="Password tavolo (opzionale)"
-            description="Se vuoi limitare l'ingresso solo a chi conosce la password."
+            label={t("createTable.passwordLabel")}
+            description={t("createTable.passwordDesc")}
           >
             <input
               style={inputStyle}
               type="text"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Nessuna password"
+              placeholder={t("createTable.passwordPlaceholder")}
             />
           </Field>
 
@@ -180,7 +182,7 @@ export default function CreateTablePage() {
               fontSize: "0.95rem"
             }}
           >
-            {loading ? "Creazione in corso..." : "Crea tavolo"}
+            {loading ? t("createTable.creatingBtn") : t("createTable.submitBtn")}
           </button>
         </form>
       </div>

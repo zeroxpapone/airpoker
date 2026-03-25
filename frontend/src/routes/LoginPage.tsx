@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, Link } from "react-router-dom";
+import { useTranslation, Trans } from "react-i18next";
 
 export default function LoginPage() {
   const { login, loading } = useAuth();
+  const { t } = useTranslation();
   const [nickname, setNickname] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -17,7 +19,7 @@ export default function LoginPage() {
 
     const name = nickname.trim();
     if (!name) {
-      setErrorMsg("Devi scegliere un nickname per entrare.");
+      setErrorMsg(t("login.errorEmptyNickname"));
       return;
     }
 
@@ -35,7 +37,7 @@ export default function LoginPage() {
       // in base alla presenza di user.
     } catch (err: any) {
       console.error(err);
-      setErrorMsg(err?.message || "Errore durante il login.");
+      setErrorMsg(err?.message || t("login.errorGeneric"));
     } finally {
       setSubmitting(false);
     }
@@ -46,14 +48,12 @@ export default function LoginPage() {
   return (
     <div
       style={{
-    minHeight: "100vh",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background:
-      "radial-gradient(circle at top, #1e293b, #020617 55%, #000000)",
-    padding: "1rem"
-  }}
+        flex: 1,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "1rem 1rem 3rem 1rem"
+      }}
     >
       <div
     style={{
@@ -78,7 +78,7 @@ export default function LoginPage() {
               letterSpacing: "0.02em"
             }}
           >
-            AirPoker - Poker Online
+            {t("login.title")}
           </h1>
           <h2
             style={{
@@ -87,10 +87,8 @@ export default function LoginPage() {
               fontWeight: 400,
               color: "#9ca3af"
             }}
-          >
-            Texas Hold&apos;em tra amici, senza fiches.<br/> Solo carte e
-            telefoni. Gioca a poker gratis ora!
-          </h2>
+            dangerouslySetInnerHTML={{ __html: t("login.subtitle") }}
+          />
         </div>
 
         <div
@@ -103,14 +101,7 @@ export default function LoginPage() {
             color: "#e5e7eb"
           }}
         >
-          <p>
-            Scegli un{" "}
-            <span style={{ color: "#22c55e", fontWeight: 500 }}>
-              nickname
-            </span>{" "}
-            con cui gli altri ti vedranno al tavolo. Non servono email,
-            password o registrazioni!
-          </p>
+          <p dangerouslySetInnerHTML={{ __html: t("login.instructions") }} />
         </div>
 
         <form
@@ -125,7 +116,7 @@ export default function LoginPage() {
                 color: "#e5e7eb"
               }}
             >
-              Nickname
+              {t("login.nicknameLabel")}
             </label>
             <input
               style={{
@@ -138,7 +129,7 @@ export default function LoginPage() {
                 fontSize: "0.9rem"
               }}
               type="text"
-              placeholder="Es. Ciccions, Tira, Mishi..."
+              placeholder={t("login.nicknamePlaceholder")}
               value={nickname}
               onChange={(e) => setNickname(e.target.value)}
               autoComplete="off"
@@ -172,7 +163,7 @@ export default function LoginPage() {
               opacity: loading ? 0.7 : 1
             }}
           >
-            {submitting || loading ? "Connessione..." : "Entra in AirPoker"}
+            {submitting || loading ? t("login.connecting") : t("login.submitBtn")}
           </button>
         </form>
 
@@ -184,8 +175,10 @@ export default function LoginPage() {
             textAlign: "center"
           }}
         >
-          Dopo l&apos;accesso potrai creare un tavolo o unirti a quello di un
-          amico.
+          <Trans
+            i18nKey="login.footer"
+            components={{ termsLink: <Link to="/terms" style={{ color: "#38bdf8", textDecoration: "underline" }} /> }}
+          />
         </p>
       </div>
     </div>

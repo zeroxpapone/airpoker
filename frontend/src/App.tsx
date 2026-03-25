@@ -1,9 +1,13 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Routes, Route, Navigate, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "./hooks/useAuth";
 
+import Layout from "./components/Layout";
 import LoginPage from "./routes/LoginPage";
 import HomePage from "./routes/HomePage";
+import TermsPage from "./routes/TermsPage";
+import AboutPage from "./routes/AboutPage";
 
 const CreateTablePage = lazy(() => import("./routes/CreateTablePage"));
 const JoinTablePage = lazy(() => import("./routes/JoinTablePage"));
@@ -21,36 +25,52 @@ function ProtectedTableRoute() {
 
 function App() {
   const { user, loading } = useAuth();
+  const { i18n } = useTranslation();
+
+  useEffect(() => {
+    document.documentElement.lang = i18n.resolvedLanguage || "en";
+    const handleLanguageChange = (lng: string) => {
+      document.documentElement.lang = lng;
+    };
+    i18n.on("languageChanged", handleLanguageChange);
+    return () => {
+      i18n.off("languageChanged", handleLanguageChange);
+    };
+  }, [i18n]);
 
   if (loading) return <p>Caricamento</p>;
 
   // Return statement
   return (
     <Suspense fallback={<div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh", color: "#9ca3af" }}>Caricamento applicazione...</div>}>
-      <Routes>
-        <Route
-          path="/"
-          element={user ? <Navigate to="/home" replace /> : <LoginPage />}
-        />
-        <Route
-          path="/home"
-          element={user ? <HomePage /> : <Navigate to="/" replace />}
-        />
-        <Route
-          path="/create"
-          element={user ? <CreateTablePage /> : <Navigate to="/" replace />}
-        />
-        <Route
-          path="/join"
-          element={user ? <JoinTablePage /> : <Navigate to="/" replace />}
-        />
-        <Route
-          path="/table/:tableId"
-          element={<ProtectedTableRoute />}
-        />
-        {/* eventuale 404 */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <Layout>
+        <Routes>
+          <Route
+            path="/"
+            element={user ? <Navigate to="/home" replace /> : <LoginPage />}
+          />
+          <Route
+            path="/home"
+            element={user ? <HomePage /> : <Navigate to="/" replace />}
+          />
+          <Route
+            path="/create"
+            element={user ? <CreateTablePage /> : <Navigate to="/" replace />}
+          />
+          <Route
+            path="/join"
+            element={user ? <JoinTablePage /> : <Navigate to="/" replace />}
+          />
+          <Route
+            path="/table/:tableId"
+            element={<ProtectedTableRoute />}
+          />
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/about" element={<AboutPage />} />
+          {/* eventuale 404 */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Layout>
     </Suspense>
   );
 }

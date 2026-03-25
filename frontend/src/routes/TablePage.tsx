@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
+import { useTranslation } from "react-i18next";
 import {
   collection,
   doc,
@@ -33,6 +34,7 @@ interface TableData {
   bigBlind: number;
   hostId: string;
   currentHandId: string | null;
+  password?: string | null;
   createdAt?: any;
   endedAt?: any;
 }
@@ -58,6 +60,7 @@ interface ExtendedHandData extends HandData {
 
 export default function TablePage() {
   useWakeLock();
+  const { t } = useTranslation();
 
   const { tableId: rawTableId } = useParams();
   const tableId = rawTableId?.toLowerCase();
@@ -103,6 +106,7 @@ export default function TablePage() {
             bigBlind: data.bigBlind,
             hostId: data.hostId,
             currentHandId: data.currentHandId ?? null,
+            password: data.password ?? null,
             createdAt: data.createdAt ?? null,
             endedAt: data.endedAt ?? null
         });
@@ -517,11 +521,11 @@ async function handleEndGame() {
   async function confirmBet() {
     if (!canBetOrRaise || !myPlayer) return;
     if (!betAmount || betAmount <= myRoundBet) {
-      setActionError("Importo bet/raise non valido.");
+      setActionError(t("table.invalidBet"));
       return;
     }
     if (betAmount % 5 !== 0) {
-      setActionError("La puntata deve essere multipla di 5");
+      setActionError(t("table.betMultipleOf5"));
       return;
     }
     await doAction("BET", betAmount);
@@ -542,6 +546,8 @@ async function handleEndGame() {
       <span
         style={{
           marginLeft: "0.5rem",
+          flexShrink: 0,
+          whiteSpace: "nowrap",
           fontSize: "0.75rem",
           padding: "0.1rem 0.35rem",
           borderRadius: "999px",
@@ -556,7 +562,7 @@ async function handleEndGame() {
 
   function getSeatPosition(index: number, total: number) {
     const angle = (2 * Math.PI * index) / total - Math.PI / 2;
-    const radius = 40; // percentuale
+    const radius = 33; // Ridotto da 40 a 33 per lasciare più spazio laterale ai nomi
 
     const top = 50 + radius * Math.sin(angle);
     const left = 50 + radius * Math.cos(angle);
@@ -574,7 +580,7 @@ function toggleWinnerSelection(userId: string) {
   
   // Solo l'host può selezionare
   if (!isHost) {
-    setActionError("Solo l'host può confermare i vincitori.");
+    setActionError(t("table.hostOnlyWinner"));
     return;
   }
   
@@ -599,7 +605,7 @@ async function handleConfirmWinners() {
   }
   
   if (selectedWinners.length === 0) {
-    setActionError("Devi selezionare almeno un vincitore.");
+    setActionError(t("table.selectAtLeastOne"));
     return;
   }
   
@@ -621,7 +627,7 @@ async function handleConfirmWinners() {
     return (
       <div
       style={{
-        minHeight: "100vh",
+        minHeight: "100dvh",
         padding: "1rem",
         background:
           "radial-gradient(circle at top, #020617, #020617 40%, #000000)",
@@ -683,7 +689,7 @@ async function handleConfirmWinners() {
   }}
 >
   <span style={{ color: "#9ca3af" }}>
-    Giocatori: {players.length}
+    {t("table.lobbyPlayersCount", { count: players.length })}
   </span>
   <button
     onClick={handleLeaveTable}
@@ -697,17 +703,17 @@ async function handleConfirmWinners() {
       fontSize: "0.8rem"
     }}
   >
-    Esci dal tavolo
+    {t("table.leaveLobby")}
   </button>
 </div>
 
           <p style={{ fontSize: "0.9rem", color: "#cbd5f5" }}>
-            Bui: {table.smallBlind}/{table.bigBlind} • Stack iniziale:{" "}
-            {table.initialStack} • Stato: {table.state}
+            {t("table.blindsShort")} {table.smallBlind}/{table.bigBlind} • {t("table.startingStack")} {" "}
+            {table.initialStack} • {t("table.state")} {table.state}
           </p>
           {isHost && (
             <p style={{ fontSize: "0.85rem", color: "#a5b4fc" }}>
-              Sei l'host di questo tavolo.
+              {t("table.youAreHost")}
             </p>
           )}
 
@@ -726,8 +732,7 @@ async function handleConfirmWinners() {
               }}
             >
               <span>
-                Giocatori pronti: {players.filter((p) => p.isReady).length}/
-                {players.length}
+                {t("table.playersReady", { ready: players.filter((p) => p.isReady).length, total: players.length })}
               </span>
               <button
                 onClick={handleStartGame}
@@ -742,18 +747,18 @@ async function handleConfirmWinners() {
                   fontWeight: 600
                 }}
               >
-                Avvia partita
+                {t("table.lobbyStartGame")}
               </button>
             </div>
           )}
         </header>
 
         <section style={{ display: "grid", gap: "0.5rem" }}>
-          <h2 style={{ fontSize: "1.1rem", fontWeight: 600 }}>Giocatori</h2>
+          <h2 style={{ fontSize: "1.1rem", fontWeight: 600 }}>{t("table.lobbyPlayersTitle")}</h2>
 
           {players.length === 0 ? (
             <p style={{ fontSize: "0.9rem", color: "#cbd5f5" }}>
-              Nessun giocatore ancora seduto al tavolo.
+              {t("table.noPlayersYet")}
             </p>
           ) : (
             <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
@@ -777,9 +782,8 @@ async function handleConfirmWinners() {
                 >
                     <div>
                     <span style={{ fontWeight: 500, color: p.isSittingOut ? "#9ca3af" : "#e5e7eb" }}>
-                        {p.isSittingOut && <span style={{ color: "#facc15" }}>[Pausa] </span>}
+                        {p.isSittingOut && <span style={{ color: "#facc15" }}>{t("table.pauseBadge")}</span>}
                         {p.displayName}
-                        {isMe && " (tu)"}
                     </span>
                     {isHostPlayer && (
                         <span
@@ -789,7 +793,7 @@ async function handleConfirmWinners() {
                             color: "#facc15"
                         }}
                         >
-                        👑 Host
+                        {t("table.hostBadge")}
                         </span>
                     )}
                     <div
@@ -799,8 +803,8 @@ async function handleConfirmWinners() {
                         marginTop: "0.1rem"
                         }}
                     >
-                        Seat: {p.seatIndex} • Stack: {p.stack} •{" "}
-                        {p.isReady ? "Pronto ✅" : "Non pronto"}
+                        {t("table.seat")} {p.seatIndex} • {t("table.stack")} {p.stack} •{" "}
+                        {p.isReady ? `${t("table.ready")} ✅` : t("table.notReady")}
                     </div>
                     </div>
 
@@ -815,7 +819,7 @@ async function handleConfirmWinners() {
                             fontWeight: 600
                         }}
                         >
-                        {p.isReady ? "Non pronto" : "Pronto"}
+                        {p.isReady ? t("table.notReady") : t("table.ready")}
                         </button>
                     )}
 
@@ -825,7 +829,7 @@ async function handleConfirmWinners() {
                             onClick={() => handleMoveUp(index)}
                             disabled={index === 0}
                             style={smallButtonStyle}
-                            title="Sposta su"
+                            title={t("table.moveUp")}
                         >
                             ↑
                         </button>
@@ -833,7 +837,7 @@ async function handleConfirmWinners() {
                             onClick={() => handleMoveDown(index)}
                             disabled={index === players.length - 1}
                             style={smallButtonStyle}
-                            title="Sposta giù"
+                            title={t("table.moveDown")}
                         >
                             ↓
                         </button>
@@ -860,25 +864,30 @@ async function handleConfirmWinners() {
     return (
       <div
         style={{
-    display: "flex",
-    flexDirection: "column",
-    height: "100vh",
-    padding: "0.75rem",
-    gap: "0.75rem",
-    boxSizing: "border-box"
-  }}
+          position: "fixed",
+          top: 0, left: 0, right: 0, bottom: 0,
+          display: "flex",
+          flexDirection: "column",
+          padding: "0.5rem",
+          paddingBottom: "max(env(safe-area-inset-bottom), 0.5rem)",
+          gap: "0.5rem",
+          boxSizing: "border-box",
+          overflow: "hidden",
+          background: "radial-gradient(circle at center, #0f172a 0%, #000000 100%)",
+          color: "#e5e7eb"
+        }}
       >
         <header style={{ display: "grid", gap: "0.25rem" }}>
           <h1 style={{ fontSize: "1.3rem", fontWeight: 600 }}>
             {table.name}
           </h1>
           <p style={{ fontSize: "0.85rem", color: "#cbd5f5" }}>
-            Mano #{currentHand?.handNumber ?? "-"} •{" "}
-            {currentHand?.stage ?? "N/A"} • Pot: {currentHand?.pot ?? 0} •
-            Puntata attuale: {currentHand?.currentBet ?? 0}
+            {t("table.hand")} #{currentHand?.handNumber ?? "-"} •{" "}
+            {currentHand?.stage ?? "N/A"} • {t("table.pot")}: {currentHand?.pot ?? 0} •{" "}
+            {t("table.currentBet")}: {currentHand?.currentBet ?? 0}
           </p>
           <p style={{ fontSize: "0.8rem", color: "#9ca3af" }}>
-            Bui {table?.smallBlind}/{table?.bigBlind}
+            {t("table.blinds")} {table?.smallBlind}/{table?.bigBlind}
           </p>
           <div
             style={{
@@ -904,7 +913,7 @@ async function handleConfirmWinners() {
                   opacity: disableSitToggle ? 0.5 : 1
                 }}
               >
-                {myPlayer?.isSittingOut ? "Siediti al tavolo" : "Alzati dal tavolo"}
+                {myPlayer?.isSittingOut ? t("table.sitDown") : t("table.standUp")}
               </button>
 
               {isHost && (
@@ -922,7 +931,7 @@ async function handleConfirmWinners() {
                     fontWeight: 600
                   }}
                 >
-                  Termina partita
+                  {t("table.endGame")}
                 </button>
               )}
             </div>
@@ -932,24 +941,26 @@ async function handleConfirmWinners() {
 
         <main
           style={{
-    flex: 1,
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    overflow: "hidden"
-  }}
+            flex: 1,
+            minHeight: 0,
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            overflow: "hidden"
+          }}
         >
           <div
             style={{
               position: "relative",
-              width: "min(600px, 100%)",
+              width: "min(100%, 600px)",
+              maxHeight: "100%",
               aspectRatio: "1 / 1",
               borderRadius: "999px",
-              background:
-                "radial-gradient(circle at 30% 30%, #1f2937, #020617)",
+              background: "radial-gradient(circle at 30% 30%, #1f2937, #020617)",
               border: "2px solid #1e293b",
               boxShadow: "0 0 30px rgba(15,23,42,0.8)",
-              padding: "1rem"
+              padding: "1rem",
+              boxSizing: "border-box"
             }}
           >
             {/* Testo centrale: turno */}
@@ -974,15 +985,13 @@ async function handleConfirmWinners() {
 
   <div style={{ fontSize: "0.9rem", color: "#e5e7eb" }}>
     {isMyTurn
-      ? "È il TUO turno"
+      ? t("table.yourTurn")
       : currentHand &&
         currentHand.currentTurnIndex != null &&
         currentHand.currentTurnIndex >= 0 &&
         players[currentHand.currentTurnIndex]
-      ? `Turno di ${
-          players[currentHand.currentTurnIndex].displayName
-        }`
-      : "In attesa..."}
+      ? t("table.turnOf", { name: players[currentHand.currentTurnIndex].displayName })
+      : t("table.waitingTurn")}
   </div>
 
   {isHost && currentHand && currentHand.currentTurnIndex === -1 && (
@@ -1008,7 +1017,7 @@ async function handleConfirmWinners() {
             cursor: "pointer"
           }}
         >
-          Prosegui ({currentHand.stage} completato)
+          {t("table.continue", { stage: currentHand.stage })}
         </button>
       )}
 
@@ -1026,7 +1035,7 @@ async function handleConfirmWinners() {
             cursor: "pointer"
           }}
         >
-          Prossima mano
+          {t("table.nextHand")}
         </button>
       )}
     </div>
@@ -1048,7 +1057,7 @@ async function handleConfirmWinners() {
         cursor: selectedWinners.length > 0 ? "pointer" : "default"
       }}
     >
-      Conferma vincitor{selectedWinners.length > 1 ? "i" : "e"} ({selectedWinners.length})
+      {selectedWinners.length > 1 ? t("table.confirmWinners") : t("table.confirmWinner")} ({selectedWinners.length})
     </button>
   )}
 </div>
@@ -1076,11 +1085,15 @@ async function handleConfirmWinners() {
                     top,
                     left,
                     transform: "translate(-50%, -50%)",
-                    minWidth: "50px",
+                    minWidth: "75px",
+                    maxWidth: "140px", // Aumentato da 110px a 140px per nomi più lunghi
+                    zIndex: 10
                   }}
                 >
                     <div
                       style={{
+                        width: "100%",
+                        boxSizing: "border-box",
                         borderRadius: "999px",
                         padding: "0.4rem 0.6rem",
                         backgroundColor: isMe
@@ -1107,21 +1120,25 @@ async function handleConfirmWinners() {
                         }
                       }}
                     >
-                    <div style={{ display: "flex", alignItems: "center" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", gap: "0.4rem" }}>
                       <span
                         style={{
                           fontWeight: 500,
-                          color: p.isSittingOut ? "#9ca3af" : p.isFolded ? "#6b7280" : "#e5e7eb",
+                          color: p.isSittingOut ? "#9ca3af" : p.isFolded ? "#6b7280" : isMe ? "#4ade80" : "#e5e7eb",
                           textDecoration: p.isFolded && !p.isSittingOut
                             ? "line-through"
-                            : "none"
+                            : "none",
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          flexShrink: 1,
+                          textAlign: "left"
                         }}
                       >
-                        {p.isSittingOut && <span style={{ color: "#facc15" }}>[Pausa] </span>}
+                        {p.isSittingOut && <span style={{ color: "#facc15", paddingRight: "0.2rem" }}>{t("table.pauseBadge")}</span>}
                         {p.displayName}
-                        {isMe && " (tu)"}
-                        {renderRoleBadges(index)}
                       </span>
+                      {renderRoleBadges(index)}
                     </div>
                     <div
                       style={{
@@ -1131,9 +1148,9 @@ async function handleConfirmWinners() {
                       }}
                     >
                       {p.stack} • {roundBet}
-                      {p.isFolded && " • Foldato"}
+                      {p.isFolded && ` • ${t("table.folded")}`}
                       {votingOpen && myVoteTargetId === p.userId &&
-                        " • (tua scelta)"}
+                        ` • ${t("table.yourChoice")}`}
                     </div>
                   </div>
                 </div>
@@ -1148,7 +1165,8 @@ async function handleConfirmWinners() {
             display: "grid",
             gap: "0.5rem",
             paddingTop: "0.5rem",
-            borderTop: "1px solid #1e293b"
+            borderTop: "1px solid #1e293b",
+            flexShrink: 0
           }}
         >
           {hasWinner && (
@@ -1173,21 +1191,21 @@ async function handleConfirmWinners() {
                 {currentHand?.winnerIds && currentHand.winnerIds.length > 1 ? (
                   // Più vincitori (split pot)
                   <>
-                    Vincitori della mano (split pot):{" "}
+                    {t("table.winnerSplit")} {" "}
                     <strong>
                       {currentHand.winnerIds
-                        .map(wId => players.find(p => p.userId === wId)?.displayName || "Sconosciuto")
+                        .map(wId => players.find(p => p.userId === wId)?.displayName || t("table.unknown"))
                         .join(", ")}
                     </strong>
                   </>
                 ) : (
                   // Singolo vincitore
                   <>
-                    Vincitore della mano:{" "}
+                    {t("table.winnerSingle")} {" "}
                     <strong>
                       {(
                         players.find((p) => p.userId === currentHand.winnerId)
-                          ?.displayName || "Sconosciuto"
+                          ?.displayName || t("table.unknown")
                       )}
                     </strong>
                   </>
@@ -1207,7 +1225,7 @@ async function handleConfirmWinners() {
                     cursor: "pointer"
                   }}
                 >
-                  Prossima mano
+                  {t("table.nextHand")}
                 </button>
               )}
             </div>
@@ -1234,9 +1252,9 @@ async function handleConfirmWinners() {
                 color: "#cbd5f5"
               }}
             >
-              <span>Pot: {currentHand?.pot ?? 0}</span>
+              <span>{t("table.pot")}: {currentHand?.pot ?? 0}</span>
               <span>
-                Puntata corrente: {currentHand?.currentBet ?? 0} • La tua:{" "}
+                {t("table.currentBet")}: {currentHand?.currentBet ?? 0} • {t("table.yours")}:{" "}
                 {showBetPanel ? (
                   <span style={{ color: "#22c55e", fontWeight: "bold" }}>
                     {betAmount}
@@ -1297,11 +1315,11 @@ async function handleConfirmWinners() {
                   }}
                 >
                   {!isMyTurn
-                    ? "In attesa..."
+                    ? t("table.waitingTurn")
                     : canCall
-                    ? `Call ${diffToCall}`
+                    ? `${t("table.call")} ${diffToCall}`
                     : canCheck
-                    ? "Check"
+                    ? t("table.check")
                     : "—"}
                 </button>
 
@@ -1315,7 +1333,7 @@ async function handleConfirmWinners() {
                       isMyTurn && canBetOrRaise ? "#22c55e" : "#4b5563"
                   }}
                 >
-                  {currentBet === 0 && myRoundBet === 0 ? "Bet" : "Raise"}
+                  {currentBet === 0 && myRoundBet === 0 ? t("table.bet") : t("table.raise")}
                 </button>
               </div>
             )}
@@ -1343,7 +1361,7 @@ async function handleConfirmWinners() {
                 }}
               >
                 <span>
-                  Raise: <strong>{betAmount - (currentHand?.currentBet ?? 0)}</strong>
+                  {t("table.raise")}: <strong>{betAmount - (currentHand?.currentBet ?? 0)}</strong>
                 </span>
                 <span style={{ color: "#9ca3af" }}>
                   Stack: {myPlayer.stack}
@@ -1410,7 +1428,7 @@ async function handleConfirmWinners() {
                     cursor: "pointer"
                   }}
                 >
-                  Annulla
+                  {t("table.cancel")}
                 </button>
                 <button
                   onClick={confirmBet}
@@ -1427,7 +1445,7 @@ async function handleConfirmWinners() {
                     cursor: "pointer"
                   }}
                 >
-                  Metti nel piatto
+                  {t("table.putInPot")}
                 </button>
               </div>
             </div>
@@ -1463,7 +1481,7 @@ async function handleConfirmWinners() {
   return (
     <div
       style={{
-        minHeight: "100vh",
+        minHeight: "100dvh",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -1485,7 +1503,7 @@ async function handleConfirmWinners() {
       >
         <header style={{ display: "grid", gap: "0.25rem" }}>
           <h2 style={{ fontSize: "1.4rem", fontWeight: 600 }}>
-            Riepilogo partita
+            {t("table.summaryTitle")}
           </h2>
           <p style={{ fontSize: "0.9rem", color: "#9ca3af" }}>
             Tavolo:{" "}
@@ -1503,10 +1521,10 @@ async function handleConfirmWinners() {
             color: "#e5e7eb"
           }}
         >
-          <div>Durata sessione: {durata}</div>
-          <div>Mani giocate: {handsPlayed}</div>
+          <div>{t("table.sessionDuration")}: {durata}</div>
+          <div>{t("table.handsPlayed")}: {handsPlayed}</div>
           <div style={{ fontSize: "0.8rem", color: "#9ca3af" }}>
-            Le statistiche avanzate (percentuali di vittoria, ecc.) verranno implementate in futuro.
+            {t("table.summaryDisclaimer")}
           </div>
         </div>
 
@@ -1518,7 +1536,7 @@ async function handleConfirmWinners() {
               marginBottom: "0.4rem"
             }}
           >
-            Stack finali
+            {t("table.finalStacks")}
           </h3>
           <ul
             style={{
@@ -1592,7 +1610,7 @@ async function handleConfirmWinners() {
             fontSize: "0.95rem"
           }}
         >
-          Torna alla home
+          {t("table.backHome")}
         </button>
       </div>
     </div>
@@ -1601,6 +1619,8 @@ async function handleConfirmWinners() {
 
   
   // ---------- RENDER ROOT ----------
+
+  const inviteLink = `${window.location.origin}/join?tableId=${tableId}${table?.password ? `&pwd=${table.password}` : ""}`;
 
   const modalUI = showShareModal && (
     <div style={{
@@ -1614,23 +1634,35 @@ async function handleConfirmWinners() {
         textAlign: "center", maxWidth: "340px", width: "90%",
         boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.7)"
       }}>
-        <h2 style={{ fontSize: "1.4rem", margin: 0, color: "#e2e8f0" }}>Invita al tavolo</h2>
+        <h2 style={{ fontSize: "1.4rem", margin: 0, color: "#e2e8f0" }}>{t("table.invite")}</h2>
         <div style={{ background: "white", padding: "1.2rem", borderRadius: "1rem", display: "inline-block", margin: "0 auto" }}>
-          <QRCodeSVG value={`${window.location.origin}/table/${tableId}`} size={200} />
+          <QRCodeSVG value={inviteLink} size={200} />
         </div>
         <p style={{ margin: 0, fontSize: "0.9rem", color: "#9ca3af" }}>
-          Copia il link qui sotto o fai inquadrare questo QR ai tuoi amici.
+          {t("table.inviteDesc")}
         </p>
         <button 
-          onClick={() => {
-            navigator.clipboard.writeText(`${window.location.origin}/table/${tableId}`);
-            alert("Link copiato negli appunti!");
+          onClick={async () => {
+            if (navigator.share) {
+              try {
+                await navigator.share({
+                  title: 'AirPoker',
+                  text: t("table.inviteDesc"),
+                  url: inviteLink,
+                });
+              } catch (e) {
+                console.error("Condivisione annullata o fallita", e);
+              }
+            } else {
+              navigator.clipboard.writeText(inviteLink);
+              alert(t("table.linkCopied"));
+            }
           }}
           style={{
             background: "linear-gradient(135deg, #3b82f6, #2563eb)", color: "#ffffff", border: "none", padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontWeight: 700, fontSize: "0.95rem"
           }}
         >
-          Copia Link
+          {typeof navigator.share === "function" ? t("table.shareLink") : t("table.copyLink")}
         </button>
         <button 
           onClick={() => setShowShareModal(false)}
@@ -1638,7 +1670,7 @@ async function handleConfirmWinners() {
             background: "transparent", color: "#9ca3af", border: "none", padding: "0.5rem", cursor: "pointer", fontWeight: 600, fontSize: "0.9rem"
           }}
         >
-          Chiudi
+          {t("table.close")}
         </button>
       </div>
     </div>
@@ -1647,7 +1679,7 @@ async function handleConfirmWinners() {
 if (inLobby) return <>{renderLobby()}{modalUI}</>;
 if (inGame) return <>{renderGame()}{modalUI}</>;
 if (inSummary) return <>{renderSummary()}{modalUI}</>;
-return <p>Stato tavolo non supportato.</p>;
+return <p>{t("table.unsupportedState")}</p>;
 }
 
 const smallButtonStyle: React.CSSProperties = {

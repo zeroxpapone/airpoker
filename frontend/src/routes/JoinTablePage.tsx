@@ -1,20 +1,32 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "../hooks/useAuth";
 import { joinTable } from "../lib/firestoreApi";
+import { Camera, X } from "lucide-react";
+import { Scanner } from '@yudiel/react-qr-scanner';
 
 export default function JoinTablePage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { t } = useTranslation();
 
   const [tableId, setTableId] = useState(() => searchParams.get("tableId") || "");
-  const [password, setPassword] = useState("");
+  const [password, setPassword] = useState(() => searchParams.get("pwd") || "");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+
+  useEffect(() => {
+    const tid = searchParams.get("tableId");
+    const pwd = searchParams.get("pwd");
+    if (tid) setTableId(tid);
+    if (pwd) setPassword(pwd);
+  }, [searchParams]);
 
   if (!user) {
-    return <p>Devi effettuare il login per entrare in un tavolo.</p>;
+    return <p>{t("joinTable.errorNotLoggedIn")}</p>;
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -27,7 +39,7 @@ export default function JoinTablePage() {
       navigate(`/table/${tableId.trim()}`);
     } catch (err: any) {
       console.error(err);
-      setErrorMsg(err.message || "Errore durante l'ingresso al tavolo.");
+      setErrorMsg(err.message || t("joinTable.errorGeneric"));
     } finally {
       setLoading(false);
     }
@@ -36,11 +48,11 @@ export default function JoinTablePage() {
   return (
     <div
       style={{
-        minHeight: "100vh",
+        flex: 1,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: "1rem"
+        padding: "1rem 1rem 3rem 1rem"
       }}
     >
       <div
@@ -57,31 +69,91 @@ export default function JoinTablePage() {
         }}
       >
         <h1 style={{ fontSize: "1.4rem", fontWeight: 600 }}>
-          Entra in un tavolo di Poker Gratis
+          {t("joinTable.title")}
         </h1>
 
-        <form
-          onSubmit={handleSubmit}
-          style={{ display: "grid", gap: "0.85rem" }}
-        >
-          <Field label="ID Tavolo">
-            <input
-              style={inputStyle}
-              type="text"
-              value={tableId}
-              onChange={(e) => setTableId(e.target.value.toLowerCase())}
-              placeholder="Es: a1b2c"
-              required
-            />
+        {isScanning ? (
+          <div style={{ display: "grid", gap: "1rem" }}>
+            <div style={{ borderRadius: "1rem", overflow: "hidden", border: "1px solid #3b82f6", backgroundColor: "#000" }}>
+              <Scanner
+                onScan={(detectedCodes) => {
+                  if (detectedCodes && detectedCodes.length > 0) {
+                    const val = detectedCodes[0].rawValue;
+                    if (val) {
+                      try {
+                        const url = new URL(val);
+                        const tId = url.searchParams.get("tableId");
+                        const pwd = url.searchParams.get("pwd");
+                        if (tId) {
+                          setTableId(tId);
+                          if (pwd) setPassword(pwd);
+                        } else if (val.includes("/table/")) {
+                          const extractedId = url.pathname.split("/table/")[1].replace(/\//g, "");
+                          setTableId(extractedId);
+                        } else {
+                          setTableId(val);
+                        }
+                      } catch (e) {
+                         setTableId(val);
+                      }
+                      setIsScanning(false);
+                    }
+                  }
+                }}
+                onError={(error: unknown) => {
+                  console.error("Camera error:", error);
+                  const msg = error instanceof Error ? error.message : String(error);
+                  setErrorMsg(msg || "Impossibile accedere alla fotocamera: assicurati di usare HTTPS o di aver concesso i permessi al browser.");
+                }}
+              />
+            </div>
+            <button
+              onClick={() => setIsScanning(false)}
+              style={{
+                width: "100%", padding: "0.7rem", borderRadius: "999px",
+                border: "1px solid #f97373", backgroundColor: "transparent",
+                color: "#f97373", fontWeight: 600, display: "flex", justifyContent: "center", alignItems: "center", gap: "0.4rem"
+              }}
+            >
+              <X size={18} /> {t("joinTable.cancelScanBtn")}
+            </button>
+          </div>
+        ) : (
+          <form
+            onSubmit={handleSubmit}
+            style={{ display: "grid", gap: "0.85rem" }}
+          >
+            <button
+              type="button"
+              onClick={() => setIsScanning(true)}
+              style={{
+                width: "100%", padding: "0.7rem", borderRadius: "999px",
+                border: "1px solid #4ade80", backgroundColor: "rgba(74, 222, 128, 0.1)",
+                color: "#4ade80", fontWeight: 600, display: "flex", justifyContent: "center", alignItems: "center", gap: "0.5rem",
+                marginBottom: "0.5rem"
+              }}
+            >
+              <Camera size={18} /> {t("joinTable.scanQrBtn")}
+            </button>
+
+            <Field label={t("joinTable.tableIdLabel")}>
+              <input
+                style={inputStyle}
+                type="text"
+                value={tableId}
+                onChange={(e) => setTableId(e.target.value.toLowerCase())}
+                placeholder={t("joinTable.tableIdPlaceholder")}
+                required
+              />
           </Field>
 
-          <Field label="Password (se richiesta)">
+          <Field label={t("joinTable.passwordLabel")}>
             <input
               style={inputStyle}
               type="text"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Lascia vuoto se non serve"
+              placeholder={t("joinTable.passwordPlaceholder")}
             />
           </Field>
 
@@ -106,9 +178,10 @@ export default function JoinTablePage() {
               fontSize: "0.95rem"
             }}
           >
-            {loading ? "Ingresso in corso..." : "Entra nel tavolo"}
+            {loading ? t("joinTable.joiningBtn") : t("joinTable.submitBtn")}
           </button>
         </form>
+        )}
 
         <p
           style={{
@@ -116,8 +189,7 @@ export default function JoinTablePage() {
             color: "#9ca3af"
           }}
         >
-          Suggerimento: copia/incolla l&apos;ID che ti ha mandato l&apos;host
-          o scansiona il QR se in futuro lo abilitiamo.
+          {t("joinTable.hint")}
         </p>
       </div>
     </div>

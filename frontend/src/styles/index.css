@@ -10,6 +10,7 @@ body,
   margin: 0;
   padding: 0;
   height: 100%;
+  overscroll-behavior: none; /* Blocks pull-to-refresh and rubber-banding */
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
     "Segoe UI", sans-serif;
 }
