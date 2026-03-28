@@ -52,6 +52,7 @@ interface PlayerData {
   isFolded: boolean;
   isSittingOut?: boolean;
   isAllIn?: boolean;
+  totalBuyIn?: number;
 }
 
 interface ExtendedHandData extends HandData {
@@ -143,7 +144,8 @@ export default function TablePage() {
             userId: d.userId,
             isFolded: !!d.isFolded,
             isSittingOut: !!d.isSittingOut,
-            isAllIn: !!d.isAllIn
+            isAllIn: !!d.isAllIn,
+            totalBuyIn: d.totalBuyIn
           });
         });
         setPlayers(list);

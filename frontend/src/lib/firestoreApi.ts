@@ -178,6 +178,7 @@ export async function joinTable(tableId: string, user: User | null, password?: s
     userId: user.uid,
     displayName: user.displayName,
     stack: initialStack,
+    totalBuyIn: initialStack,
     seatIndex,
     isReady: false,
     isFolded: false,
