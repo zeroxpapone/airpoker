@@ -23,7 +23,9 @@ import {
   endGame,
   advanceStage,
   confirmWinners,
-  startNextHand
+  startNextHand,
+  addChips,
+  swapPlayerSeats
 } from "../lib/firestoreApi";
 
 interface TableData {
@@ -49,13 +51,16 @@ interface PlayerData {
   userId: string;
   isFolded: boolean;
   isSittingOut?: boolean;
+  isAllIn?: boolean;
 }
 
 interface ExtendedHandData extends HandData {
   votingOpen?: boolean;
   votes?: Record<string, string>;
   winnerId?: string | null;
-  winnerIds?: string[];  // ✅ Aggiungi questa riga
+  winnerIds?: string[];
+  pots?: import('../lib/firestoreApi').Pot[];
+  handContributions?: Record<string, number>;
 }
 
 export default function TablePage() {
@@ -81,6 +86,8 @@ export default function TablePage() {
   const [showBetPanel, setShowBetPanel] = useState(false);
   const [betAmount, setBetAmount] = useState<number>(0);
   const [bbClicks, setBbClicks] = useState<number>(0);
+  const [showSettings, setShowSettings] = useState(false);
+  const [rebuyAmounts, setRebuyAmounts] = useState<Record<string, number>>({});
 
   const navigate = useNavigate();
 
@@ -135,7 +142,8 @@ export default function TablePage() {
             isReady: d.isReady,
             userId: d.userId,
             isFolded: !!d.isFolded,
-            isSittingOut: !!d.isSittingOut
+            isSittingOut: !!d.isSittingOut,
+            isAllIn: !!d.isAllIn
           });
         });
         setPlayers(list);
@@ -197,7 +205,9 @@ export default function TablePage() {
           votingOpen: d.votingOpen ?? false,
           votes: d.votes || {},
           winnerId: d.winnerId ?? null,
-          winnerIds: d.winnerIds || [] 
+          winnerIds: d.winnerIds || [],
+          pots: d.pots || [],
+          handContributions: d.handContributions || {}
         };
         setCurrentHand(hand);
       },
@@ -256,8 +266,13 @@ export default function TablePage() {
   const currentBet = currentHand?.currentBet ?? 0;
   const diffToCall = Math.max(0, currentBet - myRoundBet);
 
-  const canCheck = isMyTurn && diffToCall === 0;
-  const canCall = isMyTurn && diffToCall > 0 && (myPlayer?.stack ?? 0) >= diffToCall;
+  const canCheck = isMyTurn && diffToCall === 0 && (myPlayer?.stack ?? 0) > 0;
+  // Permetti call anche se lo stack è inferiore al diffToCall (all-in parziale)
+  const canCall = isMyTurn && diffToCall > 0 && (myPlayer?.stack ?? 0) > 0;
+  // L'importo effettivo che il giocatore pagherà per callare (cappato allo stack disponibile)
+  const effectiveCallAmount = Math.min(diffToCall, myPlayer?.stack ?? 0);
+  // Indica se fare CALL svuoterebbe completamente lo stack (all-in)
+  const isGoingAllIn = canCall && effectiveCallAmount < diffToCall;
   const canBetOrRaise =
     isMyTurn && myPlayer && myPlayer.stack > 0 && currentHand != null;
 
@@ -272,8 +287,14 @@ export default function TablePage() {
     currentHand && user ? currentHand.votes?.[user.uid] ?? null : null;
 
   let disableSitToggle = false;
-  if (inGame && currentHand && !myPlayer?.isSittingOut) {
-    if (!myPlayer?.isFolded && !(currentHand.stage === "SHOWDOWN" && hasWinner)) {
+  if (inGame && currentHand) {
+    if (myPlayer?.isSittingOut) {
+      // Spettatore: non può sedersi durante la mano (solo tra una mano e l'altra)
+      const handOver = currentHand.stage === "SHOWDOWN" && hasWinner;
+      if (!handOver) {
+        disableSitToggle = true;
+      }
+    } else if (!myPlayer?.isFolded && !(currentHand.stage === "SHOWDOWN" && hasWinner)) {
       // Giocatore attivo: bloccato durante tutta la mano finché il vincitore non è assegnato
       disableSitToggle = true;
     }
@@ -596,7 +617,7 @@ function toggleWinnerSelection(userId: string) {
 }
 
 // Conferma i vincitori selezionati
-async function handleConfirmWinners() {
+async function handleConfirmWinners(potId: string) {
   if (!user || !tableId) return;
   if (!currentHand || !votingOpen) return;
   if (!isHost) {
@@ -610,12 +631,15 @@ async function handleConfirmWinners() {
   }
   
   try {
-    await confirmWinners(tableId, user, selectedWinners);
+    setActionLoading(true);
+    await confirmWinners(tableId, user, selectedWinners, potId);
     setSelectedWinners([]); // Reset selezione
     setActionError(null);
   } catch (err) {
     console.error(err);
     setActionError((err as any)?.message || "Errore durante la conferma dei vincitori.");
+  } finally {
+    setActionLoading(false);
   }
 }
 
@@ -655,7 +679,7 @@ async function handleConfirmWinners() {
             <h1 style={{ fontSize: "1.4rem", fontWeight: 600, margin: 0 }}>
               {table.name}{" "}
               <span style={{ fontSize: "0.9rem", opacity: 0.7 }}>
-                (ID: {tableId})
+                <br/>(ID: {tableId})
               </span>
             </h1>
             <button
@@ -861,6 +885,8 @@ async function handleConfirmWinners() {
   function renderGame() {
     if (!table) return null;
 
+    const activePot = currentHand?.pots?.find(p => !p.settled);
+
     return (
       <div
         style={{
@@ -886,6 +912,31 @@ async function handleConfirmWinners() {
             {currentHand?.stage ?? "N/A"} • {t("table.pot")}: {currentHand?.pot ?? 0} •{" "}
             {t("table.currentBet")}: {currentHand?.currentBet ?? 0}
           </p>
+          {/* Indicatore Side Pots — visibile solo quando esistono più pot */}
+          {currentHand?.pots && currentHand.pots.length > 1 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.3rem", marginTop: "0.1rem" }}>
+              {currentHand.pots.map((pot, i) => (
+                <span
+                  key={pot.id}
+                  style={{
+                    fontSize: "0.72rem",
+                    fontWeight: 600,
+                    padding: "0.15rem 0.5rem",
+                    borderRadius: "999px",
+                    backgroundColor: pot.settled ? "rgba(74,222,128,0.15)" : "rgba(251,191,36,0.15)",
+                    color: pot.settled ? "#4ade80" : "#fbbf24",
+                    border: `1px solid ${pot.settled ? "#4ade8055" : "#fbbf2455"}`
+                  }}
+                >
+                  {i === 0 ? "Main" : `Side ${i}`}: {pot.amount}
+                  {!pot.settled && pot.eligible.length > 0 && (
+                    <span style={{ opacity: 0.7, fontWeight: 400 }}> ({pot.eligible.length}👤)</span>
+                  )}
+                  {pot.settled && " ✓"}
+                </span>
+              ))}
+            </div>
+          )}
           <p style={{ fontSize: "0.8rem", color: "#9ca3af" }}>
             {t("table.blinds")} {table?.smallBlind}/{table?.bigBlind}
           </p>
@@ -934,6 +985,24 @@ async function handleConfirmWinners() {
                   {t("table.endGame")}
                 </button>
               )}
+              {isHost && inGame && (
+                <button
+                  onClick={() => setShowSettings(s => !s)}
+                  title="Impostazioni"
+                  style={{
+                    padding: "0.3rem 0.55rem",
+                    borderRadius: "999px",
+                    border: "1px solid #4b5563",
+                    backgroundColor: showSettings ? "#1e293b" : "transparent",
+                    color: "#94a3b8",
+                    cursor: "pointer",
+                    fontSize: "1rem",
+                    lineHeight: 1
+                  }}
+                >
+                  ⚙️
+                </button>
+              )}
             </div>
           </div>
 
@@ -942,6 +1011,7 @@ async function handleConfirmWinners() {
         <main
           style={{
             flex: 1,
+            position: "relative",
             minHeight: 0,
             display: "flex",
             justifyContent: "center",
@@ -949,6 +1019,125 @@ async function handleConfirmWinners() {
             overflow: "hidden"
           }}
         >
+          {/* ─── Pannello Impostazioni Host (Overlay a tutto schermo sul tavolo) ─── */}
+          {isHost && inGame && showSettings && (
+            <div style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 50,
+              padding: "1rem",
+              borderRadius: "0.75rem",
+              border: "1px solid #334155",
+              backgroundColor: "rgba(15,23,42,0.95)",
+              backdropFilter: "blur(12px)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "0.8rem",
+              overflowY: "auto",
+              margin: "0.5rem"
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontSize: "1rem", fontWeight: 700, color: "#e2e8f0" }}>
+                  ⚙️  {t("table.hostSettings")}
+                  {disableEndGame && (
+                    <span style={{ fontSize: "0.75rem", color: "#f97373", marginLeft: "0.5rem", fontWeight: 400 }}>
+                      {t("table.availableBetweenHands")}
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={() => setShowSettings(false)}
+                  style={{
+                    background: "transparent", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: "1.2rem"
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div style={{ display: "grid", gap: "0.6rem" }}>
+                {players.map((p, idx) => (
+                  <div key={p.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", padding: "0.5rem", backgroundColor: "rgba(30,41,59,0.5)", borderRadius: "0.5rem" }}>
+                    {/* Frecce per riordinare */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                      <button
+                        disabled={idx === 0 || disableEndGame}
+                        onClick={async () => {
+                          if (idx === 0 || !user) return;
+                          try { await swapPlayerSeats(tableId!, user, p.userId, players[idx - 1].userId); }
+                          catch (e: any) { setActionError(e.message); }
+                        }}
+                        style={{ padding: "0 0.4rem", fontSize: "0.7rem", cursor: idx === 0 || disableEndGame ? "default" : "pointer", opacity: idx === 0 || disableEndGame ? 0.3 : 1, background: "transparent", border: "1px solid #475569", borderRadius: "4px", color: "#e5e7eb" }}
+                      >▲</button>
+                      <button
+                        disabled={idx === players.length - 1 || disableEndGame}
+                        onClick={async () => {
+                          if (idx === players.length - 1 || !user) return;
+                          try { await swapPlayerSeats(tableId!, user, p.userId, players[idx + 1].userId); }
+                          catch (e: any) { setActionError(e.message); }
+                        }}
+                        style={{ padding: "0 0.4rem", fontSize: "0.7rem", cursor: idx === players.length - 1 || disableEndGame ? "default" : "pointer", opacity: idx === players.length - 1 || disableEndGame ? 0.3 : 1, background: "transparent", border: "1px solid #475569", borderRadius: "4px", color: "#e5e7eb" }}
+                      >▼</button>
+                    </div>
+
+                    {/* Nome e stack */}
+                    <span style={{ flex: 1, fontSize: "0.85rem", color: "#f8fafc", minWidth: "100px", fontWeight: 500 }}>
+                      {p.displayName} <span style={{ color: "#94a3b8", fontWeight: 400 }}>({p.stack})</span>
+                    </span>
+
+                    {/* Rebuy: disponibile solo se stack < BB */}
+                    {p.stack < (table?.bigBlind || 0) ? (
+                      <>
+                        <input
+                          type="number"
+                          min={5}
+                          step={5}
+                          placeholder="Rebuy"
+                          disabled={disableEndGame}
+                          value={rebuyAmounts[p.userId] ?? ""}
+                          onChange={e => setRebuyAmounts(prev => ({ ...prev, [p.userId]: Number(e.target.value) }))}
+                          style={{
+                            width: "75px", padding: "0.35rem 0.5rem", borderRadius: "0.4rem",
+                            border: "1px solid #475569", backgroundColor: "#0f172a",
+                            color: "#f8fafc", fontSize: "0.85rem",
+                            opacity: disableEndGame ? 0.5 : 1
+                          }}
+                        />
+                        <button
+                          disabled={disableEndGame || !rebuyAmounts[p.userId] || rebuyAmounts[p.userId] <= 0 || actionLoading}
+                          onClick={async () => {
+                            const amount = rebuyAmounts[p.userId];
+                            if (!amount || !user) return;
+                            setActionLoading(true);
+                            try {
+                              await addChips(tableId!, user, p.userId, amount);
+                              setRebuyAmounts(prev => { const n = { ...prev }; delete n[p.userId]; return n; });
+                            } catch (e: any) { setActionError(e.message); }
+                            finally { setActionLoading(false); }
+                          }}
+                          style={{
+                            padding: "0.35rem 0.7rem", borderRadius: "999px", border: "none",
+                            backgroundColor: rebuyAmounts[p.userId] > 0 && !disableEndGame ? "#3b82f6" : "#475569",
+                            color: "#fff", fontSize: "0.8rem", fontWeight: 600,
+                            cursor: rebuyAmounts[p.userId] > 0 && !disableEndGame ? "pointer" : "default",
+                            opacity: disableEndGame ? 0.5 : 1
+                          }}
+                        >+ Chips</button>
+                      </>
+                    ) : (
+                      <span style={{ fontSize: "0.8rem", color: "#94a3b8", fontStyle: "italic", marginLeft: "auto" }}>
+                        {t("table.stackOk")}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div
             style={{
               position: "relative",
@@ -1042,23 +1231,33 @@ async function handleConfirmWinners() {
   )}
   
   {currentHand?.stage === "SHOWDOWN" && votingOpen && isHost && (
-    <button
-      onClick={handleConfirmWinners}
-      disabled={selectedWinners.length === 0}
-      style={{
-        marginTop: "0.5rem",
-        padding: "0.5rem 1rem",
-        borderRadius: "999px",
-        border: "none",
-        backgroundColor: selectedWinners.length > 0 ? "#22c55e" : "#4b5563",
-        color: "#020617",
-        fontSize: "0.85rem",
-        fontWeight: 600,
-        cursor: selectedWinners.length > 0 ? "pointer" : "default"
-      }}
-    >
-      {selectedWinners.length > 1 ? t("table.confirmWinners") : t("table.confirmWinner")} ({selectedWinners.length})
-    </button>
+    <div style={{ marginTop: "0.5rem" }}>
+      {activePot && (
+        <div style={{ fontSize: "0.75rem", color: "#facc15", marginBottom: "0.2rem" }}>
+          {currentHand.pots?.length && currentHand.pots.length > 1 
+            ? `Assegna Main/Side Pot (${activePot.amount})`
+            : `Assegna Pot (${activePot.amount})`
+          }
+        </div>
+      )}
+      <button
+        onClick={() => handleConfirmWinners(activePot?.id || "")}
+        disabled={selectedWinners.length === 0 || actionLoading}
+        style={{
+          padding: "0.5rem 1rem",
+          borderRadius: "999px",
+          border: "none",
+          backgroundColor: selectedWinners.length > 0 ? "#22c55e" : "#4b5563",
+          color: "#020617",
+          fontSize: "0.85rem",
+          fontWeight: 600,
+          cursor: selectedWinners.length > 0 ? "pointer" : "default",
+          opacity: actionLoading ? 0.7 : 1
+        }}
+      >
+        {selectedWinners.length > 1 ? t("table.confirmWinners") : t("table.confirmWinner")} ({selectedWinners.length})
+      </button>
+    </div>
   )}
 </div>
 
@@ -1077,6 +1276,10 @@ async function handleConfirmWinners() {
                   ? currentHand.roundBets[p.userId]
                   : 0;
 
+              const isEligibleForActivePot = activePot 
+                ? activePot.eligible.includes(p.userId) 
+                : (!p.isFolded && !p.isSittingOut);
+
               return (
                 <div
                   key={p.id}
@@ -1086,7 +1289,7 @@ async function handleConfirmWinners() {
                     left,
                     transform: "translate(-50%, -50%)",
                     minWidth: "75px",
-                    maxWidth: "140px", // Aumentato da 110px a 140px per nomi più lunghi
+                    maxWidth: "140px",
                     zIndex: 10
                   }}
                 >
@@ -1109,13 +1312,13 @@ async function handleConfirmWinners() {
                           : "0 0 8px rgba(15,23,42,0.6)",
                         fontSize: "0.7rem",
                         cursor:
-                          votingOpen && currentHand?.stage === "SHOWDOWN" && !p.isFolded && !p.isSittingOut
+                          votingOpen && currentHand?.stage === "SHOWDOWN" && isEligibleForActivePot
                             ? "pointer"
                             : "default",
-                        opacity: p.isSittingOut ? 0.4 : p.isFolded ? 0.6 : 1
+                        opacity: p.isSittingOut ? 0.4 : p.isFolded || (votingOpen && activePot && !isEligibleForActivePot) ? 0.6 : 1
                       }}
                       onClick={() => {
-                        if (votingOpen && currentHand?.stage === "SHOWDOWN" && !p.isFolded && !p.isSittingOut) {
+                        if (votingOpen && currentHand?.stage === "SHOWDOWN" && isEligibleForActivePot) {
                           toggleWinnerSelection(p.userId);
                         }
                       }}
@@ -1162,6 +1365,7 @@ async function handleConfirmWinners() {
         {/* Action bar in basso */}
         <footer
           style={{
+            position: "relative",
             display: "grid",
             gap: "0.5rem",
             paddingTop: "0.5rem",
@@ -1317,7 +1521,9 @@ async function handleConfirmWinners() {
                   {!isMyTurn
                     ? t("table.waitingTurn")
                     : canCall
-                    ? `${t("table.call")} ${diffToCall}`
+                    ? isGoingAllIn
+                      ? `ALL IN ${effectiveCallAmount}`
+                      : `${t("table.call")} ${effectiveCallAmount}`
                     : canCheck
                     ? t("table.check")
                     : "—"}
@@ -1506,7 +1712,7 @@ async function handleConfirmWinners() {
             {t("table.summaryTitle")}
           </h2>
           <p style={{ fontSize: "0.9rem", color: "#9ca3af" }}>
-            Tavolo:{" "}
+            {t("table.tableName")}:{" "}
             <span style={{ color: "#e5e7eb", fontWeight: 500 }}>
               {table.name}
             </span>
@@ -1548,7 +1754,8 @@ async function handleConfirmWinners() {
             }}
           >
             {players.map((p) => {
-              const diff = p.stack - (table?.initialStack || 0);
+              const totalInvested = (p as any).totalBuyIn || table?.initialStack || 0;
+              const diff = p.stack - totalInvested;
               const isPositive = diff > 0;
               const isNegative = diff < 0;
 
@@ -1568,27 +1775,25 @@ async function handleConfirmWinners() {
                   key={p.id}
                   style={{
                     display: "flex",
-                    justifyContent: "space-between",
-                    padding: "0.4rem 0.6rem",
+                    flexDirection: "column",
+                    gap: "0.3rem",
+                    padding: "0.5rem 0.8rem",
                     borderRadius: "0.5rem",
                     backgroundColor: "rgba(15,23,42,0.9)",
                     border: "1px solid #1e293b",
                     fontSize: "0.9rem"
                   }}
                 >
-                  <span>{p.displayName}</span>
-                  <span>
-                    {p.stack}{" "}
-                    <span
-                      style={{
-                        color: diffColor,
-                        fontSize: "0.8rem",
-                        marginLeft: "0.3rem"
-                      }}
-                    >
-                      • {diffText}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontWeight: 600, color: "#f8fafc" }}>{p.displayName}</span>
+                    <span style={{ fontSize: "1rem", color: diffColor, fontWeight: 700 }}>
+                      {t("table.netProfit")}: {diffText}
                     </span>
-                  </span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "#94a3b8" }}>
+                    <span>{t("table.invested")}: <strong style={{ color: "#e2e8f0" }}>{totalInvested}</strong></span>
+                    <span>{t("table.finalStack")}: <strong style={{ color: "#e2e8f0" }}>{p.stack}</strong></span>
+                  </div>
                 </li>
               );
             })}

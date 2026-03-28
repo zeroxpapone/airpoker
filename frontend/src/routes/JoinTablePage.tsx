@@ -72,10 +72,27 @@ export default function JoinTablePage() {
           {t("joinTable.title")}
         </h1>
 
+        {/* Avviso partita in corso */}
+        {searchParams.get("tableId") && (
+          <div style={{
+            padding: "0.6rem 0.8rem",
+            borderRadius: "0.6rem",
+            backgroundColor: "rgba(251,191,36,0.1)",
+            border: "1px solid rgba(251,191,36,0.3)",
+            fontSize: "0.8rem",
+            color: "#fbbf24",
+            lineHeight: 1.4
+          }}>
+            {t("joinTable.gameInProgressWarning")}
+          </div>
+        )}
+
         {isScanning ? (
           <div style={{ display: "grid", gap: "1rem" }}>
             <div style={{ borderRadius: "1rem", overflow: "hidden", border: "1px solid #3b82f6", backgroundColor: "#000" }}>
               <Scanner
+                sound={false}
+                components={{ torch: false }}
                 onScan={(detectedCodes) => {
                   if (detectedCodes && detectedCodes.length > 0) {
                     const val = detectedCodes[0].rawValue;

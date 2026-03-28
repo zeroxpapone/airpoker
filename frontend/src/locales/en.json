@@ -51,7 +51,8 @@
     "submitBtn": "Join Table",
     "hint": "Ask the table creator for the numeric ID and password (if required), or scan their invite QR code.",
     "scanQrBtn": "Scan Invite QR",
-    "cancelScanBtn": "Cancel Scanning"
+    "cancelScanBtn": "Cancel Scanning",
+    "gameInProgressWarning": "🟡 The game is already in progress. You will join as a spectator and can participate from the next hand."
   },
   "table": {
     "errorNotLoggedIn": "You must log in to view this table.",
@@ -75,6 +76,7 @@
     "currentBet": "Current bet",
     "blinds": "Blinds",
     "endGame": "End game",
+    "hostSettings": "Host Settings",
     "yourTurn": "It's YOUR turn",
     "turnOf": "{{name}}'s turn",
     "waitingTurn": "Waiting...",
@@ -99,6 +101,10 @@
     "handsPlayed": "Hands played",
     "summaryDisclaimer": "Advanced statistics (win percentages, etc.) will be implemented in the future.",
     "finalStacks": "Final Stacks",
+    "tableName": "Table",
+    "netProfit": "Net",
+    "invested": "Invested",
+    "finalStack": "Final",
     "backHome": "Back to home",
     "lobbyPlayersCount": "Players: {{count}}",
     "leaveLobby": "Leave table",
@@ -120,7 +126,9 @@
     "invalidBet": "Invalid bet/raise amount.",
     "betMultipleOf5": "Bet must be a multiple of 5.",
     "hostOnlyWinner": "Only the host can confirm winners.",
-    "selectAtLeastOne": "You must select at least one winner."
+    "selectAtLeastOne": "You must select at least one winner.",
+    "availableBetweenHands": "(available between hands)",
+    "stackOk": "Stack OK"
   },
   "terms": {
     "title": "Terms and Conditions",

@@ -75,6 +75,7 @@
     "currentBet": "Puntata attuale",
     "blinds": "Bui",
     "endGame": "Termina partita",
+    "hostSettings": "Impostazioni Host",
     "yourTurn": "È il TUO turno",
     "turnOf": "Turno di {{name}}",
     "waitingTurn": "In attesa...",
@@ -99,6 +100,10 @@
     "handsPlayed": "Mani giocate",
     "summaryDisclaimer": "Le statistiche avanzate (percentuali di vittoria, ecc.) verranno implementate in futuro.",
     "finalStacks": "Stack finali",
+    "tableName": "Tavolo",
+    "netProfit": "Netto",
+    "invested": "Investito",
+    "finalStack": "Finale",
     "backHome": "Torna alla home",
     "lobbyPlayersCount": "Giocatori: {{count}}",
     "leaveLobby": "Esci dal tavolo",
@@ -120,7 +125,9 @@
     "invalidBet": "Importo bet/raise non valido.",
     "betMultipleOf5": "La puntata deve essere multipla di 5.",
     "hostOnlyWinner": "Solo l'host può confermare i vincitori.",
-    "selectAtLeastOne": "Devi selezionare almeno un vincitore."
+    "selectAtLeastOne": "Devi selezionare almeno un vincitore.",
+    "availableBetweenHands": "(disponibile tra una mano e l'altra)",
+    "stackOk": "Stack OK"
   },
   "terms": {
     "title": "Termini e Condizioni",
