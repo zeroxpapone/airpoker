@@ -89,6 +89,8 @@ export default function TablePage() {
   const [bbClicks, setBbClicks] = useState<number>(0);
   const [showSettings, setShowSettings] = useState(false);
   const [rebuyAmounts, setRebuyAmounts] = useState<Record<string, number>>({});
+  const [showFoldConfirm, setShowFoldConfirm] = useState(false);
+  const [showEndGameConfirm, setShowEndGameConfirm] = useState(false);
 
   const navigate = useNavigate();
 
@@ -426,12 +428,13 @@ async function handleNextHand() {
 
 async function handleEndGame() {
   if (!isHost || !tableId) return;
-  const confirmEnd = window.confirm(
-    "Vuoi terminare la partita per tutti e vedere il riepilogo?"
-  );
-  if (!confirmEnd) return;
+  setShowEndGameConfirm(true);
+}
 
+async function confirmEndGameAction() {
+  if (!isHost || !tableId) return;
   try {
+    setShowEndGameConfirm(false);
     await endGame(tableId);
   } catch (err) {
     console.error(err);
@@ -496,7 +499,7 @@ async function handleEndGame() {
     setShowBetPanel(false);
   }
 
-  function applyQuickBet(type: "1BB" | "HALF_POT" | "POT") {
+  function applyQuickBet(type: "1BB" | "HALF_POT" | "POT" | "MAX") {
   if (!currentHand || !myPlayer || !table) return;
 
     const bb = table.bigBlind || 10;
@@ -526,6 +529,8 @@ async function handleEndGame() {
         const raiseAmt = potAfterCall;
         const roundedRaise = Math.floor(raiseAmt / 5) * 5;
         target = currentBet + roundedRaise;
+      } else if (type === "MAX") {
+        target = myMaxFinal;
       }
 
       // Nei calcoli Pot/Half-Pot, assicura che il rilancio raggiunga almeno il minimo legale
@@ -1472,9 +1477,8 @@ async function handleConfirmWinners(potId: string) {
             </div>
 
             {/* Pulsanti azione */}
-            {!showBetPanel && (
-              <div
-                style={{
+            <div
+              style={{
                   display: "flex",
                   gap: "0.5rem",
                   alignItems: "center"
@@ -1483,16 +1487,17 @@ async function handleConfirmWinners(potId: string) {
                 {/* Fold sempre disponibile se è il tuo turno */}
                 <button
                   disabled={!isMyTurn || actionLoading}
-                  onClick={() => doAction("FOLD")}
+                  onClick={() => setShowFoldConfirm(true)}
                   style={{
-                    ...circleActionButton,
+                    ...pillActionButton,
                     backgroundColor: 
                       isMyTurn 
-                        ? "#ef4444ff"
-                        : "#ef444473"
+                        ? "#ef4444"
+                        : "#ef444473",
+                    color: "#f8fafc"
                   }}
                 >
-                  F
+                  Fold
                 </button>
 
                 {/* Bottone centrale: Check o Call */}
@@ -1512,9 +1517,9 @@ async function handleConfirmWinners(potId: string) {
                         : "default",
                     backgroundColor:
                       isMyTurn && (canCheck || canCall)
-                        ? "#e5e7eb"
+                        ? (canCall ? "#f59e0b" : "#3b82f6")
                         : "#4b5563",
-                    color: "#020617",
+                    color: "#f8fafc",
                     fontWeight: 600,
                     fontSize: "0.9rem",
                     textAlign: "center"
@@ -1544,121 +1549,140 @@ async function handleConfirmWinners(potId: string) {
                   {currentBet === 0 && myRoundBet === 0 ? t("table.bet") : t("table.raise")}
                 </button>
               </div>
-            )}
           </div>
 
-          {/* pannello bet/raise */}
-          {showBetPanel && isMyTurn && myPlayer && (
+        </footer>
+        
+        {/* pannello bet/raise in sovraimpressione */}
+        {showBetPanel && isMyTurn && myPlayer && (
+          <div
+            style={{
+              position: "absolute",
+              bottom: 0,
+              left: 0,
+              right: 0,
+              zIndex: 60,
+              padding: "1.5rem",
+              paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))",
+              borderTopLeftRadius: "1.5rem",
+              borderTopRightRadius: "1.5rem",
+              borderTop: "1px solid #1e293b",
+              backgroundColor: "rgba(15,23,42,0.98)",
+              boxShadow: "0 -10px 40px rgba(0,0,0,0.8)",
+              display: "grid",
+              gap: "1.2rem"
+            }}
+          >
             <div
               style={{
-                marginTop: "0.5rem",
-                padding: "0.6rem 0.8rem",
-                borderRadius: "0.75rem",
-                border: "1px solid #1e293b",
-                backgroundColor: "rgba(15,23,42,0.95)",
                 display: "grid",
+                gridTemplateColumns: "1fr auto 1fr",
+                alignItems: "center",
+                fontSize: "0.95rem",
+                color: "#e5e7eb"
+              }}
+            >
+              <span style={{ textAlign: "left" }}>
+                {currentBet === 0 && myRoundBet === 0 ? t("table.bet") : t("table.raise")}: <strong>{betAmount - (currentHand?.currentBet ?? 0)}</strong>
+              </span>
+              <div style={{ textAlign: "center", color: "#22c55e", fontWeight: "bold", fontSize: "1.1rem" }}>
+                {t("table.totalBet")}: {betAmount}
+              </div>
+              <span style={{ textAlign: "right", color: "#9ca3af", fontSize: "0.9rem" }}>
+                Stack: {myPlayer.stack}
+              </span>
+            </div>
+
+            <input
+              type="range"
+              min={currentBet+5}
+              step={5}
+              max={myRoundBet + myPlayer.stack}
+              value={betAmount}
+              onChange={(e) => {
+                setBetAmount(Number(e.target.value));
+                setBbClicks(0);
+              }}
+              style={{ padding: "0.5rem 0" }}
+            />
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
                 gap: "0.5rem"
               }}
             >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  fontSize: "0.85rem",
-                  color: "#e5e7eb"
-                }}
+              <button
+                onClick={() => applyQuickBet("1BB")}
+                style={{ ...quickBetButtonStyle, padding: "0.6rem", fontSize: "0.9rem" }}
               >
-                <span>
-                  {t("table.raise")}: <strong>{betAmount - (currentHand?.currentBet ?? 0)}</strong>
-                </span>
-                <span style={{ color: "#9ca3af" }}>
-                  Stack: {myPlayer.stack}
-                </span>
-              </div>
-
-              <input
-                type="range"
-                min={currentBet+5}
-                step={5}
-                max={myRoundBet + myPlayer.stack}
-                value={betAmount}
-                onChange={(e) => {
-                  setBetAmount(Number(e.target.value));
-                  setBbClicks(0);
-                }}
-              />
-
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: "0.4rem"
-                }}
+                1 BB
+              </button>
+              <button
+                onClick={() => applyQuickBet("HALF_POT")}
+                style={{ ...quickBetButtonStyle, padding: "0.6rem", fontSize: "0.9rem" }}
               >
-                <button
-                  onClick={() => applyQuickBet("1BB")}
-                  style={quickBetButtonStyle}
-                >
-                  1 BB
-                </button>
-                <button
-                  onClick={() => applyQuickBet("HALF_POT")}
-                  style={quickBetButtonStyle}
-                >
-                  ½ Pot
-                </button>
-                <button
-                  onClick={() => applyQuickBet("POT")}
-                  style={quickBetButtonStyle}
-                >
-                  Pot
-                </button>
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: "0.5rem",
-                  marginTop: "0.3rem"
-                }}
+                ½ Pot
+              </button>
+              <button
+                onClick={() => applyQuickBet("POT")}
+                style={{ ...quickBetButtonStyle, padding: "0.6rem", fontSize: "0.9rem" }}
               >
-                <button
-                  onClick={closeBetPanel}
-                  style={{
-                    flex: 1,
-                    padding: "0.4rem 0.7rem",
-                    borderRadius: "0.5rem",
-                    border: "1px solid #4b5563",
-                    backgroundColor: "transparent",
-                    color: "#e5e7eb",
-                    fontSize: "0.85rem",
-                    cursor: "pointer"
-                  }}
-                >
-                  {t("table.cancel")}
-                </button>
-                <button
-                  onClick={confirmBet}
-                  disabled={actionLoading}
-                  style={{
-                    flex: 1,
-                    padding: "0.4rem 0.7rem",
-                    borderRadius: "0.5rem",
-                    border: "none",
-                    backgroundColor: "#22c55e",
-                    color: "#020617",
-                    fontWeight: 600,
-                    fontSize: "0.85rem",
-                    cursor: "pointer"
-                  }}
-                >
-                  {t("table.putInPot")}
-                </button>
-              </div>
+                Pot
+              </button>
+              <button
+                onClick={() => applyQuickBet("MAX")}
+                style={{ ...quickBetButtonStyle, padding: "0.6rem", fontSize: "0.9rem", color: "#f87171", fontWeight: 700 }}
+              >
+                All-In
+              </button>
             </div>
-          )}
-        </footer>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: "1rem",
+                marginTop: "0.5rem"
+              }}
+            >
+              <button
+                onClick={closeBetPanel}
+                style={{
+                  flex: 1,
+                  padding: "0.8rem 1rem",
+                  borderRadius: "999px",
+                  border: "1px solid #4b5563",
+                  backgroundColor: "transparent",
+                  color: "#e5e7eb",
+                  fontSize: "1rem",
+                  fontWeight: 600,
+                  cursor: "pointer"
+                }}
+              >
+                {t("table.cancel")}
+              </button>
+              <button
+                onClick={confirmBet}
+                disabled={actionLoading}
+                style={{
+                  flex: 1,
+                  padding: "0.8rem 1rem",
+                  borderRadius: "999px",
+                  border: "none",
+                  backgroundColor: "#22c55e",
+                  color: "#020617",
+                  fontWeight: 700,
+                  fontSize: "1rem",
+                  cursor: "pointer"
+                }}
+              >
+                {t("table.putInPot")}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -1882,10 +1906,84 @@ async function handleConfirmWinners(potId: string) {
       </div>
     </div>
   );
+  const foldConfirmModalUI = showFoldConfirm && (
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+      background: "rgba(2, 6, 23, 0.8)", backdropFilter: "blur(8px)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999
+    }}>
+      <div style={{
+        background: "rgba(15,23,42,0.95)", border: "1px solid #1e293b",
+        borderRadius: "1.5rem", padding: "2rem", display: "grid", gap: "1.5rem",
+        textAlign: "center", maxWidth: "340px", width: "90%",
+        boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.7)"
+      }}>
+        <h2 style={{ fontSize: "1.3rem", margin: 0, color: "#e2e8f0" }}>{t("table.confirmFold")}</h2>
+        
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.8rem", marginTop: "0.5rem" }}>
+          <button 
+            onClick={() => {
+              setShowFoldConfirm(false);
+              doAction("FOLD");
+            }}
+            style={{
+              background: "#ef4444", color: "#ffffff", border: "none", padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontWeight: 700, fontSize: "0.95rem"
+            }}
+          >
+            {t("table.foldYes")}
+          </button>
+          <button 
+            onClick={() => setShowFoldConfirm(false)}
+            style={{
+              background: "transparent", color: "#9ca3af", border: "1px solid #374151", padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontWeight: 600, fontSize: "0.95rem"
+            }}
+          >
+            {t("table.foldNo")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 
-if (inLobby) return <>{renderLobby()}{modalUI}</>;
-if (inGame) return <>{renderGame()}{modalUI}</>;
-if (inSummary) return <>{renderSummary()}{modalUI}</>;
+  const endGameConfirmModalUI = showEndGameConfirm && (
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+      background: "rgba(2, 6, 23, 0.8)", backdropFilter: "blur(8px)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999
+    }}>
+      <div style={{
+        background: "rgba(15,23,42,0.95)", border: "1px solid #1e293b",
+        borderRadius: "1.5rem", padding: "2rem", display: "grid", gap: "1.5rem",
+        textAlign: "center", maxWidth: "340px", width: "90%",
+        boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.7)"
+      }}>
+        <h2 style={{ fontSize: "1.3rem", margin: 0, color: "#e2e8f0" }}>{t("table.confirmEndGame")}</h2>
+        
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.8rem", marginTop: "0.5rem" }}>
+          <button 
+            onClick={confirmEndGameAction}
+            style={{
+              background: "#ef4444", color: "#ffffff", border: "none", padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontWeight: 700, fontSize: "0.95rem"
+            }}
+          >
+            {t("table.endGameYes")}
+          </button>
+          <button 
+            onClick={() => setShowEndGameConfirm(false)}
+            style={{
+              background: "transparent", color: "#9ca3af", border: "1px solid #374151", padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontWeight: 600, fontSize: "0.95rem"
+            }}
+          >
+            {t("table.endGameNo")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+if (inLobby) return <>{renderLobby()}{modalUI}{foldConfirmModalUI}{endGameConfirmModalUI}</>;
+if (inGame) return <>{renderGame()}{modalUI}{foldConfirmModalUI}{endGameConfirmModalUI}</>;
+if (inSummary) return <>{renderSummary()}{modalUI}{foldConfirmModalUI}{endGameConfirmModalUI}</>;
 return <p>{t("table.unsupportedState")}</p>;
 }
 
@@ -1899,20 +1997,6 @@ const smallButtonStyle: React.CSSProperties = {
   fontSize: "0.8rem"
 };
 
-const circleActionButton: React.CSSProperties = {
-  width: "38px",
-  height: "38px",
-  borderRadius: "999px",
-  border: "none",
-  cursor: "pointer",
-  backgroundColor: "#4b5563",
-  color: "#e5e7eb",
-  fontWeight: 700,
-  fontSize: "0.9rem",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center"
-};
 
 const pillActionButton: React.CSSProperties = {
   padding: "0.6rem 0.9rem",

@@ -128,7 +128,14 @@
     "hostOnlyWinner": "Only the host can confirm winners.",
     "selectAtLeastOne": "You must select at least one winner.",
     "availableBetweenHands": "(available between hands)",
-    "stackOk": "Stack OK"
+    "stackOk": "Stack OK",
+    "confirmFold": "Are you sure you want to fold?",
+    "foldYes": "Yes, fold",
+    "foldNo": "Cancel",
+    "confirmEndGame": "Are you sure you want to end the game and view the summary?",
+    "endGameYes": "Yes, end game",
+    "endGameNo": "Cancel",
+    "totalBet": "Total Bet"
   },
   "terms": {
     "title": "Terms and Conditions",

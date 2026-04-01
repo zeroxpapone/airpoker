@@ -127,7 +127,14 @@
     "hostOnlyWinner": "Solo l'host può confermare i vincitori.",
     "selectAtLeastOne": "Devi selezionare almeno un vincitore.",
     "availableBetweenHands": "(disponibile tra una mano e l'altra)",
-    "stackOk": "Stack OK"
+    "stackOk": "Stack OK",
+    "confirmFold": "Sei sicuro di voler foldare?",
+    "foldYes": "Sì, folda",
+    "foldNo": "Annulla",
+    "confirmEndGame": "Vuoi terminare la partita per tutti e vedere il riepilogo?",
+    "endGameYes": "Sì, termina",
+    "endGameNo": "Annulla",
+    "totalBet": "Puntata Totale"
   },
   "terms": {
     "title": "Termini e Condizioni",
