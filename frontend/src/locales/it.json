@@ -37,7 +37,18 @@
     "passwordDesc": "Se vuoi limitare l'ingresso solo a chi conosce la password.",
     "passwordPlaceholder": "Nessuna password",
     "creatingBtn": "Creazione in corso...",
-    "submitBtn": "Crea tavolo"
+    "submitBtn": "Crea tavolo",
+    "gameMode": "Modalità di Gioco",
+    "cashGame": "Cash Game",
+    "tournament": "Torneo",
+    "estimatedPlayers": "Giocatori Stimati",
+    "targetDuration": "Durata Desiderata (Ore)",
+    "levelDuration": "Durata Livello (Minuti)",
+    "blindSchedulePreview": "Anteprima Livelli Bui",
+    "simpleMode": "Modalità Semplice",
+    "expertMode": "Modalità Esperto",
+    "allowRebuys": "Permetti Rebuy / Add-on",
+    "allowRebuysDesc": "L'Host potrà assegnare fiches extra ai giocatori durante il torneo."
   },
   "joinTable": {
     "errorNotLoggedIn": "Devi effettuare il login per entrare in un tavolo.",
@@ -134,7 +145,12 @@
     "confirmEndGame": "Vuoi terminare la partita per tutti e vedere il riepilogo?",
     "endGameYes": "Sì, termina",
     "endGameNo": "Annulla",
-    "totalBet": "Puntata Totale"
+    "totalBet": "Puntata Totale",
+    "level": "Livello",
+    "nextLevel": "Prox",
+    "tournamentRebuyWarning": "Nota: Assegnare fiches in modalità torneo agirà come Rebuy/Add-on.",
+    "transferHost": "Passa Host",
+    "confirmTransferHost": "Sei sicuro di voler cedere il ruolo di Host a questo giocatore?"
   },
   "terms": {
     "title": "Termini e Condizioni",

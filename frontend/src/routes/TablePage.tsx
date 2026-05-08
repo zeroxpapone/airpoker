@@ -25,7 +25,8 @@ import {
   confirmWinners,
   startNextHand,
   addChips,
-  swapPlayerSeats
+  swapPlayerSeats,
+  transferHost
 } from "../lib/firestoreApi";
 
 interface TableData {
@@ -39,6 +40,10 @@ interface TableData {
   password?: string | null;
   createdAt?: any;
   endedAt?: any;
+  mode?: 'CASH' | 'TOURNAMENT';
+  tournamentConfig?: any; // To avoid importing types if not exported, using any or explicitly redefining
+  currentLevelIndex?: number;
+  levelStartedAt?: any;
 }
 
 
@@ -53,6 +58,7 @@ interface PlayerData {
   isSittingOut?: boolean;
   isAllIn?: boolean;
   totalBuyIn?: number;
+  eliminatedAt?: number;
 }
 
 interface ExtendedHandData extends HandData {
@@ -91,8 +97,57 @@ export default function TablePage() {
   const [rebuyAmounts, setRebuyAmounts] = useState<Record<string, number>>({});
   const [showFoldConfirm, setShowFoldConfirm] = useState(false);
   const [showEndGameConfirm, setShowEndGameConfirm] = useState(false);
+  const [transferHostConfirmTarget, setTransferHostConfirmTarget] = useState<string | null>(null);
+
+  const [timeRemainingStr, setTimeRemainingStr] = useState<string>("");
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const handleVisChange = () => {
+      if (document.visibilityState === "visible") {
+        setRefreshKey(prev => prev + 1);
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisChange);
+    return () => document.removeEventListener("visibilitychange", handleVisChange);
+  }, []);
+
+  useEffect(() => {
+    if (table?.mode !== "TOURNAMENT" || !table?.levelStartedAt || !table?.tournamentConfig) {
+      setTimeRemainingStr("");
+      return;
+    }
+
+    const config = table.tournamentConfig;
+    const currentLevelIndex = table.currentLevelIndex || 0;
+    const levelDurationMins = config.blindSchedule[currentLevelIndex]?.durationMins || 15;
+    
+    // Check if levelStartedAt has toMillis
+    const startMillis = typeof table.levelStartedAt.toMillis === "function" 
+      ? table.levelStartedAt.toMillis() 
+      : table.levelStartedAt.seconds * 1000;
+
+    const endMillis = startMillis + levelDurationMins * 60 * 1000;
+
+    const updateTimer = () => {
+      const now = Date.now();
+      const diff = endMillis - now;
+      if (diff <= 0) {
+        setTimeRemainingStr("00:00 (Next level on next hand)");
+      } else {
+        const totalSecs = Math.floor(diff / 1000);
+        const m = Math.floor(totalSecs / 60).toString().padStart(2, "0");
+        const s = (totalSecs % 60).toString().padStart(2, "0");
+        setTimeRemainingStr(`${m}:${s}`);
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [table?.mode, table?.levelStartedAt, table?.tournamentConfig, table?.currentLevelIndex]);
 
   useEffect(() => {
     if (!tableId) return;
@@ -118,7 +173,11 @@ export default function TablePage() {
             currentHandId: data.currentHandId ?? null,
             password: data.password ?? null,
             createdAt: data.createdAt ?? null,
-            endedAt: data.endedAt ?? null
+            endedAt: data.endedAt ?? null,
+            mode: data.mode,
+            tournamentConfig: data.tournamentConfig ?? undefined,
+            levelStartedAt: data.levelStartedAt ?? undefined,
+            currentLevelIndex: data.currentLevelIndex ?? 0
         });
 
         setLoading(false);
@@ -147,7 +206,8 @@ export default function TablePage() {
             isFolded: !!d.isFolded,
             isSittingOut: !!d.isSittingOut,
             isAllIn: !!d.isAllIn,
-            totalBuyIn: d.totalBuyIn
+            totalBuyIn: d.totalBuyIn,
+            eliminatedAt: d.eliminatedAt
           });
         });
         setPlayers(list);
@@ -162,7 +222,7 @@ export default function TablePage() {
       unsubTable();
       unsubPlayers();
     };
-  }, [tableId]);
+  }, [tableId, refreshKey]);
 
   // Redirezione automatica per gli spettatori
   useEffect(() => {
@@ -223,7 +283,7 @@ export default function TablePage() {
     return () => {
       unsub();
     };
-  }, [tableId, table?.currentHandId]);
+  }, [tableId, table?.currentHandId, refreshKey]);
 
   // Reset selezione vincitori quando cambia mano
   useEffect(() => {
@@ -856,6 +916,15 @@ async function handleConfirmWinners(potId: string) {
 
                     {isHost && (
                         <div style={{ display: "flex", gap: "0.25rem" }}>
+                        {!isMe && (
+                            <button
+                                onClick={() => setTransferHostConfirmTarget(p.userId)}
+                                style={{ ...smallButtonStyle, backgroundColor: "#facc15", color: "#000", fontSize: "0.85rem", padding: "0.15rem 0.3rem" }}
+                                title={t("table.transferHost")}
+                            >
+                                👑
+                            </button>
+                        )}
                         <button
                             onClick={() => handleMoveUp(index)}
                             disabled={index === 0}
@@ -944,9 +1013,23 @@ async function handleConfirmWinners(potId: string) {
               ))}
             </div>
           )}
-          <p style={{ fontSize: "0.8rem", color: "#9ca3af" }}>
-            {t("table.blinds")} {table?.smallBlind}/{table?.bigBlind}
-          </p>
+          {table?.mode === "TOURNAMENT" ? (
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.2rem" }}>
+               <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "#e2e8f0", backgroundColor: "#8b5cf6", padding: "0.1rem 0.4rem", borderRadius: "0.25rem" }}>
+                 {t("table.level")} {(table.currentLevelIndex || 0) + 1}
+               </span>
+               <span style={{ fontSize: "0.8rem", color: "#f87171", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.2rem" }}>
+                 ⏱️ {timeRemainingStr || "--:--"}
+               </span>
+               <span style={{ fontSize: "0.8rem", color: "#9ca3af", marginLeft: "auto" }}>
+                 {table.smallBlind}/{table.bigBlind}
+               </span>
+            </div>
+          ) : (
+            <p style={{ fontSize: "0.8rem", color: "#9ca3af" }}>
+              {t("table.blinds")} {table?.smallBlind}/{table?.bigBlind}
+            </p>
+          )}
           <div
             style={{
               marginTop: "0.4rem",
@@ -957,24 +1040,26 @@ async function handleConfirmWinners(potId: string) {
             }}
           >
             <div style={{ display: "flex", gap: "0.4rem" }}>
-              <button
-                onClick={handleToggleSittingOut}
-                disabled={!!disableSitToggle}
-                style={{
-                  padding: "0.3rem 0.6rem",
-                  borderRadius: "999px",
-                  border: "1px solid #f59e0b",
-                  backgroundColor: "transparent",
-                  color: disableSitToggle ? "#6b7280" : "#fcd34d",
-                  cursor: disableSitToggle ? "default" : "pointer",
-                  fontSize: "0.8rem",
-                  opacity: disableSitToggle ? 0.5 : 1
-                }}
-              >
-                {myPlayer?.isSittingOut ? t("table.sitDown") : t("table.standUp")}
-              </button>
+              {table?.mode !== "TOURNAMENT" && (
+                <button
+                  onClick={handleToggleSittingOut}
+                  disabled={!!disableSitToggle}
+                  style={{
+                    padding: "0.3rem 0.6rem",
+                    borderRadius: "999px",
+                    border: "1px solid #f59e0b",
+                    backgroundColor: "transparent",
+                    color: disableSitToggle ? "#6b7280" : "#fcd34d",
+                    cursor: disableSitToggle ? "default" : "pointer",
+                    fontSize: "0.8rem",
+                    opacity: disableSitToggle ? 0.5 : 1
+                  }}
+                >
+                  {myPlayer?.isSittingOut ? t("table.sitDown") : t("table.standUp")}
+                </button>
+              )}
 
-              {isHost && (
+              {isHost && table?.mode !== "TOURNAMENT" && (
                 <button
                   onClick={handleEndGame}
                   disabled={disableEndGame}
@@ -1066,7 +1151,12 @@ async function handleConfirmWinners(potId: string) {
               </div>
 
               <div style={{ display: "grid", gap: "0.6rem" }}>
-                {players.map((p, idx) => (
+                {players.map((p, idx) => {
+                  const isTournament = table?.mode === "TOURNAMENT";
+                  const canRebuy = !isTournament && p.stack < (table?.bigBlind || 0);
+                  const isMe = myUid === p.userId;
+
+                  return (
                   <div key={p.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", padding: "0.5rem", backgroundColor: "rgba(30,41,59,0.5)", borderRadius: "0.5rem" }}>
                     {/* Frecce per riordinare */}
                     <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
@@ -1090,19 +1180,28 @@ async function handleConfirmWinners(potId: string) {
                       >▼</button>
                     </div>
 
+                    {!isMe && (
+                      <button
+                        disabled={disableEndGame}
+                        onClick={() => setTransferHostConfirmTarget(p.userId)}
+                        style={{ padding: "0 0.4rem", fontSize: "0.85rem", cursor: disableEndGame ? "default" : "pointer", opacity: disableEndGame ? 0.3 : 1, background: "transparent", border: "1px solid #ca8a04", borderRadius: "4px", color: "#facc15" }}
+                        title={t("table.transferHost")}
+                      >👑</button>
+                    )}
+
                     {/* Nome e stack */}
                     <span style={{ flex: 1, fontSize: "0.85rem", color: "#f8fafc", minWidth: "100px", fontWeight: 500 }}>
                       {p.displayName} <span style={{ color: "#94a3b8", fontWeight: 400 }}>({p.stack})</span>
                     </span>
 
-                    {/* Rebuy: disponibile solo se stack < BB */}
-                    {p.stack < (table?.bigBlind || 0) ? (
+                    {/* Rebuy UI */}
+                    {canRebuy ? (
                       <>
                         <input
                           type="number"
                           min={5}
                           step={5}
-                          placeholder="Rebuy"
+                          placeholder={isTournament ? "Add-on" : "Rebuy"}
                           disabled={disableEndGame}
                           value={rebuyAmounts[p.userId] ?? ""}
                           onChange={e => setRebuyAmounts(prev => ({ ...prev, [p.userId]: Number(e.target.value) }))}
@@ -1135,12 +1234,14 @@ async function handleConfirmWinners(potId: string) {
                         >+ Chips</button>
                       </>
                     ) : (
-                      <span style={{ fontSize: "0.8rem", color: "#94a3b8", fontStyle: "italic", marginLeft: "auto" }}>
-                        {t("table.stackOk")}
-                      </span>
+                      !isTournament && (
+                        <span style={{ fontSize: "0.8rem", color: "#94a3b8", fontStyle: "italic", marginLeft: "auto" }}>
+                          {t("table.stackOk")}
+                        </span>
+                      )
                     )}
                   </div>
-                ))}
+                )})}
               </div>
             </div>
           )}
@@ -1345,7 +1446,11 @@ async function handleConfirmWinners(potId: string) {
                           textAlign: "left"
                         }}
                       >
-                        {p.isSittingOut && <span style={{ color: "#facc15", paddingRight: "0.2rem" }}>{t("table.pauseBadge")}</span>}
+                        {p.isSittingOut && (
+                          <span style={{ color: table?.mode === "TOURNAMENT" && p.stack === 0 ? "#ef4444" : "#facc15", paddingRight: "0.2rem" }}>
+                            {table?.mode === "TOURNAMENT" && p.stack === 0 ? "[Out]" : t("table.pauseBadge")}
+                          </span>
+                        )}
                         {p.displayName}
                       </span>
                       {renderRoleBadges(index)}
@@ -1779,7 +1884,15 @@ async function handleConfirmWinners(potId: string) {
               gap: "0.3rem"
             }}
           >
-            {players.map((p) => {
+            {[...players].sort((a, b) => {
+              if (table?.mode === "TOURNAMENT") {
+                if (a.stack !== b.stack) return b.stack - a.stack;
+                const aTime = a.eliminatedAt || 0;
+                const bTime = b.eliminatedAt || 0;
+                return bTime - aTime; // higher timestamp = later elimination = better rank
+              }
+              return 0;
+            }).map((p, idx) => {
               const totalInvested = (p as any).totalBuyIn || table?.initialStack || 0;
               const diff = p.stack - totalInvested;
               const isPositive = diff > 0;
@@ -1796,6 +1909,8 @@ async function handleConfirmWinners(potId: string) {
                 diffColor = "#ef4444";
               }
 
+              const isTournament = table?.mode === "TOURNAMENT";
+
               return (
                 <li
                   key={p.id}
@@ -1811,14 +1926,19 @@ async function handleConfirmWinners(potId: string) {
                   }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontWeight: 600, color: "#f8fafc" }}>{p.displayName}</span>
-                    <span style={{ fontSize: "1rem", color: diffColor, fontWeight: 700 }}>
-                      {t("table.netProfit")}: {diffText}
+                    <span style={{ fontWeight: 600, color: "#f8fafc" }}>
+                      {isTournament && <span style={{ marginRight: "0.5rem", color: "#fbbf24" }}>#{idx + 1}</span>}
+                      {p.displayName}
                     </span>
+                    {!isTournament && (
+                      <span style={{ fontSize: "1rem", color: diffColor, fontWeight: 700 }}>
+                        {t("table.netProfit")}: {diffText}
+                      </span>
+                    )}
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "#94a3b8" }}>
-                    <span>{t("table.invested")}: <strong style={{ color: "#e2e8f0" }}>{totalInvested}</strong></span>
-                    <span>{t("table.finalStack")}: <strong style={{ color: "#e2e8f0" }}>{p.stack}</strong></span>
+                    {!isTournament && <span>{t("table.invested")}: <strong style={{ color: "#e2e8f0" }}>{totalInvested}</strong></span>}
+                    <span style={isTournament ? { marginLeft: "auto" } : {}}>{t("table.finalStack")}: <strong style={{ color: "#e2e8f0", fontSize: isTournament ? "1rem" : "inherit" }}>{p.stack}</strong></span>
                   </div>
                 </li>
               );
@@ -1981,9 +2101,58 @@ async function handleConfirmWinners(potId: string) {
     </div>
   );
 
-if (inLobby) return <>{renderLobby()}{modalUI}{foldConfirmModalUI}{endGameConfirmModalUI}</>;
-if (inGame) return <>{renderGame()}{modalUI}{foldConfirmModalUI}{endGameConfirmModalUI}</>;
-if (inSummary) return <>{renderSummary()}{modalUI}{foldConfirmModalUI}{endGameConfirmModalUI}</>;
+  const transferHostConfirmModalUI = transferHostConfirmTarget && (
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+      background: "rgba(2, 6, 23, 0.8)", backdropFilter: "blur(8px)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999
+    }}>
+      <div style={{
+        background: "rgba(15,23,42,0.95)", border: "1px solid #1e293b",
+        borderRadius: "1.5rem", padding: "2rem", display: "grid", gap: "1.5rem",
+        textAlign: "center", maxWidth: "340px", width: "90%",
+        boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.7)"
+      }}>
+        <h2 style={{ fontSize: "1.3rem", margin: 0, color: "#e2e8f0" }}>{t("table.transferHost")}</h2>
+        <p style={{ margin: 0, fontSize: "0.9rem", color: "#9ca3af" }}>
+          {t("table.confirmTransferHost")}
+        </p>
+        
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.8rem", marginTop: "0.5rem" }}>
+          <button 
+            onClick={async () => {
+              try {
+                if (transferHostConfirmTarget && user && tableId) {
+                  await transferHost(tableId, user, transferHostConfirmTarget);
+                  setTransferHostConfirmTarget(null);
+                  setShowSettings(false);
+                }
+              } catch (e: any) {
+                console.error(e);
+              }
+            }}
+            style={{
+              background: "#eab308", color: "#000000", border: "none", padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontWeight: 700, fontSize: "0.95rem"
+            }}
+          >
+            {t("table.transferHost")}
+          </button>
+          <button 
+            onClick={() => setTransferHostConfirmTarget(null)}
+            style={{
+              background: "transparent", color: "#9ca3af", border: "1px solid #374151", padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontWeight: 600, fontSize: "0.95rem"
+            }}
+          >
+            {t("table.cancel") || "Annulla"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+if (inLobby) return <>{renderLobby()}{modalUI}{foldConfirmModalUI}{endGameConfirmModalUI}{transferHostConfirmModalUI}</>;
+if (inGame) return <>{renderGame()}{modalUI}{foldConfirmModalUI}{endGameConfirmModalUI}{transferHostConfirmModalUI}</>;
+if (inSummary) return <>{renderSummary()}{modalUI}{foldConfirmModalUI}{endGameConfirmModalUI}{transferHostConfirmModalUI}</>;
 return <p>{t("table.unsupportedState")}</p>;
 }
 

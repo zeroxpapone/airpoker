@@ -37,7 +37,18 @@
     "passwordDesc": "If you want to restrict entry only to those who know the password.",
     "passwordPlaceholder": "No password",
     "creatingBtn": "Creating...",
-    "submitBtn": "Create table"
+    "submitBtn": "Create table",
+    "gameMode": "Game Mode",
+    "cashGame": "Cash Game",
+    "tournament": "Tournament",
+    "estimatedPlayers": "Estimated Players",
+    "targetDuration": "Target Duration (Hours)",
+    "levelDuration": "Level Duration (Minutes)",
+    "blindSchedulePreview": "Blind Schedule Preview",
+    "simpleMode": "Simple Mode",
+    "expertMode": "Expert Mode",
+    "allowRebuys": "Allow Rebuy / Add-on",
+    "allowRebuysDesc": "The Host will be able to assign extra chips to players during the tournament."
   },
   "joinTable": {
     "errorNotLoggedIn": "You must log in to join a table.",
@@ -135,7 +146,12 @@
     "confirmEndGame": "Are you sure you want to end the game and view the summary?",
     "endGameYes": "Yes, end game",
     "endGameNo": "Cancel",
-    "totalBet": "Total Bet"
+    "totalBet": "Total Bet",
+    "level": "Level",
+    "nextLevel": "Next",
+    "tournamentRebuyWarning": "Note: Adding chips in tournament mode acts as a Rebuy/Add-on.",
+    "transferHost": "Transfer Host",
+    "confirmTransferHost": "Are you sure you want to transfer the Host role to this player?"
   },
   "terms": {
     "title": "Terms and Conditions",

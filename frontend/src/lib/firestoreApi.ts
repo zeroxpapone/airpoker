@@ -16,12 +16,29 @@ import type { User } from "firebase/auth";
 import { db } from "./firebase";
 
 
+export interface BlindLevel {
+  sb: number;
+  bb: number;
+  durationMins: number;
+}
+
+export interface TournamentConfig {
+  startingStack: number;
+  estimatedPlayers: number;
+  targetDurationHours: number;
+  levelDurationMins: number;
+  blindSchedule: BlindLevel[];
+  allowRebuys?: boolean;
+}
+
 export interface CreateTableInput {
   name: string;
   password?: string;
   initialStack: number;
   smallBlind: number;
   bigBlind: number;
+  mode?: 'CASH' | 'TOURNAMENT';
+  tournamentConfig?: TournamentConfig;
 }
 
 export interface HandData {
@@ -120,6 +137,10 @@ export async function createTable(data: CreateTableInput, user: User | null) {
     createdAt: serverTimestamp(),
     endedAt: null,
     currentHandId: null,
+    mode: data.mode || "CASH",
+    tournamentConfig: data.tournamentConfig || null,
+    currentLevelIndex: data.mode === "TOURNAMENT" ? 0 : null,
+    levelStartedAt: null,
   });
 
   // Aggiunge subito l'host come giocatore seduto al tavolo (seatIndex 0)
@@ -415,10 +436,16 @@ export async function startGame(tableId: string) {
   });
 
   // Aggiorna il tavolo: IN_GAME + currentHandId
-  await updateDoc(tableRef, {
+  const updateData: any = {
     state: "IN_GAME",
     currentHandId: handRef.id
-  });
+  };
+  
+  if (tableData.mode === "TOURNAMENT") {
+    updateData.levelStartedAt = serverTimestamp();
+  }
+
+  await updateDoc(tableRef, updateData);
 
   // Reset isReady di tutti i giocatori e scala le blind dagli stack
   const batch = writeBatch(db);
@@ -511,12 +538,49 @@ export async function startNextHand(tableId: string, user: User) {
     throw new Error("La mano corrente non è ancora in SHOWDOWN.");
   }
 
+  let sbAmount = Number(tableData.smallBlind) || 0;
+  let bbAmount = Number(tableData.bigBlind) || 0;
+  let updatedTableData: any = {};
+
+  if (tableData.mode === "TOURNAMENT" && tableData.tournamentConfig && tableData.levelStartedAt) {
+    const config = tableData.tournamentConfig;
+    // Check if levelStartedAt has toMillis (it's a Firestore Timestamp)
+    const levelStartedAtMillis = typeof tableData.levelStartedAt.toMillis === "function" 
+      ? tableData.levelStartedAt.toMillis() 
+      : tableData.levelStartedAt.seconds * 1000;
+    
+    const now = Date.now();
+    
+    if (config.blindSchedule && config.blindSchedule.length > 0) {
+      const currentLevelIndex = tableData.currentLevelIndex || 0;
+      const levelDurationMins = config.blindSchedule[currentLevelIndex]?.durationMins || 15;
+      
+      // If elapsed time is greater than level duration
+      if (now >= levelStartedAtMillis + levelDurationMins * 60 * 1000) {
+        const nextLevelIndex = Math.min(currentLevelIndex + 1, config.blindSchedule.length - 1);
+        
+        if (nextLevelIndex !== currentLevelIndex) {
+          sbAmount = config.blindSchedule[nextLevelIndex].sb;
+          bbAmount = config.blindSchedule[nextLevelIndex].bb;
+          
+          updatedTableData = {
+            currentLevelIndex: nextLevelIndex,
+            smallBlind: sbAmount,
+            bigBlind: bbAmount,
+            levelStartedAt: serverTimestamp()
+          };
+        } else {
+          // If at max level, just reset timer but keep same blinds
+          updatedTableData.levelStartedAt = serverTimestamp();
+        }
+      }
+    }
+  }
+
   // Prendiamo i giocatori ordinati per seatIndex
   const playersRef = collection(db, "tables", tableId, "players");
   const playersQuery = query(playersRef, orderBy("seatIndex", "asc"));
   const playersSnap = await getDocs(playersQuery);
-  const sbAmount = Number(tableData.smallBlind) || 0;
-  const bbAmount = Number(tableData.bigBlind) || 0;
 
   const players = playersSnap.docs.map((d) => {
     const data = d.data() as any;
@@ -541,6 +605,10 @@ export async function startNextHand(tableId: string, user: User) {
   const activePlayersCount = players.filter(p => !p.isSittingOut && p.stack > 0).length;
 
   if (activePlayersCount < 2) {
+    if (tableData.mode === "TOURNAMENT") {
+      await endGame(tableId);
+      return;
+    }
     throw new Error("Servono almeno 2 giocatori attivi per una nuova mano.");
   }
 
@@ -609,9 +677,10 @@ export async function startNextHand(tableId: string, user: User) {
 
   const batch = writeBatch(db);
 
-  // Aggiorniamo il tavolo con la nuova mano corrente
+  // Aggiorniamo il tavolo con la nuova mano corrente e i nuovi blinds se aggiornati
   batch.update(tableRef, {
-    currentHandId: newHandRef.id
+    currentHandId: newHandRef.id,
+    ...updatedTableData
   });
 
   // Reset stato giocatori per la nuova mano
@@ -1435,8 +1504,33 @@ export async function confirmWinners(
     } else {
       handUpdate.winnerId = null;
     }
+
+    // Imposta eliminatedAt per chi è a zero fiches e non l'aveva
+    const now = Date.now();
+    players.forEach(p => {
+      const currentStack = Number(p.data.stack) || 0;
+      if (currentStack === 0 && !p.data.eliminatedAt) {
+        batch.update(p.ref, { eliminatedAt: now });
+      }
+    });
   }
 
   batch.update(handRef, handUpdate);
   await batch.commit();
+}
+
+/**
+ * Trasferisce il ruolo di host a un altro giocatore.
+ */
+export async function transferHost(tableId: string, currentUser: User, targetUserId: string) {
+  const tableRef = doc(db, "tables", tableId);
+  const tableSnap = await getDoc(tableRef);
+  if (!tableSnap.exists()) throw new Error("Tavolo inesistente.");
+  
+  const data = tableSnap.data();
+  if (data.hostId !== currentUser.uid) {
+    throw new Error("Solo l'host attuale può cedere il ruolo.");
+  }
+
+  await updateDoc(tableRef, { hostId: targetUserId });
 }
