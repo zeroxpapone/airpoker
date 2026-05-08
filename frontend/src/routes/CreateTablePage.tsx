@@ -84,9 +84,9 @@ export default function CreateTablePage() {
     }
     // Add 3 more final levels to prevent abrupt endings if players play tight
     for (let i = 0; i < 3; i++) {
-        let lastBB = schedule[schedule.length - 1].bb;
-        let nextBB = lastBB + (lastBB < 500 ? 100 : lastBB < 2000 ? 500 : 1000);
-        let nextSB = Math.ceil(nextBB / 2 / 25) * 25;
+        const lastBB: number = schedule[schedule.length - 1].bb;
+        const nextBB: number = lastBB + (lastBB < 500 ? 100 : lastBB < 2000 ? 500 : 1000);
+        let nextSB: number = Math.ceil(nextBB / 2 / 25) * 25;
         if (nextBB === 100) nextSB = 50;
         schedule.push({ sb: nextSB, bb: nextBB, durationMins: levelMins });
     }
