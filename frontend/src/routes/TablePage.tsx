@@ -1104,7 +1104,7 @@ async function handleConfirmWinners(potId: string) {
               left: 0,
               right: 0,
               bottom: 0,
-              zIndex: 50,
+              zIndex: 10000,
               padding: "1rem",
               borderRadius: "0.75rem",
               border: "1px solid #334155",
