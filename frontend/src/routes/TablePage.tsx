@@ -7,7 +7,8 @@ import {
   doc,
   onSnapshot,
   orderBy,
-  query
+  query,
+  updateDoc
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../hooks/useAuth";
@@ -68,6 +69,9 @@ interface ExtendedHandData extends HandData {
   winnerIds?: string[];
   pots?: import('../lib/firestoreApi').Pot[];
   handContributions?: Record<string, number>;
+  id: string;
+  createdAt?: any;
+  blindsPopupClosed?: boolean;
 }
 
 export default function TablePage() {
@@ -101,6 +105,9 @@ export default function TablePage() {
 
   const [timeRemainingStr, setTimeRemainingStr] = useState<string>("");
   const [refreshKey, setRefreshKey] = useState(0);
+
+  const [blindsPopupVisible, setBlindsPopupVisible] = useState(false);
+  const [lastSeenHandId, setLastSeenHandId] = useState<string | null>(null);
 
   const navigate = useNavigate();
 
@@ -271,7 +278,10 @@ export default function TablePage() {
           winnerId: d.winnerId ?? null,
           winnerIds: d.winnerIds || [],
           pots: d.pots || [],
-          handContributions: d.handContributions || {}
+          handContributions: d.handContributions || {},
+          id: snap.id,
+          createdAt: d.createdAt ?? null,
+          blindsPopupClosed: d.blindsPopupClosed ?? false
         };
         setCurrentHand(hand);
       },
@@ -290,6 +300,49 @@ export default function TablePage() {
     setSelectedWinners([]);
     setActionError(null);
   }, [currentHand?.handNumber]);
+
+  // Gestione del popup Nuova Mano all'inizio
+  useEffect(() => {
+    const isCurrentlyInGame = table?.state === "IN_GAME";
+    if (isCurrentlyInGame && currentHand && currentHand.id !== lastSeenHandId && currentHand.stage === "PREFLOP") {
+      setLastSeenHandId(currentHand.id);
+      setBlindsPopupVisible(true);
+    }
+  }, [table?.state, currentHand?.id, currentHand?.stage, lastSeenHandId]);
+
+  useEffect(() => {
+    if (blindsPopupVisible && currentHand && !currentHand.blindsPopupClosed) {
+      const now = Date.now();
+      const createdAt = currentHand.createdAt?.toMillis 
+        ? currentHand.createdAt.toMillis() 
+        : (currentHand.createdAt?.seconds ? currentHand.createdAt.seconds * 1000 : now);
+        
+      const elapsed = now - createdAt;
+      const remaining = Math.max(0, 7000 - elapsed);
+      
+      if (remaining > 0) {
+        const timer = setTimeout(() => {
+          setBlindsPopupVisible(false);
+        }, remaining);
+        return () => clearTimeout(timer);
+      } else {
+        setBlindsPopupVisible(false);
+      }
+    } else if (currentHand?.blindsPopupClosed) {
+      setBlindsPopupVisible(false);
+    }
+  }, [blindsPopupVisible, currentHand?.blindsPopupClosed, currentHand?.createdAt]);
+
+  const handleCloseBlindsPopup = async () => {
+    setBlindsPopupVisible(false);
+    if (tableId && currentHand) {
+      try {
+        await updateDoc(doc(db, "tables", tableId, "hands", currentHand.id), { blindsPopupClosed: true });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  };
 
 
   if (!tableId) {
@@ -349,6 +402,8 @@ export default function TablePage() {
 
   const myVoteTargetId =
     currentHand && user ? currentHand.votes?.[user.uid] ?? null : null;
+
+  const activePot = currentHand?.pots?.find(p => !p.settled);
 
   let disableSitToggle = false;
   if (inGame && currentHand) {
@@ -961,8 +1016,6 @@ async function handleConfirmWinners(potId: string) {
   function renderGame() {
     if (!table) return null;
 
-    const activePot = currentHand?.pots?.find(p => !p.settled);
-
     return (
       <div
         style={{
@@ -1290,83 +1343,6 @@ async function handleConfirmWinners(potId: string) {
       ? t("table.turnOf", { name: players[currentHand.currentTurnIndex].displayName })
       : t("table.waitingTurn")}
   </div>
-
-  {isHost && currentHand && currentHand.currentTurnIndex === -1 && (
-    <div
-      style={{
-        marginTop: "0.5rem",
-        display: "flex",
-        gap: "0.5rem",
-        justifyContent: "center"
-      }}
-    >
-      {currentHand.stage !== "SHOWDOWN" && (
-        <button
-          onClick={handleAdvanceStage}
-          style={{
-            padding: "0.35rem 0.8rem",
-            borderRadius: "999px",
-            border: "none",
-            backgroundColor: "#22c55e",
-            color: "#020617",
-            fontSize: "0.85rem",
-            fontWeight: 600,
-            cursor: "pointer"
-          }}
-        >
-          {t("table.continue", { stage: currentHand.stage })}
-        </button>
-      )}
-
-      {currentHand.stage === "SHOWDOWN" && hasWinner && (
-        <button
-          onClick={handleNextHand}
-          style={{
-            padding: "0.35rem 0.8rem",
-            borderRadius: "999px",
-            border: "none",
-            backgroundColor: "#22c55e",
-            color: "#020617",
-            fontSize: "0.85rem",
-            fontWeight: 600,
-            cursor: "pointer"
-          }}
-        >
-          {t("table.nextHand")}
-        </button>
-      )}
-    </div>
-  )}
-  
-  {currentHand?.stage === "SHOWDOWN" && votingOpen && isHost && (
-    <div style={{ marginTop: "0.5rem" }}>
-      {activePot && (
-        <div style={{ fontSize: "0.75rem", color: "#facc15", marginBottom: "0.2rem" }}>
-          {currentHand.pots?.length && currentHand.pots.length > 1 
-            ? `Assegna Main/Side Pot (${activePot.amount})`
-            : `Assegna Pot (${activePot.amount})`
-          }
-        </div>
-      )}
-      <button
-        onClick={() => handleConfirmWinners(activePot?.id || "")}
-        disabled={selectedWinners.length === 0 || actionLoading}
-        style={{
-          padding: "0.5rem 1rem",
-          borderRadius: "999px",
-          border: "none",
-          backgroundColor: selectedWinners.length > 0 ? "#22c55e" : "#4b5563",
-          color: "#020617",
-          fontSize: "0.85rem",
-          fontWeight: 600,
-          cursor: selectedWinners.length > 0 ? "pointer" : "default",
-          opacity: actionLoading ? 0.7 : 1
-        }}
-      >
-        {selectedWinners.length > 1 ? t("table.confirmWinners") : t("table.confirmWinner")} ({selectedWinners.length})
-      </button>
-    </div>
-  )}
 </div>
 
 
@@ -1385,7 +1361,7 @@ async function handleConfirmWinners(potId: string) {
                   : 0;
 
               const isEligibleForActivePot = activePot 
-                ? activePot.eligible.includes(p.userId) 
+                ? activePot.eligible?.includes(p.userId) 
                 : (!p.isFolded && !p.isSittingOut);
 
               return (
@@ -1419,16 +1395,7 @@ async function handleConfirmWinners(potId: string) {
                           ? "0 0 15px rgba(34,197,94,0.6)"
                           : "0 0 8px rgba(15,23,42,0.6)",
                         fontSize: "0.7rem",
-                        cursor:
-                          votingOpen && currentHand?.stage === "SHOWDOWN" && isEligibleForActivePot
-                            ? "pointer"
-                            : "default",
                         opacity: p.isSittingOut ? 0.4 : p.isFolded || (votingOpen && activePot && !isEligibleForActivePot) ? 0.6 : 1
-                      }}
-                      onClick={() => {
-                        if (votingOpen && currentHand?.stage === "SHOWDOWN" && isEligibleForActivePot) {
-                          toggleWinnerSelection(p.userId);
-                        }
                       }}
                     >
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", gap: "0.4rem" }}>
@@ -1485,67 +1452,6 @@ async function handleConfirmWinners(potId: string) {
             flexShrink: 0
           }}
         >
-          {hasWinner && (
-            <div
-              style={{
-                padding: "0.6rem 0.8rem",
-                borderRadius: "0.75rem",
-                border: "1px solid #1e293b",
-                backgroundColor: "rgba(15,23,42,0.98)",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                gap: "0.5rem"
-              }}
-            >
-              <div
-                style={{
-                  fontSize: "0.85rem",
-                  color: "#e5e7eb"
-                }}
-              >
-                {currentHand?.winnerIds && currentHand.winnerIds.length > 1 ? (
-                  // Più vincitori (split pot)
-                  <>
-                    {t("table.winnerSplit")} {" "}
-                    <strong>
-                      {currentHand.winnerIds
-                        .map(wId => players.find(p => p.userId === wId)?.displayName || t("table.unknown"))
-                        .join(", ")}
-                    </strong>
-                  </>
-                ) : (
-                  // Singolo vincitore
-                  <>
-                    {t("table.winnerSingle")} {" "}
-                    <strong>
-                      {(
-                        players.find((p) => p.userId === currentHand.winnerId)
-                          ?.displayName || t("table.unknown")
-                      )}
-                    </strong>
-                  </>
-                )}
-              </div>
-              {isHost && (
-                <button
-                  onClick={handleNextHand}
-                  style={{
-                    padding: "0.4rem 0.8rem",
-                    borderRadius: "999px",
-                    border: "none",
-                    backgroundColor: "#22c55e",
-                    color: "#020617",
-                    fontSize: "0.85rem",
-                    fontWeight: 600,
-                    cursor: "pointer"
-                  }}
-                >
-                  {t("table.nextHand")}
-                </button>
-              )}
-            </div>
-          )}
           {actionError && (
             <p style={{ fontSize: "0.8rem", color: "#f97373" }}>
               {actionError}
@@ -2150,8 +2056,149 @@ async function handleConfirmWinners(potId: string) {
     </div>
   );
 
+  let stageModalVisible = false;
+  let stageModalTitle = "";
+  let stageModalContent: React.ReactNode = null;
+  let stageModalAction: React.ReactNode = null;
+
+  if (inGame && currentHand) {
+    if (currentHand.stage === "SHOWDOWN" && hasWinner) {
+      stageModalVisible = true;
+      stageModalTitle = "Mano Conclusa!";
+      
+      const winnerNames = currentHand.winnerIds && currentHand.winnerIds.length > 1
+        ? currentHand.winnerIds.map(wId => players.find(p => p.userId === wId)?.displayName || t("table.unknown")).join(", ")
+        : players.find(p => p.userId === currentHand.winnerId)?.displayName || t("table.unknown");
+      
+      stageModalContent = (
+        <div style={{ color: "#e2e8f0", fontSize: "1rem" }}>
+          <div style={{ fontSize: "1.2rem", fontWeight: 700, color: "#facc15", marginBottom: "0.5rem" }}>
+            🏆 {winnerNames} 🏆
+          </div>
+          <div>{t("table.pot")}: {currentHand.pot}</div>
+        </div>
+      );
+      if (isHost) {
+        stageModalAction = (
+          <button onClick={handleNextHand} style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem" }}>
+            {t("table.nextHand")}
+          </button>
+        );
+      }
+    } else if (currentHand.stage === "SHOWDOWN" && votingOpen) {
+      stageModalVisible = true;
+      stageModalTitle = "Showdown!";
+      stageModalContent = (
+        <div style={{ color: "#e2e8f0", fontSize: "1rem" }}>
+          <div style={{ color: "#facc15", fontWeight: 700, fontSize: "1.1rem" }}>Girate le carte! L'host sta assegnando il piatto.</div>
+          {isHost && activePot && (
+            <div style={{ marginTop: "1rem", color: "#facc15" }}>
+              Seleziona chi vince:
+              <br/>
+              <span style={{color: "#e2e8f0", fontSize: "0.85rem"}}>
+                {currentHand.pots?.length && currentHand.pots.length > 1 ? `Main/Side Pot (${activePot.amount})` : `Pot (${activePot.amount})`}
+              </span>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", justifyContent: "center", marginTop: "1rem" }}>
+                {players.filter(p => activePot ? activePot.eligible?.includes(p.userId) : (!p.isFolded && !p.isSittingOut)).map(p => (
+                  <button
+                    key={p.userId}
+                    onClick={() => toggleWinnerSelection(p.userId)}
+                    style={{
+                      padding: "0.5rem 1rem",
+                      borderRadius: "999px",
+                      border: selectedWinners.includes(p.userId) ? "2px solid #22c55e" : "1px solid #4b5563",
+                      backgroundColor: selectedWinners.includes(p.userId) ? "rgba(34,197,94,0.2)" : "rgba(15,23,42,0.8)",
+                      color: selectedWinners.includes(p.userId) ? "#4ade80" : "#e2e8f0",
+                      cursor: "pointer",
+                      fontWeight: 600,
+                      fontSize: "0.9rem"
+                    }}
+                  >
+                    {p.displayName}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+      if (isHost) {
+        stageModalAction = (
+          <button
+            onClick={() => handleConfirmWinners(activePot?.id || "")}
+            disabled={selectedWinners.length === 0 || actionLoading}
+            style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem", opacity: selectedWinners.length === 0 ? 0.5 : 1, backgroundColor: selectedWinners.length > 0 ? "#22c55e" : "#4b5563" }}
+          >
+            {selectedWinners.length > 1 ? t("table.confirmWinners") : t("table.confirmWinner")} ({selectedWinners.length})
+          </button>
+        );
+      }
+    } else if (currentHand.currentTurnIndex === -1) {
+      stageModalVisible = true;
+      if (currentHand.stage === "PREFLOP") {
+        stageModalTitle = "Flop";
+        stageModalContent = <div style={{ color: "#facc15", fontWeight: 700, fontSize: "1.1rem" }}>Gira 3 carte sul tavolo!</div>;
+        if (isHost) {
+          stageModalAction = <button onClick={handleAdvanceStage} style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem" }}>Continua (Flop)</button>;
+        }
+      } else if (currentHand.stage === "FLOP") {
+        stageModalTitle = "Turn";
+        stageModalContent = <div style={{ color: "#facc15", fontWeight: 700, fontSize: "1.1rem" }}>Gira 1 carta sul tavolo!</div>;
+        if (isHost) {
+          stageModalAction = <button onClick={handleAdvanceStage} style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem" }}>Continua (Turn)</button>;
+        }
+      } else if (currentHand.stage === "TURN") {
+        stageModalTitle = "River";
+        stageModalContent = <div style={{ color: "#facc15", fontWeight: 700, fontSize: "1.1rem" }}>Gira 1 carta sul tavolo!</div>;
+        if (isHost) {
+          stageModalAction = <button onClick={handleAdvanceStage} style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem" }}>Continua (River)</button>;
+        }
+      }
+    } else if (blindsPopupVisible && currentHand.stage === "PREFLOP") {
+      stageModalVisible = true;
+      stageModalTitle = "Nuova Mano";
+      const sb = players[currentHand.smallBlindIndex]?.displayName;
+      const bb = players[currentHand.bigBlindIndex]?.displayName;
+
+      stageModalContent = (
+        <div style={{ display: "grid", gap: "0.5rem", color: "#e2e8f0", fontSize: "0.95rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span>Small Blind:</span> <strong>{sb}</strong></div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span>Big Blind:</span> <strong>{bb}</strong></div>
+          <div style={{ marginTop: "0.8rem", color: "#facc15", fontWeight: 700 }}>Distribuisci 2 carte a testa!</div>
+        </div>
+      );
+      if (isHost) {
+        stageModalAction = <button onClick={handleCloseBlindsPopup} style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem" }}>Inizia Subito</button>;
+      }
+    }
+  }
+
+  const stageModalUI = stageModalVisible && (
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+      background: "rgba(2, 6, 23, 0.8)", backdropFilter: "blur(8px)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999
+    }}>
+      <div style={{
+        background: "rgba(15,23,42,0.95)", border: "1px solid #1e293b",
+        borderRadius: "1.5rem", padding: "2rem", display: "grid", gap: "1.5rem",
+        textAlign: "center", maxWidth: "340px", width: "90%",
+        boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.7)"
+      }}>
+        <h2 style={{ fontSize: "1.5rem", margin: 0, color: "#e2e8f0" }}>{stageModalTitle}</h2>
+        {stageModalContent}
+        {stageModalAction}
+        {!isHost && (
+          <div style={{ color: "#9ca3af", fontSize: "0.85rem", fontStyle: "italic", marginTop: "0.5rem" }}>
+            In attesa dell'Host...
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
 if (inLobby) return <>{renderLobby()}{modalUI}{foldConfirmModalUI}{endGameConfirmModalUI}{transferHostConfirmModalUI}</>;
-if (inGame) return <>{renderGame()}{modalUI}{foldConfirmModalUI}{endGameConfirmModalUI}{transferHostConfirmModalUI}</>;
+if (inGame) return <>{renderGame()}{modalUI}{foldConfirmModalUI}{endGameConfirmModalUI}{transferHostConfirmModalUI}{stageModalUI}</>;
 if (inSummary) return <>{renderSummary()}{modalUI}{foldConfirmModalUI}{endGameConfirmModalUI}{transferHostConfirmModalUI}</>;
 return <p>{t("table.unsupportedState")}</p>;
 }

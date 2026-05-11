@@ -430,7 +430,11 @@ export async function startGame(tableId: string) {
 
   // Crea una nuova hand nella subcollection "hands"
   const handsRef = collection(db, "tables", tableId, "hands");
-  const handRef = await addDoc(handsRef, {
+  const handRef = doc(handsRef);
+
+  const batch = writeBatch(db);
+
+  batch.set(handRef, {
     ...handData,
     createdAt: serverTimestamp()
   });
@@ -445,10 +449,9 @@ export async function startGame(tableId: string) {
     updateData.levelStartedAt = serverTimestamp();
   }
 
-  await updateDoc(tableRef, updateData);
+  batch.update(tableRef, updateData);
 
   // Reset isReady di tutti i giocatori e scala le blind dagli stack
-  const batch = writeBatch(db);
   players.forEach((p, index) => {
     let newStack = Number(p.stack) || 0;
 
@@ -460,10 +463,10 @@ export async function startGame(tableId: string) {
     }
 
     batch.update(p.ref, {
-      isReady: false,
+      isFolded: !!p.isSittingOut || newStack === 0,
+      isSittingOut: p.isSittingOut,
       stack: newStack,
-      isFolded: false,
-      isSittingOut: p.isSittingOut
+      isReady: false
     });
   });
 
@@ -654,6 +657,7 @@ export async function startNextHand(tableId: string, user: User) {
   }
 
   const handsRef = collection(db, "tables", tableId, "hands");
+  const newHandRef = doc(handsRef);
 
   const newHand: HandData = {
     handNumber: (prevHand.handNumber || 1) + 1,
@@ -670,12 +674,12 @@ export async function startNextHand(tableId: string, user: User) {
     lastAggressorIndex: bigBlindIndex
   };
 
-  const newHandRef = await addDoc(handsRef, {
+  const batch = writeBatch(db);
+
+  batch.set(newHandRef, {
     ...newHand,
     createdAt: serverTimestamp()
   });
-
-  const batch = writeBatch(db);
 
   // Aggiorniamo il tavolo con la nuova mano corrente e i nuovi blinds se aggiornati
   batch.update(tableRef, {
@@ -1008,16 +1012,30 @@ export async function playerAction(
     } else {
       // POST-FLOP (FLOP, TURN, RIVER)
       if (allMatched) {
+        let shouldEndRound = false;
         if (currentBet === 0) {
           const wasFolded = currentPlayer.isFolded;
           currentPlayer.isFolded = false;
           const originalCloser = getPreviousActiveIndex(handData.smallBlindIndex);
           currentPlayer.isFolded = wasFolded;
           if (originalCloser !== -1 && currentIndex === originalCloser) {
-            nextTurnIndex = -1;
+            shouldEndRound = true;
           }
         } else {
-          nextTurnIndex = -1;
+          shouldEndRound = true;
+        }
+
+        if (shouldEndRound) {
+          if (handData.stage === "RIVER") {
+            newStage = "SHOWDOWN";
+            nextTurnIndex = -1;
+            potsCalculatedFastForward = calculatePotsCore(
+              players.map(p => ({ id: p.userId, isFolded: p.isFolded })),
+              handContributions
+            );
+          } else {
+            nextTurnIndex = -1;
+          }
         }
       }
     }
@@ -1253,7 +1271,6 @@ export async function advanceStage(tableId: string, user: User) {
           });
         }
       });
-      await batch.commit();
       
       if (activePlayers.length === 1) {
         updateData.winnerId = activePlayers[0].id;
@@ -1261,6 +1278,9 @@ export async function advanceStage(tableId: string, user: User) {
       }
       updateData.votingOpen = false;
       updateData.confirmedAt = serverTimestamp();
+      
+      batch.update(handRef, updateData);
+      await batch.commit();
     } else {
       // Più di un giocatore contende almeno un pot unsettled: l'host dovrà confermare i vincitori
       // Accreditiamo SUBITO solo gli uncalled bets (pot dove c'è solo 1 giocatore)
@@ -1275,14 +1295,15 @@ export async function advanceStage(tableId: string, user: User) {
            }
         }
       });
-      await batch.commit();
 
       updateData.votingOpen = true;
       updateData.winnerIds = [];
+      batch.update(handRef, updateData);
+      await batch.commit();
     }
+  } else {
+    await updateDoc(handRef, updateData);
   }
-
-  await updateDoc(handRef, updateData);
 }
 
 export function calculatePotsCore(players: {id: string, isFolded: boolean}[], contributions: Record<string, number>): Pot[] {
