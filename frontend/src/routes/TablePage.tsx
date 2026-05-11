@@ -1099,7 +1099,7 @@ async function handleConfirmWinners(potId: string) {
           {/* ─── Pannello Impostazioni Host (Overlay a tutto schermo sul tavolo) ─── */}
           {isHost && inGame && showSettings && (
             <div style={{
-              position: "absolute",
+              position: "fixed",
               top: 0,
               left: 0,
               right: 0,
