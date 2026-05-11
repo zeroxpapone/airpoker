@@ -1083,74 +1083,6 @@ async function handleConfirmWinners(potId: string) {
               {t("table.blinds")} {table?.smallBlind}/{table?.bigBlind}
             </p>
           )}
-          <div
-            style={{
-              marginTop: "0.4rem",
-              display: "flex",
-              justifyContent: "flex-end",
-              alignItems: "center",
-              fontSize: "0.8rem"
-            }}
-          >
-            <div style={{ display: "flex", gap: "0.4rem" }}>
-              {table?.mode !== "TOURNAMENT" && (
-                <button
-                  onClick={handleToggleSittingOut}
-                  disabled={!!disableSitToggle}
-                  style={{
-                    padding: "0.3rem 0.6rem",
-                    borderRadius: "999px",
-                    border: "1px solid #f59e0b",
-                    backgroundColor: "transparent",
-                    color: disableSitToggle ? "#6b7280" : "#fcd34d",
-                    cursor: disableSitToggle ? "default" : "pointer",
-                    fontSize: "0.8rem",
-                    opacity: disableSitToggle ? 0.5 : 1
-                  }}
-                >
-                  {myPlayer?.isSittingOut ? t("table.sitDown") : t("table.standUp")}
-                </button>
-              )}
-
-              {isHost && table?.mode !== "TOURNAMENT" && (
-                <button
-                  onClick={handleEndGame}
-                  disabled={disableEndGame}
-                  style={{
-                    padding: "0.3rem 0.6rem",
-                    borderRadius: "999px",
-                    border: "none",
-                    backgroundColor: "#ef4444",
-                    color: disableEndGame ? "#fca5a5" : "#020617",
-                    cursor: disableEndGame ? "default" : "pointer",
-                    opacity: disableEndGame ? 0.5 : 1,
-                    fontWeight: 600
-                  }}
-                >
-                  {t("table.endGame")}
-                </button>
-              )}
-              {isHost && inGame && (
-                <button
-                  onClick={() => setShowSettings(s => !s)}
-                  title="Impostazioni"
-                  style={{
-                    padding: "0.3rem 0.55rem",
-                    borderRadius: "999px",
-                    border: "1px solid #4b5563",
-                    backgroundColor: showSettings ? "#1e293b" : "transparent",
-                    color: "#94a3b8",
-                    cursor: "pointer",
-                    fontSize: "1rem",
-                    lineHeight: 1
-                  }}
-                >
-                  ⚙️
-                </button>
-              )}
-            </div>
-          </div>
-
         </header>
 
         <main
@@ -2078,13 +2010,73 @@ async function handleConfirmWinners(potId: string) {
           <div>{t("table.pot")}: {currentHand.pot}</div>
         </div>
       );
-      if (isHost) {
-        stageModalAction = (
-          <button onClick={handleNextHand} style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem" }}>
-            {t("table.nextHand")}
-          </button>
-        );
-      }
+      
+      stageModalAction = (
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.8rem" }}>
+          {isHost && (
+            <button onClick={handleNextHand} style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem" }}>
+              {t("table.nextHand")}
+            </button>
+          )}
+          <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center", flexWrap: "wrap", marginTop: isHost ? "0" : "0.5rem" }}>
+            {table?.mode !== "TOURNAMENT" && (
+              <button
+                onClick={handleToggleSittingOut}
+                disabled={!!disableSitToggle}
+                style={{
+                  padding: "0.4rem 0.8rem",
+                  borderRadius: "999px",
+                  border: "1px solid #f59e0b",
+                  backgroundColor: "transparent",
+                  color: disableSitToggle ? "#6b7280" : "#fcd34d",
+                  cursor: disableSitToggle ? "default" : "pointer",
+                  fontSize: "0.9rem",
+                  opacity: disableSitToggle ? 0.5 : 1
+                }}
+              >
+                {myPlayer?.isSittingOut ? t("table.sitDown") : t("table.standUp")}
+              </button>
+            )}
+            {isHost && table?.mode !== "TOURNAMENT" && (
+              <button
+                onClick={handleEndGame}
+                disabled={disableEndGame}
+                style={{
+                  padding: "0.4rem 0.8rem",
+                  borderRadius: "999px",
+                  border: "none",
+                  backgroundColor: "#ef4444",
+                  color: disableEndGame ? "#fca5a5" : "#020617",
+                  cursor: disableEndGame ? "default" : "pointer",
+                  opacity: disableEndGame ? 0.5 : 1,
+                  fontWeight: 600,
+                  fontSize: "0.9rem"
+                }}
+              >
+                {t("table.endGame")}
+              </button>
+            )}
+            {isHost && (
+              <button
+                onClick={() => setShowSettings(s => !s)}
+                title="Impostazioni"
+                style={{
+                  padding: "0.4rem 0.8rem",
+                  borderRadius: "999px",
+                  border: "1px solid #4b5563",
+                  backgroundColor: showSettings ? "#1e293b" : "transparent",
+                  color: "#94a3b8",
+                  cursor: "pointer",
+                  fontSize: "1.1rem",
+                  lineHeight: 1
+                }}
+              >
+                ⚙️
+              </button>
+            )}
+          </div>
+        </div>
+      );
     } else if (currentHand.stage === "SHOWDOWN" && votingOpen) {
       stageModalVisible = true;
       stageModalTitle = "Showdown!";
