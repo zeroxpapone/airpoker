@@ -108,6 +108,7 @@ export default function TablePage() {
 
   const [blindsPopupVisible, setBlindsPopupVisible] = useState(false);
   const [lastSeenHandId, setLastSeenHandId] = useState<string | null>(null);
+  const [hideWinnerPopupForHand, setHideWinnerPopupForHand] = useState<string | null>(null);
 
   const navigate = useNavigate();
 
@@ -2165,7 +2166,7 @@ async function handleConfirmWinners(potId: string) {
     }
   }
 
-  const stageModalUI = stageModalVisible && (
+  const stageModalUI = (stageModalVisible && hideWinnerPopupForHand !== currentHand?.id) && (
     <div style={{
       position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
       background: "rgba(2, 6, 23, 0.8)", backdropFilter: "blur(8px)",
@@ -2175,8 +2176,27 @@ async function handleConfirmWinners(potId: string) {
         background: "rgba(15,23,42,0.95)", border: "1px solid #1e293b",
         borderRadius: "1.5rem", padding: "2rem", display: "grid", gap: "1.5rem",
         textAlign: "center", maxWidth: "340px", width: "90%",
-        boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.7)"
+        boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.7)",
+        position: "relative"
       }}>
+        {currentHand?.stage === "SHOWDOWN" && hasWinner && (
+          <button
+            onClick={() => setHideWinnerPopupForHand(currentHand?.id || null)}
+            style={{
+              position: "absolute",
+              top: "0.8rem",
+              right: "0.8rem",
+              background: "transparent",
+              border: "none",
+              color: "#94a3b8",
+              fontSize: "1.5rem",
+              cursor: "pointer",
+              lineHeight: 1
+            }}
+          >
+            ×
+          </button>
+        )}
         <h2 style={{ fontSize: "1.5rem", margin: 0, color: "#e2e8f0" }}>{stageModalTitle}</h2>
         {stageModalContent}
         {stageModalAction}
