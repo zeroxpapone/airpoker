@@ -150,7 +150,32 @@
     "nextLevel": "Prox",
     "tournamentRebuyWarning": "Nota: Assegnare fiches in modalità torneo agirà come Rebuy/Add-on.",
     "transferHost": "Passa Host",
-    "confirmTransferHost": "Sei sicuro di voler cedere il ruolo di Host a questo giocatore?"
+    "confirmTransferHost": "Sei sicuro di voler cedere il ruolo di Host a questo giocatore?",
+    "newHand": "Nuova Mano",
+    "dealCards": "Distribuisci 2 carte a testa!",
+    "startNow": "Inizia Subito",
+    "waitingHost": "In attesa dell'Host...",
+    "handOver": "Mano Conclusa!",
+    "flipCards": "Girate le carte! L'host sta assegnando il piatto.",
+    "selectWinner": "Seleziona chi vince:",
+    "dealFlop": "Gira 3 carte sul tavolo!",
+    "dealTurn": "Gira 1 carta sul tavolo!",
+    "dealRiver": "Gira 1 carta sul tavolo!",
+    "continueFlop": "Continua (Flop)",
+    "continueTurn": "Continua (Turn)",
+    "continueRiver": "Continua (River)",
+    "forceFold": "Fold forzato",
+    "confirmForceFold": "Sei sicuro di voler foldare e far alzare dal tavolo questo giocatore?"
+  },
+  "error": {
+    "minPlayers": "Servono almeno 2 giocatori attivi per una nuova mano.",
+    "minPlayersStart": "Servono almeno 2 giocatori attivi per iniziare.",
+    "onlyHost": "Solo l'host può eseguire questa azione.",
+    "notInGame": "Il tavolo non è in stato di gioco.",
+    "tableNotFound": "Tavolo inesistente.",
+    "noPrevHand": "Nessuna mano precedente trovata.",
+    "prevHandNotFound": "Mano precedente non trovata.",
+    "notShowdown": "La mano corrente non è ancora conclusa."
   },
   "terms": {
     "title": "Termini e Condizioni",

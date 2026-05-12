@@ -151,7 +151,32 @@
     "nextLevel": "Next",
     "tournamentRebuyWarning": "Note: Adding chips in tournament mode acts as a Rebuy/Add-on.",
     "transferHost": "Transfer Host",
-    "confirmTransferHost": "Are you sure you want to transfer the Host role to this player?"
+    "confirmTransferHost": "Are you sure you want to transfer the Host role to this player?",
+    "newHand": "New Hand",
+    "dealCards": "Deal 2 cards to each player!",
+    "startNow": "Start Now",
+    "waitingHost": "Waiting for Host...",
+    "handOver": "Hand Over!",
+    "flipCards": "Flip your cards! The host is assigning the pot.",
+    "selectWinner": "Select the winner:",
+    "dealFlop": "Deal 3 cards on the table!",
+    "dealTurn": "Deal 1 card on the table!",
+    "dealRiver": "Deal 1 card on the table!",
+    "continueFlop": "Continue (Flop)",
+    "continueTurn": "Continue (Turn)",
+    "continueRiver": "Continue (River)",
+    "forceFold": "Force Fold",
+    "confirmForceFold": "Are you sure you want to force fold and stand up this player?"
+  },
+  "error": {
+    "minPlayers": "At least 2 active players are required for a new hand.",
+    "minPlayersStart": "At least 2 active players are required to start.",
+    "onlyHost": "Only the host can perform this action.",
+    "notInGame": "The table is not in a game state.",
+    "tableNotFound": "Table not found.",
+    "noPrevHand": "No previous hand found.",
+    "prevHandNotFound": "Previous hand not found.",
+    "notShowdown": "The current hand has not finished yet."
   },
   "terms": {
     "title": "Terms and Conditions",

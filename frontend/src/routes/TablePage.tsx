@@ -27,7 +27,8 @@ import {
   startNextHand,
   addChips,
   swapPlayerSeats,
-  transferHost
+  transferHost,
+  forceFoldPlayer
 } from "../lib/firestoreApi";
 
 interface TableData {
@@ -102,13 +103,13 @@ export default function TablePage() {
   const [showFoldConfirm, setShowFoldConfirm] = useState(false);
   const [showEndGameConfirm, setShowEndGameConfirm] = useState(false);
   const [transferHostConfirmTarget, setTransferHostConfirmTarget] = useState<string | null>(null);
+  const [forceFoldConfirmTarget, setForceFoldConfirmTarget] = useState<string | null>(null);
 
   const [timeRemainingStr, setTimeRemainingStr] = useState<string>("");
   const [refreshKey, setRefreshKey] = useState(0);
 
   const [blindsPopupVisible, setBlindsPopupVisible] = useState(false);
   const [lastSeenHandId, setLastSeenHandId] = useState<string | null>(null);
-  const [hideWinnerPopupForHand, setHideWinnerPopupForHand] = useState<string | null>(null);
 
   const navigate = useNavigate();
 
@@ -1084,6 +1085,72 @@ async function handleConfirmWinners(potId: string) {
               {t("table.blinds")} {table?.smallBlind}/{table?.bigBlind}
             </p>
           )}
+          <div
+            style={{
+              marginTop: "0.4rem",
+              display: "flex",
+              justifyContent: "flex-end",
+              alignItems: "center",
+              fontSize: "0.8rem"
+            }}
+          >
+            <div style={{ display: "flex", gap: "0.4rem" }}>
+              {table?.mode !== "TOURNAMENT" && (
+                <button
+                  onClick={handleToggleSittingOut}
+                  disabled={!!disableSitToggle}
+                  style={{
+                    padding: "0.3rem 0.6rem",
+                    borderRadius: "999px",
+                    border: "1px solid #f59e0b",
+                    backgroundColor: "transparent",
+                    color: disableSitToggle ? "#6b7280" : "#fcd34d",
+                    cursor: disableSitToggle ? "default" : "pointer",
+                    fontSize: "0.8rem",
+                    opacity: disableSitToggle ? 0.5 : 1
+                  }}
+                >
+                  {myPlayer?.isSittingOut ? t("table.sitDown") : t("table.standUp")}
+                </button>
+              )}
+
+              {isHost && !disableEndGame && table?.mode !== "TOURNAMENT" && (
+                <button
+                  onClick={handleEndGame}
+                  style={{
+                    padding: "0.3rem 0.6rem",
+                    borderRadius: "999px",
+                    border: "none",
+                    backgroundColor: "#ef4444",
+                    color: "#020617",
+                    cursor: "pointer",
+                    fontWeight: 600
+                  }}
+                >
+                  {t("table.endGame")}
+                </button>
+              )}
+              {isHost && inGame && (
+                <button
+                  onClick={() => setShowSettings(s => !s)}
+                  title="Impostazioni"
+                  style={{
+                    padding: "0.3rem 0.55rem",
+                    borderRadius: "999px",
+                    border: "1px solid #4b5563",
+                    backgroundColor: showSettings ? "#1e293b" : "transparent",
+                    color: "#94a3b8",
+                    cursor: "pointer",
+                    fontSize: "1rem",
+                    lineHeight: 1
+                  }}
+                >
+                  ⚙️
+                </button>
+              )}
+            </div>
+          </div>
+
         </header>
 
         <main
@@ -1097,140 +1164,6 @@ async function handleConfirmWinners(potId: string) {
             overflow: "hidden"
           }}
         >
-          {/* ─── Pannello Impostazioni Host (Overlay a tutto schermo sul tavolo) ─── */}
-          {isHost && inGame && showSettings && (
-            <div style={{
-              position: "fixed",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              zIndex: 10000,
-              padding: "1rem",
-              borderRadius: "0.75rem",
-              border: "1px solid #334155",
-              backgroundColor: "rgba(15,23,42,0.95)",
-              backdropFilter: "blur(12px)",
-              display: "flex",
-              flexDirection: "column",
-              gap: "0.8rem",
-              overflowY: "auto",
-              margin: "0.5rem"
-            }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ fontSize: "1rem", fontWeight: 700, color: "#e2e8f0" }}>
-                  ⚙️  {t("table.hostSettings")}
-                  {disableEndGame && (
-                    <span style={{ fontSize: "0.75rem", color: "#f97373", marginLeft: "0.5rem", fontWeight: 400 }}>
-                      {t("table.availableBetweenHands")}
-                    </span>
-                  )}
-                </div>
-                <button
-                  onClick={() => setShowSettings(false)}
-                  style={{
-                    background: "transparent", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: "1.2rem"
-                  }}
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div style={{ display: "grid", gap: "0.6rem" }}>
-                {players.map((p, idx) => {
-                  const isTournament = table?.mode === "TOURNAMENT";
-                  const canRebuy = !isTournament && p.stack < (table?.bigBlind || 0);
-                  const isMe = myUid === p.userId;
-
-                  return (
-                  <div key={p.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", padding: "0.5rem", backgroundColor: "rgba(30,41,59,0.5)", borderRadius: "0.5rem" }}>
-                    {/* Frecce per riordinare */}
-                    <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                      <button
-                        disabled={idx === 0 || disableEndGame}
-                        onClick={async () => {
-                          if (idx === 0 || !user) return;
-                          try { await swapPlayerSeats(tableId!, user, p.userId, players[idx - 1].userId); }
-                          catch (e: any) { setActionError(e.message); }
-                        }}
-                        style={{ padding: "0 0.4rem", fontSize: "0.7rem", cursor: idx === 0 || disableEndGame ? "default" : "pointer", opacity: idx === 0 || disableEndGame ? 0.3 : 1, background: "transparent", border: "1px solid #475569", borderRadius: "4px", color: "#e5e7eb" }}
-                      >▲</button>
-                      <button
-                        disabled={idx === players.length - 1 || disableEndGame}
-                        onClick={async () => {
-                          if (idx === players.length - 1 || !user) return;
-                          try { await swapPlayerSeats(tableId!, user, p.userId, players[idx + 1].userId); }
-                          catch (e: any) { setActionError(e.message); }
-                        }}
-                        style={{ padding: "0 0.4rem", fontSize: "0.7rem", cursor: idx === players.length - 1 || disableEndGame ? "default" : "pointer", opacity: idx === players.length - 1 || disableEndGame ? 0.3 : 1, background: "transparent", border: "1px solid #475569", borderRadius: "4px", color: "#e5e7eb" }}
-                      >▼</button>
-                    </div>
-
-                    {!isMe && (
-                      <button
-                        disabled={disableEndGame}
-                        onClick={() => setTransferHostConfirmTarget(p.userId)}
-                        style={{ padding: "0 0.4rem", fontSize: "0.85rem", cursor: disableEndGame ? "default" : "pointer", opacity: disableEndGame ? 0.3 : 1, background: "transparent", border: "1px solid #ca8a04", borderRadius: "4px", color: "#facc15" }}
-                        title={t("table.transferHost")}
-                      >👑</button>
-                    )}
-
-                    {/* Nome e stack */}
-                    <span style={{ flex: 1, fontSize: "0.85rem", color: "#f8fafc", minWidth: "100px", fontWeight: 500 }}>
-                      {p.displayName} <span style={{ color: "#94a3b8", fontWeight: 400 }}>({p.stack})</span>
-                    </span>
-
-                    {/* Rebuy UI */}
-                    {canRebuy ? (
-                      <>
-                        <input
-                          type="number"
-                          min={5}
-                          step={5}
-                          placeholder={isTournament ? "Add-on" : "Rebuy"}
-                          disabled={disableEndGame}
-                          value={rebuyAmounts[p.userId] ?? ""}
-                          onChange={e => setRebuyAmounts(prev => ({ ...prev, [p.userId]: Number(e.target.value) }))}
-                          style={{
-                            width: "75px", padding: "0.35rem 0.5rem", borderRadius: "0.4rem",
-                            border: "1px solid #475569", backgroundColor: "#0f172a",
-                            color: "#f8fafc", fontSize: "0.85rem",
-                            opacity: disableEndGame ? 0.5 : 1
-                          }}
-                        />
-                        <button
-                          disabled={disableEndGame || !rebuyAmounts[p.userId] || rebuyAmounts[p.userId] <= 0 || actionLoading}
-                          onClick={async () => {
-                            const amount = rebuyAmounts[p.userId];
-                            if (!amount || !user) return;
-                            setActionLoading(true);
-                            try {
-                              await addChips(tableId!, user, p.userId, amount);
-                              setRebuyAmounts(prev => { const n = { ...prev }; delete n[p.userId]; return n; });
-                            } catch (e: any) { setActionError(e.message); }
-                            finally { setActionLoading(false); }
-                          }}
-                          style={{
-                            padding: "0.35rem 0.7rem", borderRadius: "999px", border: "none",
-                            backgroundColor: rebuyAmounts[p.userId] > 0 && !disableEndGame ? "#3b82f6" : "#475569",
-                            color: "#fff", fontSize: "0.8rem", fontWeight: 600,
-                            cursor: rebuyAmounts[p.userId] > 0 && !disableEndGame ? "pointer" : "default",
-                            opacity: disableEndGame ? 0.5 : 1
-                          }}
-                        >+ Chips</button>
-                      </>
-                    ) : (
-                      !isTournament && (
-                        <span style={{ fontSize: "0.8rem", color: "#94a3b8", fontStyle: "italic", marginLeft: "auto" }}>
-                          {t("table.stackOk")}
-                        </span>
-                      )
-                    )}
-                  </div>
-                )})}
-              </div>
-            </div>
-          )}
 
           <div
             style={{
@@ -1385,11 +1318,7 @@ async function handleConfirmWinners(potId: string) {
             flexShrink: 0
           }}
         >
-          {actionError && (
-            <p style={{ fontSize: "0.8rem", color: "#f97373" }}>
-              {actionError}
-            </p>
-          )}
+
 
           <div
             style={{
@@ -1869,7 +1798,7 @@ async function handleConfirmWinners(potId: string) {
     <div style={{
       position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
       background: "rgba(2, 6, 23, 0.8)", backdropFilter: "blur(8px)",
-      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000
     }}>
       <div style={{
         background: "rgba(15,23,42,0.95)", border: "1px solid #1e293b",
@@ -1908,7 +1837,7 @@ async function handleConfirmWinners(potId: string) {
     <div style={{
       position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
       background: "rgba(2, 6, 23, 0.8)", backdropFilter: "blur(8px)",
-      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000
     }}>
       <div style={{
         background: "rgba(15,23,42,0.95)", border: "1px solid #1e293b",
@@ -1944,7 +1873,7 @@ async function handleConfirmWinners(potId: string) {
     <div style={{
       position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
       background: "rgba(2, 6, 23, 0.8)", backdropFilter: "blur(8px)",
-      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000
     }}>
       <div style={{
         background: "rgba(15,23,42,0.95)", border: "1px solid #1e293b",
@@ -1989,20 +1918,65 @@ async function handleConfirmWinners(potId: string) {
     </div>
   );
 
+  /* ─── Force Fold Confirm Modal ─── */
+  const forceFoldConfirmModalUI = forceFoldConfirmTarget && (
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+      background: "rgba(2, 6, 23, 0.85)", backdropFilter: "blur(8px)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000
+    }}>
+      <div style={{
+        background: "rgba(15,23,42,0.95)", border: "1px solid #1e293b",
+        borderRadius: "1.5rem", padding: "2rem", display: "grid", gap: "1.5rem",
+        textAlign: "center", maxWidth: "340px", width: "90%",
+        boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.7)"
+      }}>
+        <h2 style={{ fontSize: "1.3rem", margin: 0, color: "#e2e8f0" }}>🃏 {t("table.forceFold")}</h2>
+        <p style={{ margin: 0, fontSize: "0.9rem", color: "#9ca3af" }}>
+          {t("table.confirmForceFold")}
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.8rem" }}>
+          <button
+            onClick={async () => {
+              if (forceFoldConfirmTarget && user && tableId) {
+                try { 
+                  await forceFoldPlayer(tableId, user, forceFoldConfirmTarget); 
+                  setShowSettings(false);
+                }
+                catch (e: any) { setActionError(e.message); }
+                setForceFoldConfirmTarget(null);
+              }
+            }}
+            style={{ background: "#ef4444", color: "#fff", border: "none", padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontWeight: 700, fontSize: "0.95rem" }}
+          >
+            {t("table.forceFold")}
+          </button>
+          <button
+            onClick={() => setForceFoldConfirmTarget(null)}
+            style={{ background: "transparent", color: "#9ca3af", border: "1px solid #374151", padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontWeight: 600, fontSize: "0.95rem" }}
+          >
+            {t("table.cancel")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   let stageModalVisible = false;
   let stageModalTitle = "";
   let stageModalContent: React.ReactNode = null;
   let stageModalAction: React.ReactNode = null;
+  let stageModalFooter: React.ReactNode = null;
 
   if (inGame && currentHand) {
     if (currentHand.stage === "SHOWDOWN" && hasWinner) {
       stageModalVisible = true;
-      stageModalTitle = "Mano Conclusa!";
-      
+      stageModalTitle = t("table.handOver");
+
       const winnerNames = currentHand.winnerIds && currentHand.winnerIds.length > 1
         ? currentHand.winnerIds.map(wId => players.find(p => p.userId === wId)?.displayName || t("table.unknown")).join(", ")
         : players.find(p => p.userId === currentHand.winnerId)?.displayName || t("table.unknown");
-      
+
       stageModalContent = (
         <div style={{ color: "#e2e8f0", fontSize: "1rem" }}>
           <div style={{ fontSize: "1.2rem", fontWeight: 700, color: "#facc15", marginBottom: "0.5rem" }}>
@@ -2011,82 +1985,53 @@ async function handleConfirmWinners(potId: string) {
           <div>{t("table.pot")}: {currentHand.pot}</div>
         </div>
       );
-      
-      stageModalAction = (
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.8rem" }}>
+
+      // Host controls inside the winner modal
+      stageModalFooter = (
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", marginTop: "0.5rem", paddingTop: "0.75rem", borderTop: "1px solid #1e293b" }}>
           {isHost && (
             <button onClick={handleNextHand} style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem" }}>
               {t("table.nextHand")}
             </button>
           )}
-          <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center", flexWrap: "wrap", marginTop: isHost ? "0" : "0.5rem" }}>
-            {table?.mode !== "TOURNAMENT" && (
-              <button
-                onClick={handleToggleSittingOut}
-                disabled={!!disableSitToggle}
-                style={{
-                  padding: "0.4rem 0.8rem",
-                  borderRadius: "999px",
-                  border: "1px solid #f59e0b",
-                  backgroundColor: "transparent",
-                  color: disableSitToggle ? "#6b7280" : "#fcd34d",
-                  cursor: disableSitToggle ? "default" : "pointer",
-                  fontSize: "0.9rem",
-                  opacity: disableSitToggle ? 0.5 : 1
-                }}
-              >
-                {myPlayer?.isSittingOut ? t("table.sitDown") : t("table.standUp")}
-              </button>
-            )}
-            {isHost && table?.mode !== "TOURNAMENT" && (
-              <button
-                onClick={handleEndGame}
-                disabled={disableEndGame}
-                style={{
-                  padding: "0.4rem 0.8rem",
-                  borderRadius: "999px",
-                  border: "none",
-                  backgroundColor: "#ef4444",
-                  color: disableEndGame ? "#fca5a5" : "#020617",
-                  cursor: disableEndGame ? "default" : "pointer",
-                  opacity: disableEndGame ? 0.5 : 1,
-                  fontWeight: 600,
-                  fontSize: "0.9rem"
-                }}
-              >
-                {t("table.endGame")}
-              </button>
-            )}
-            {isHost && (
-              <button
-                onClick={() => setShowSettings(s => !s)}
-                title="Impostazioni"
-                style={{
-                  padding: "0.4rem 0.8rem",
-                  borderRadius: "999px",
-                  border: "1px solid #4b5563",
-                  backgroundColor: showSettings ? "#1e293b" : "transparent",
-                  color: "#94a3b8",
-                  cursor: "pointer",
-                  fontSize: "1.1rem",
-                  lineHeight: 1
-                }}
-              >
-                ⚙️
-              </button>
-            )}
-          </div>
+          {isHost && table?.mode !== "TOURNAMENT" && (
+            <button
+              onClick={handleEndGame}
+              style={{ width: "100%", padding: "0.65rem", borderRadius: "999px", border: "none", backgroundColor: "#ef4444", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.9rem" }}
+            >
+              {t("table.endGame")}
+            </button>
+          )}
+          {isHost && (
+            <button
+              onClick={() => setShowSettings(s => !s)}
+              style={{ width: "100%", padding: "0.65rem", borderRadius: "999px", border: "1px solid #4b5563", backgroundColor: "transparent", color: "#94a3b8", fontWeight: 600, cursor: "pointer", fontSize: "0.9rem" }}
+            >
+              ⚙️ {t("table.hostSettings")}
+            </button>
+          )}
+          {/* Sit/Stand for all players */}
+          {table?.mode !== "TOURNAMENT" && myPlayer && (
+            <button
+              onClick={handleToggleSittingOut}
+              disabled={!!disableSitToggle}
+              style={{ width: "100%", padding: "0.65rem", borderRadius: "999px", border: "1px solid #f59e0b", backgroundColor: "transparent", color: disableSitToggle ? "#6b7280" : "#fcd34d", fontWeight: 600, cursor: disableSitToggle ? "default" : "pointer", fontSize: "0.9rem", opacity: disableSitToggle ? 0.5 : 1 }}
+            >
+              {myPlayer?.isSittingOut ? t("table.sitDown") : t("table.standUp")}
+            </button>
+          )}
         </div>
       );
+
     } else if (currentHand.stage === "SHOWDOWN" && votingOpen) {
       stageModalVisible = true;
       stageModalTitle = "Showdown!";
       stageModalContent = (
         <div style={{ color: "#e2e8f0", fontSize: "1rem" }}>
-          <div style={{ color: "#facc15", fontWeight: 700, fontSize: "1.1rem" }}>Girate le carte! L'host sta assegnando il piatto.</div>
+          <div style={{ color: "#facc15", fontWeight: 700, fontSize: "1.1rem" }}>{t("table.flipCards")}</div>
           {isHost && activePot && (
             <div style={{ marginTop: "1rem", color: "#facc15" }}>
-              Seleziona chi vince:
+              {t("table.selectWinner")}
               <br/>
               <span style={{color: "#e2e8f0", fontSize: "0.85rem"}}>
                 {currentHand.pots?.length && currentHand.pots.length > 1 ? `Main/Side Pot (${activePot.amount})` : `Pot (${activePot.amount})`}
@@ -2130,26 +2075,26 @@ async function handleConfirmWinners(potId: string) {
       stageModalVisible = true;
       if (currentHand.stage === "PREFLOP") {
         stageModalTitle = "Flop";
-        stageModalContent = <div style={{ color: "#facc15", fontWeight: 700, fontSize: "1.1rem" }}>Gira 3 carte sul tavolo!</div>;
+        stageModalContent = <div style={{ color: "#facc15", fontWeight: 700, fontSize: "1.1rem" }}>{t("table.dealFlop")}</div>;
         if (isHost) {
-          stageModalAction = <button onClick={handleAdvanceStage} style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem" }}>Continua (Flop)</button>;
+          stageModalAction = <button onClick={handleAdvanceStage} style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem" }}>{t("table.continueFlop")}</button>;
         }
       } else if (currentHand.stage === "FLOP") {
         stageModalTitle = "Turn";
-        stageModalContent = <div style={{ color: "#facc15", fontWeight: 700, fontSize: "1.1rem" }}>Gira 1 carta sul tavolo!</div>;
+        stageModalContent = <div style={{ color: "#facc15", fontWeight: 700, fontSize: "1.1rem" }}>{t("table.dealTurn")}</div>;
         if (isHost) {
-          stageModalAction = <button onClick={handleAdvanceStage} style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem" }}>Continua (Turn)</button>;
+          stageModalAction = <button onClick={handleAdvanceStage} style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem" }}>{t("table.continueTurn")}</button>;
         }
       } else if (currentHand.stage === "TURN") {
         stageModalTitle = "River";
-        stageModalContent = <div style={{ color: "#facc15", fontWeight: 700, fontSize: "1.1rem" }}>Gira 1 carta sul tavolo!</div>;
+        stageModalContent = <div style={{ color: "#facc15", fontWeight: 700, fontSize: "1.1rem" }}>{t("table.dealRiver")}</div>;
         if (isHost) {
-          stageModalAction = <button onClick={handleAdvanceStage} style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem" }}>Continua (River)</button>;
+          stageModalAction = <button onClick={handleAdvanceStage} style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem" }}>{t("table.continueRiver")}</button>;
         }
       }
     } else if (blindsPopupVisible && currentHand.stage === "PREFLOP") {
       stageModalVisible = true;
-      stageModalTitle = "Nuova Mano";
+      stageModalTitle = t("table.newHand");
       const sb = players[currentHand.smallBlindIndex]?.displayName;
       const bb = players[currentHand.bigBlindIndex]?.displayName;
 
@@ -2157,61 +2102,112 @@ async function handleConfirmWinners(potId: string) {
         <div style={{ display: "grid", gap: "0.5rem", color: "#e2e8f0", fontSize: "0.95rem" }}>
           <div style={{ display: "flex", justifyContent: "space-between" }}><span>Small Blind:</span> <strong>{sb}</strong></div>
           <div style={{ display: "flex", justifyContent: "space-between" }}><span>Big Blind:</span> <strong>{bb}</strong></div>
-          <div style={{ marginTop: "0.8rem", color: "#facc15", fontWeight: 700 }}>Distribuisci 2 carte a testa!</div>
+          <div style={{ marginTop: "0.8rem", color: "#facc15", fontWeight: 700 }}>{t("table.dealCards")}</div>
         </div>
       );
       if (isHost) {
-        stageModalAction = <button onClick={handleCloseBlindsPopup} style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem" }}>Inizia Subito</button>;
+        stageModalAction = <button onClick={handleCloseBlindsPopup} style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem" }}>{t("table.startNow")}</button>;
       }
     }
   }
 
-  const stageModalUI = (stageModalVisible && hideWinnerPopupForHand !== currentHand?.id) && (
+  const stageModalUI = stageModalVisible && (
     <div style={{
       position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
       background: "rgba(2, 6, 23, 0.8)", backdropFilter: "blur(8px)",
-      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000
     }}>
       <div style={{
         background: "rgba(15,23,42,0.95)", border: "1px solid #1e293b",
         borderRadius: "1.5rem", padding: "2rem", display: "grid", gap: "1.5rem",
-        textAlign: "center", maxWidth: "340px", width: "90%",
+        textAlign: "center", maxWidth: "360px", width: "90%",
         boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.7)",
-        position: "relative"
+        maxHeight: "90vh", overflowY: "auto"
       }}>
-        {currentHand?.stage === "SHOWDOWN" && hasWinner && (
-          <button
-            onClick={() => setHideWinnerPopupForHand(currentHand?.id || null)}
-            style={{
-              position: "absolute",
-              top: "0.8rem",
-              right: "0.8rem",
-              background: "transparent",
-              border: "none",
-              color: "#94a3b8",
-              fontSize: "1.5rem",
-              cursor: "pointer",
-              lineHeight: 1
-            }}
-          >
-            ×
-          </button>
-        )}
         <h2 style={{ fontSize: "1.5rem", margin: 0, color: "#e2e8f0" }}>{stageModalTitle}</h2>
         {stageModalContent}
         {stageModalAction}
-        {!isHost && (
+        {stageModalFooter}
+        {!isHost && !stageModalFooter && (
           <div style={{ color: "#9ca3af", fontSize: "0.85rem", fontStyle: "italic", marginTop: "0.5rem" }}>
-            In attesa dell'Host...
+            {t("table.waitingHost")}
           </div>
         )}
       </div>
     </div>
   );
 
-if (inLobby) return <>{renderLobby()}{modalUI}{foldConfirmModalUI}{endGameConfirmModalUI}{transferHostConfirmModalUI}</>;
-if (inGame) return <>{renderGame()}{modalUI}{foldConfirmModalUI}{endGameConfirmModalUI}{transferHostConfirmModalUI}{stageModalUI}</>;
-if (inSummary) return <>{renderSummary()}{modalUI}{foldConfirmModalUI}{endGameConfirmModalUI}{transferHostConfirmModalUI}</>;
+  /* ─── Pannello Impostazioni Host ─── rendered AFTER stageModalUI to guarantee it's on top */
+  const hostSettingsPanelUI = isHost && inGame && showSettings && (
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+      background: "rgba(2, 6, 23, 0.8)", backdropFilter: "blur(8px)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 5000
+    }}>
+      <div style={{
+        background: "rgba(15,23,42,0.95)", border: "1px solid #1e293b",
+        borderRadius: "1.5rem", padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem",
+        maxWidth: "450px", width: "95%", boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.7)",
+        maxHeight: "90vh", overflowY: "auto"
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ fontSize: "1.1rem", fontWeight: 700, color: "#e2e8f0" }}>
+            ⚙️  {t("table.hostSettings")}
+            {disableEndGame && (
+              <span style={{ fontSize: "0.75rem", color: "#f97373", marginLeft: "0.5rem", fontWeight: 400 }}>
+                {t("table.availableBetweenHands")}
+              </span>
+            )}
+          </div>
+          <button onClick={() => setShowSettings(false)} style={{ background: "transparent", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: "1.2rem" }}>✕</button>
+        </div>
+
+        <div style={{ display: "grid", gap: "0.6rem" }}>
+          {players.map((p, idx) => {
+            const isTournament = table?.mode === "TOURNAMENT";
+            const canRebuy = !isTournament && p.stack < (table?.bigBlind || 0);
+            const isMe = myUid === p.userId;
+            return (
+              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", padding: "0.5rem", backgroundColor: "rgba(30,41,59,0.5)", borderRadius: "0.5rem" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                  <button disabled={idx === 0 || disableEndGame} onClick={async () => { if (idx === 0 || !user) return; try { await swapPlayerSeats(tableId!, user, p.userId, players[idx - 1].userId); } catch (e: any) { setActionError(e.message); } }} style={{ padding: "0 0.4rem", fontSize: "0.7rem", cursor: idx === 0 || disableEndGame ? "default" : "pointer", opacity: idx === 0 || disableEndGame ? 0.3 : 1, background: "transparent", border: "1px solid #475569", borderRadius: "4px", color: "#e5e7eb" }}>▲</button>
+                  <button disabled={idx === players.length - 1 || disableEndGame} onClick={async () => { if (idx === players.length - 1 || !user) return; try { await swapPlayerSeats(tableId!, user, p.userId, players[idx + 1].userId); } catch (e: any) { setActionError(e.message); } }} style={{ padding: "0 0.4rem", fontSize: "0.7rem", cursor: idx === players.length - 1 || disableEndGame ? "default" : "pointer", opacity: idx === players.length - 1 || disableEndGame ? 0.3 : 1, background: "transparent", border: "1px solid #475569", borderRadius: "4px", color: "#e5e7eb" }}>▼</button>
+                </div>
+                {!isMe && (<button onClick={() => setTransferHostConfirmTarget(p.userId)} style={{ padding: "0 0.4rem", fontSize: "0.85rem", cursor: "pointer", background: "transparent", border: "1px solid #ca8a04", borderRadius: "4px", color: "#facc15" }} title={t("table.transferHost")}>👑</button>)}
+                {!isMe && inGame && currentHand && currentHand.currentTurnIndex === idx && (
+                  <button onClick={() => setForceFoldConfirmTarget(p.userId)} style={{ padding: "0 0.4rem", fontSize: "0.85rem", cursor: "pointer", background: "transparent", border: "1px solid #ef4444", borderRadius: "4px", color: "#f87171" }} title={t("table.forceFold")}>🃏</button>
+                )}
+                <span style={{ flex: 1, fontSize: "0.85rem", color: "#f8fafc", minWidth: "100px", fontWeight: 500 }}>{p.displayName} <span style={{ color: "#94a3b8", fontWeight: 400 }}>({p.stack})</span></span>
+                {canRebuy ? (
+                  <>
+                    <input type="number" min={5} step={5} placeholder={isTournament ? "Add-on" : "Rebuy"} disabled={disableEndGame} value={rebuyAmounts[p.userId] ?? ""} onChange={e => setRebuyAmounts(prev => ({ ...prev, [p.userId]: Number(e.target.value) }))} style={{ width: "75px", padding: "0.35rem 0.5rem", borderRadius: "0.4rem", border: "1px solid #475569", backgroundColor: "#0f172a", color: "#f8fafc", fontSize: "0.85rem", opacity: disableEndGame ? 0.5 : 1 }} />
+                    <button disabled={disableEndGame || !rebuyAmounts[p.userId] || rebuyAmounts[p.userId] <= 0 || actionLoading} onClick={async () => { const amount = rebuyAmounts[p.userId]; if (!amount || !user) return; setActionLoading(true); try { await addChips(tableId!, user, p.userId, amount); setRebuyAmounts(prev => { const n = { ...prev }; delete n[p.userId]; return n; }); } catch (e: any) { setActionError(e.message); } finally { setActionLoading(false); } }} style={{ padding: "0.35rem 0.7rem", borderRadius: "999px", border: "none", backgroundColor: rebuyAmounts[p.userId] > 0 && !disableEndGame ? "#3b82f6" : "#475569", color: "#fff", fontSize: "0.8rem", fontWeight: 600, cursor: rebuyAmounts[p.userId] > 0 && !disableEndGame ? "pointer" : "default", opacity: disableEndGame ? 0.5 : 1 }}>+ Chips</button>
+                  </>
+                ) : (!isTournament && (<span style={{ fontSize: "0.8rem", color: "#94a3b8", fontStyle: "italic", marginLeft: "auto" }}>{t("table.stackOk")}</span>))}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+
+  const actionErrorUI = actionError && (
+    <div style={{
+      position: "fixed", top: "2rem", left: "50%", transform: "translateX(-50%)",
+      background: "#fecaca", color: "#b91c1c", padding: "0.75rem 1.25rem", borderRadius: "1rem",
+      fontSize: "0.9rem", border: "1px solid #f87171", zIndex: 20000, textAlign: "center",
+      boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.5)", fontWeight: 600,
+      display: "flex", alignItems: "center", gap: "0.5rem"
+    }}>
+      <span>⚠️ {t(actionError)}</span>
+      <button onClick={() => setActionError(null)} style={{ background: "transparent", border: "none", color: "#b91c1c", cursor: "pointer", fontSize: "1.2rem", padding: "0 0.2rem" }}>✕</button>
+    </div>
+  );
+
+if (inLobby) return <>{renderLobby()}{modalUI}{foldConfirmModalUI}{endGameConfirmModalUI}{transferHostConfirmModalUI}{forceFoldConfirmModalUI}{actionErrorUI}</>;
+if (inGame) return <>{renderGame()}{modalUI}{foldConfirmModalUI}{endGameConfirmModalUI}{transferHostConfirmModalUI}{forceFoldConfirmModalUI}{stageModalUI}{hostSettingsPanelUI}{actionErrorUI}</>;
+if (inSummary) return <>{renderSummary()}{modalUI}{foldConfirmModalUI}{endGameConfirmModalUI}{transferHostConfirmModalUI}{forceFoldConfirmModalUI}{actionErrorUI}</>;
 return <p>{t("table.unsupportedState")}</p>;
 }
 

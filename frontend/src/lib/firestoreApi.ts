@@ -359,7 +359,7 @@ export async function startGame(tableId: string) {
   const activePlayersCount = players.filter(p => !p.isSittingOut && p.stack > 0).length;
 
   if (activePlayersCount < 2) {
-    throw new Error("Servono almeno 2 giocatori attivi per iniziare");
+    throw new Error("error.minPlayersStart");
   }
 
 
@@ -502,6 +502,99 @@ export async function setSittingOut(
   await setDoc(playerRef, { isSittingOut }, { merge: true });
 }
 
+/**
+ * Host-only: folds a specific player (must be their turn) and forces them to sit out.
+ */
+export async function forceFoldPlayer(
+  tableId: string,
+  hostUser: User,
+  targetPlayerId: string
+) {
+  const tableRef = doc(db, "tables", tableId);
+  const tableSnap = await getDoc(tableRef);
+  if (!tableSnap.exists()) throw new Error("Tavolo inesistente.");
+  const tableData = tableSnap.data() as any;
+  if (tableData.hostId !== hostUser.uid) throw new Error("Solo l'host può eseguire questa azione.");
+
+  const handId = tableData.currentHandId;
+  if (!handId) throw new Error("Nessuna mano in corso.");
+
+  const handRef = doc(db, "tables", tableId, "hands", handId);
+  const handSnap = await getDoc(handRef);
+  if (!handSnap.exists()) throw new Error("Mano non trovata.");
+  const hand = handSnap.data() as any;
+
+  const playersSnap = await getDocs(query(collection(db, "tables", tableId, "players"), orderBy("seatIndex")));
+  const players = playersSnap.docs.map(d => ({ id: d.id, ref: d.ref, data: d.data() as any }));
+  const targetIdx = players.findIndex(p => p.id === targetPlayerId);
+  
+  if (targetIdx === -1) throw new Error("Giocatore non trovato.");
+  if (hand.currentTurnIndex !== targetIdx) throw new Error("Puoi forzare il fold solo durante il turno del giocatore.");
+
+  const activePlayers = players.filter(p => !p.data.isFolded && !p.data.isSittingOut);
+  const remaining = activePlayers.filter(p => p.id !== targetPlayerId);
+
+  const batch = writeBatch(db);
+  
+  // Set as folded and sitting out
+  batch.update(players[targetIdx].ref, { isFolded: true, isSittingOut: true });
+
+  // If only one player remains after fold, auto-advance to showdown
+  if (remaining.length === 1) {
+    const winnerId = remaining[0].id;
+    const handContributions = hand.handContributions || {};
+    
+    // Calculate pots with the target player already marked as folded
+    const pots = calculatePotsCore(
+      players.map(p => ({ 
+        id: p.id, 
+        isFolded: p.id === targetPlayerId ? true : !!p.data.isFolded 
+      })),
+      handContributions
+    );
+
+    // Auto-settle all pots for the only remaining player
+    pots.forEach(p => {
+      p.winners = [winnerId];
+      p.settled = true;
+    });
+
+    const handUpdate: any = { 
+      stage: "SHOWDOWN", 
+      currentTurnIndex: -1,
+      pots,
+      winnerIds: [winnerId],
+      confirmedAt: serverTimestamp(),
+      votingOpen: false
+    };
+
+    if (pots.length > 0) {
+      handUpdate.winnerId = winnerId;
+      handUpdate.pot = pots.reduce((sum: number, p: any) => sum + p.amount, 0);
+    }
+
+    batch.update(handRef, handUpdate);
+    
+    // Update winner's stack
+    const totalPot = pots.reduce((sum: number, p: any) => sum + p.amount, 0);
+    const winnerIdx = players.findIndex(p => p.id === winnerId);
+    if (winnerIdx !== -1) {
+      batch.update(players[winnerIdx].ref, { 
+        stack: (players[winnerIdx].data.stack || 0) + totalPot 
+      });
+    }
+  } else {
+    // Find next active player
+    let next = (targetIdx + 1) % players.length;
+    while (next !== targetIdx && (players[next].data.isFolded || players[next].data.isSittingOut || players[next].id === targetPlayerId)) {
+      next = (next + 1) % players.length;
+    }
+    batch.update(handRef, { currentTurnIndex: next });
+  }
+
+  await batch.commit();
+}
+
 export async function endGame(tableId: string) {
   const tableRef = doc(db, "tables", tableId);
   await updateDoc(tableRef, {
@@ -517,27 +610,27 @@ export async function endGame(tableId: string) {
 export async function startNextHand(tableId: string, user: User) {
   const tableRef = doc(db, "tables", tableId);
   const tableSnap = await getDoc(tableRef);
-  if (!tableSnap.exists()) throw new Error("Tavolo inesistente.");
+  if (!tableSnap.exists()) throw new Error("error.tableNotFound");
   const tableData = tableSnap.data() as any;
 
   if (tableData.hostId !== user.uid) {
-    throw new Error("Solo l'host può avviare la mano successiva.");
+    throw new Error("error.onlyHost");
   }
 
   if (tableData.state !== "IN_GAME") {
-    throw new Error("Il tavolo non è in stato di gioco.");
+    throw new Error("error.notInGame");
   }
 
   const prevHandId: string | null = tableData.currentHandId ?? null;
-  if (!prevHandId) throw new Error("Nessuna mano precedente trovata.");
+  if (!prevHandId) throw new Error("error.noPrevHand");
 
   const prevHandRef = doc(db, "tables", tableId, "hands", prevHandId);
   const prevHandSnap = await getDoc(prevHandRef);
-  if (!prevHandSnap.exists()) throw new Error("Mano precedente non trovata.");
+  if (!prevHandSnap.exists()) throw new Error("error.prevHandNotFound");
 
   const prevHand = prevHandSnap.data() as any as HandData;
   if (prevHand.stage !== "SHOWDOWN") {
-    throw new Error("La mano corrente non è ancora in SHOWDOWN.");
+    throw new Error("error.notShowdown");
   }
 
   let sbAmount = Number(tableData.smallBlind) || 0;
@@ -611,7 +704,7 @@ export async function startNextHand(tableId: string, user: User) {
       await endGame(tableId);
       return;
     }
-    throw new Error("Servono almeno 2 giocatori attivi per una nuova mano.");
+    throw new Error("error.minPlayers");
   }
 
 
