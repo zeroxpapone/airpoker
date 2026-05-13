@@ -169,7 +169,7 @@ export default function TablePage() {
   const [transferHostConfirmTarget, setTransferHostConfirmTarget] = useState<string | null>(null);
   const [forceFoldConfirmTarget, setForceFoldConfirmTarget] = useState<string | null>(null);
   const [showMyCards, setShowMyCards] = useState(true);
-  const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
+  const [, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
 
   useEffect(() => {
     const handleResize = () => setWindowSize({ width: window.innerWidth, height: window.innerHeight });
@@ -2210,8 +2210,8 @@ async function handleConfirmWinners(potId: string) {
                         {result && (
                           <div style={{ fontSize: "0.75rem", color: isWinner ? "#86efac" : "#9ca3af", display: "flex", gap: "0.4rem", alignItems: "center", flexWrap: "wrap" }}>
                             <span>{result.rankName}</span>
-                            {isWinner && result.chipsWon > 0 && (
-                              <span style={{ color: "#facc15", fontWeight: 700 }}>+{result.chipsWon}</span>
+                            {isWinner && (result as any).chipsWon > 0 && (
+                              <span style={{ color: "#facc15", fontWeight: 700 }}>+{(result as any).chipsWon}</span>
                             )}
                           </div>
                         )}

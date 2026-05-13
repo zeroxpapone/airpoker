@@ -36,6 +36,7 @@ export default function CreateTablePage() {
   const [levelMins, setLevelMins] = useState(15);
   const [tournamentSettingMode, setTournamentSettingMode] = useState<'SIMPLE' | 'EXPERT'>('SIMPLE');
   const [isStackAuto, setIsStackAuto] = useState(true);
+  const [isVirtualCards, setIsVirtualCards] = useState(false);
 
   // Auto-adjust stack based on mode and duration if the user hasn't manually overridden it
   useEffect(() => {
@@ -123,7 +124,8 @@ export default function CreateTablePage() {
             targetDurationHours: durationHours,
             levelDurationMins: actualLevelMins,
             blindSchedule
-          } : undefined
+          } : undefined,
+          isVirtualCards
         },
         user
       );
@@ -327,6 +329,65 @@ export default function CreateTablePage() {
                 )}
               </div>
             )}
+
+          <Field
+            label={t("createTable.virtualCardsLabel")}
+            description={t("createTable.virtualCardsDesc")}
+          >
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "0.5rem",
+                backgroundColor: "#0f172a",
+                padding: "0.3rem",
+                borderRadius: "0.75rem"
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setIsVirtualCards(false)}
+                style={{
+                  padding: "0.55rem 0.5rem",
+                  borderRadius: "0.5rem",
+                  border: "none",
+                  backgroundColor: !isVirtualCards ? "#3b82f6" : "transparent",
+                  color: !isVirtualCards ? "#ffffff" : "#9ca3af",
+                  fontWeight: !isVirtualCards ? 600 : 400,
+                  cursor: "pointer",
+                  transition: "all 0.2s",
+                  fontSize: "0.85rem",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "0.4rem"
+                }}
+              >
+                🃏 {t("createTable.physicalCards")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsVirtualCards(true)}
+                style={{
+                  padding: "0.55rem 0.5rem",
+                  borderRadius: "0.5rem",
+                  border: "none",
+                  backgroundColor: isVirtualCards ? "#8b5cf6" : "transparent",
+                  color: isVirtualCards ? "#ffffff" : "#9ca3af",
+                  fontWeight: isVirtualCards ? 600 : 400,
+                  cursor: "pointer",
+                  transition: "all 0.2s",
+                  fontSize: "0.85rem",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "0.4rem"
+                }}
+              >
+                💻 {t("createTable.virtualCards")}
+              </button>
+            </div>
+          </Field>
 
           <Field
             label={t("createTable.passwordLabel")}
