@@ -1,9 +1,9 @@
 # 🃏 AirPoker  
-**Play Texas Hold’em anywhere using real cards and your phone as the betting system.**
+**Play Texas Hold’em anywhere, your way.**
 
-AirPoker is a lightweight, browser-based webapp designed to simplify live poker games with friends.  
-No chips, no physical counters, no complicated setups.  
-Just open the link, join the table, and manage every betting round digitally.
+AirPoker is a lightweight, browser-based webapp designed to simplify poker games with friends.  
+Choose your style: use **real cards** and your phone as the betting system, or go **fully virtual** with automated dealing and showdown evaluation.
+No chips, no physical counters, no complicated setups. Just open the link, join the table, and play.
 
 ---
 
@@ -28,15 +28,15 @@ Just open the link, join the table, and manage every betting round digitally.
   - All-in
 - Automatic pot calculation, including **side pots**.
 
-### 🃏 Pure Physical Cards
-AirPoker doesn't simulate cards.  
-You use real cards.  
-The app manages:
-- Turn ordering  
-- Blind posting  
-- Betting  
-- Pot distribution  
-- Winner confirmation
+### 🃏 Hybrid Card Modes
+AirPoker gives you total flexibility:
+- **Physical Cards Mode**: Use a real deck of cards. The app manages turn ordering, blind posting, betting, and pot distribution. Winners are selected via a voting system or host override.
+- **Virtual Cards Mode**: The app handles everything. Automated dealing, **professional "burn cards" protocol**, and a high-precision evaluation engine that automatically settles main and side pots at showdown.
+
+### 🏆 Pro Showdown Engine
+- **Automated Hand Evaluation**: High-precision detection of all poker combinations (High Card to Royal Flush).
+- **Sequential Side-Pot Settlement**: Correct handling of complex multi-way all-ins with clear per-player winning summaries.
+- **Visual Clarity**: Showdown modal with scrollable hand lists and interactive board views.
 
 ---
 
@@ -67,12 +67,10 @@ At the end of the final betting round (River):
 ### Backend & Realtime Sync
 - **Firebase Authentication** (anonymous login)
 - **Firestore** (real-time database)
-- **Cloud Functions** for:
-  - Validating betting actions  
-  - Managing hand progression  
-  - Calculating main + side pots  
-  - Awarding winnings  
-  - Enforcing table rules
+- **Advanced Logic Utilities**:
+  - `pokerEvaluator.ts`: Professional-grade hand ranking and tie-breaking.
+  - `calculatePotsCore`: Cascading side-pot calculation with zero-loss rounding.
+  - `autoEvaluateShowdown`: Automated chip distribution and state management.
 
 ### Hosting
 - **Firebase Hosting**  
@@ -130,42 +128,29 @@ Hosting<br>
 Copy the config into frontend/src/lib/firebase.ts<br>
 
 ### 4. Local Testing & PRs
-Run the app locally to test features, understand the architecture, or develop improvements. If you build something cool (e.g., side pot improvements), feel free to open a Pull Request!
+Run the app locally to test features, understand the architecture, or develop improvements. If you build something cool (e.g., UI themes or advanced statistics), feel free to open a Pull Request!
 **Note:** You are NOT permitted to deploy your own public instance of AirPoker or use this codebase to create a competing product. See the LICENSE file.
 ---
 
 ## 🧪 Development Roadmap (MVP → Advanced)
-MVP
-Anonymous login
+COMPLETED
+- Anonymous login & Create/join table
+- Real-time Lobby + seat ordering
+- Automatic Blinds rotation & New Hand popups
+- Professional Side-pot system (Cascading)
+- Automated Virtual Cards Engine + Showdown
+- Host management tools (Re-entry, Force Fold, Reorder)
 
-Create/join table
-
-Lobby + ready check
-
-First hand management (SB/BB, turn order, pot)
-
-Basic betting flow
-
-Winner selection screen
-
-Extended
-Side pot system
-
-Re-entry handling
-
-Host seat rearrangement
-
-Host override tools
-
-Game history & replay
-
-Table presets & private modes
+PLANNED
+- Game history & replay
+- Table presets & private modes
+- Advanced tournament statistics
 
 ---
 
 ## 🤝 Contributing
 Pull requests are welcome.
-If you want to improve logic such as side pot calculation or add new features, feel free to open an issue.
+If you want to suggest new features like game history export or custom table themes, feel free to open an issue.
 
 ---
 
