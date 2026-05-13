@@ -193,7 +193,7 @@
   },
   "terms": {
     "title": "Termini e Condizioni",
-    "lastUpdated": "Ultimo aggiornamento: Marzo 2026",
+    "lastUpdated": "Ultimo aggiornamento: Maggio 2026",
     "backBtn": "Torna indietro",
     "sections": [
       {
@@ -228,18 +228,18 @@
   },
   "about": {
     "title": "Cos'è AirPoker?",
-    "missionTitle": "Il compagno perfetto per le partite dal vivo",
-    "missionText": "AirPoker nasce per eliminare lo sbattimento di dover contare, trasportare e suddividere le fiches fisiche durante le serate di poker. Crediamo nella magia delle carte vere, ma è meglio lasciare i calcoli a un computer.",
-    "howItWorksTitle": "Come funziona in 4 semplici passi:",
-    "step1": "1. Procuratevi un vero mazzo di carte francesi.",
-    "step2": "2. Una persona crea un tavolo su AirPoker e condivide il codice o il QR.",
-    "step3": "3. Tutti gli altri si uniscono via smartphone — niente app da scaricare e nessuna registrazione.",
-    "step4": "4. Distribuite fisicamente le carte e lasciate che AirPoker gestisca le puntate, il pot e lo split finale.",
-    "featuresTitle": "Perché usare AirPoker?",
-    "feature1": "Zero fiches. Viaggia leggero e gioca ovunque.",
-    "feature2": "Matematica perfetta. Niente più errori nel calcolare gli all-in o gli split pot complessi.",
-    "feature3": "Gestione guidata. I bui vengono piazzati in automatico dal sistema.",
-    "feature4": "100% Gratuito. Senza acquisti in-app o microtransazioni.",
+    "missionTitle": "Il compagno perfetto per le tue partite",
+    "missionText": "AirPoker nasce per eliminare lo sbattimento di dover contare, trasportare e suddividere le fiches fisiche durante le serate di poker. Che tu preferisca il feeling delle carte vere o la comodità di un gioco 100% digitale, pensiamo noi a tutto il resto.",
+    "howItWorksTitle": "Scegli come giocare:",
+    "step1": "1. Carte Fisiche: Usate un mazzo vero e usate AirPoker solo per gestire fiches, bui e piatti.",
+    "step2": "2. Carte Virtuali: Lasciate che il sistema distribuisca le carte e calcoli automaticamente i vincitori.",
+    "step3": "3. Unisciti via smartphone: Niente app da scaricare e nessuna registrazione, basta un link o un QR.",
+    "step4": "4. Showdown Automatico: In modalità virtuale, il motore di gioco calcola istantaneamente vincitori e side-pot senza margine d'errore.",
+    "featuresTitle": "Punti di forza",
+    "feature1": "Zero fiches fisiche. Viaggia leggero e gioca ovunque.",
+    "feature2": "Motore di Calcolo Professionale. Gestione perfetta di split-pot e side-pot complessi in tempo reale.",
+    "feature3": "Protocollo Dealer Reale. In modalità virtuale seguiamo le regole pro, incluse le 'burn cards' prima di ogni giro.",
+    "feature4": "100% Gratuito. Senza pubblicità, acquisti in-app o tracciamento dati.",
     "backBtn": "Torna indietro"
   }
 }

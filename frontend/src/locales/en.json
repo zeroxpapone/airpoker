@@ -194,7 +194,7 @@
   },
   "terms": {
     "title": "Terms and Conditions",
-    "lastUpdated": "Last updated: March 2026",
+    "lastUpdated": "Last updated: May 2026",
     "backBtn": "Go back",
     "sections": [
       {
@@ -229,18 +229,18 @@
   },
   "about": {
     "title": "About AirPoker",
-    "missionTitle": "The perfect live poker companion",
-    "missionText": "AirPoker was born to eliminate the frustration of counting, carrying, and splitting physical chips during live poker nights. We believe in the magic of real cards, but the tracking is better left to the machines.",
-    "howItWorksTitle": "How it works in 4 easy steps:",
-    "step1": "1. Grab a deck of real playing cards.",
-    "step2": "2. One person creates a table on AirPoker and shares the ID or QR code.",
-    "step3": "3. Everyone joins from their smartphone—no app downloads and no registration required.",
-    "step4": "4. Deal the physical cards and let AirPoker do the heavy lifting for tracking bets, raising limits, and splitting the pot.",
+    "missionTitle": "The perfect poker companion",
+    "missionText": "AirPoker was born to eliminate the frustration of counting, carrying, and splitting physical chips during poker nights. Whether you prefer the tactile feel of real cards or the convenience of a 100% digital game, we've got you covered.",
+    "howItWorksTitle": "Choose how you play:",
+    "step1": "1. Physical Cards: Grab a real deck and use AirPoker only for tracking chips, blinds, and pots.",
+    "step2": "2. Virtual Cards: Let the system deal the cards and automatically calculate the winners.",
+    "step3": "3. Join via smartphone: No app downloads and no registration required—just a link or a QR code.",
+    "step4": "4. Automated Showdown: In virtual mode, the game engine instantly evaluates winners and side-pots with zero margin for error.",
     "featuresTitle": "Why use AirPoker?",
-    "feature1": "Forget the chips. Travel light and play anywhere.",
-    "feature2": "Perfect math. No more mistakes splitting tricky pots or calculating all-ins.",
-    "feature3": "Blinds management. Small and Big blinds are posted automatically.",
-    "feature4": "100% Free. Always.",
+    "feature1": "Zero physical chips. Travel light and play anywhere.",
+    "feature2": "Professional Calculation Engine. Perfect management of complex split-pots and side-pots in real-time.",
+    "feature3": "Pro Dealer Protocol. In virtual mode, we follow professional rules, including 'burn cards' before every street.",
+    "feature4": "100% Free. No ads, no in-app purchases, and no data tracking.",
     "backBtn": "Go back"
   }
 }
