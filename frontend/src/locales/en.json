@@ -1,4 +1,8 @@
 {
+  "common": {
+    "yes": "Yes",
+    "no": "No"
+  },
   "home": {
     "title": "AirPoker - Play poker without chips",
     "subtitle": "Forget the heavy chip briefcase. Use your phone to bet, raise, and track the pot while playing with real cards at the table.",
@@ -44,7 +48,11 @@
     "estimatedPlayers": "Estimated Players",
     "targetDuration": "Target Duration (Hours)",
     "levelDuration": "Level Duration (Minutes)",
-    "blindSchedulePreview": "Blind Schedule Preview",
+    "blindSchedulePreview": "Blind Levels Preview",
+    "virtualCardsLabel": "Card Mode",
+    "virtualCardsDesc": "Choose between physical cards or a virtual deck managed by the site",
+    "physicalCards": "Physical",
+    "virtualCards": "Virtual",
     "simpleMode": "Simple Mode",
     "expertMode": "Expert Mode",
     "allowRebuys": "Allow Rebuy / Add-on",
@@ -166,7 +174,13 @@
     "continueTurn": "Continue (Turn)",
     "continueRiver": "Continue (River)",
     "forceFold": "Force Fold",
-    "confirmForceFold": "Are you sure you want to force fold and stand up this player?"
+    "confirmForceFold": "Are you sure you want to force fold and stand up this player?",
+    "communityCards": "Board",
+    "playerHands": "Hands",
+    "virtualDealCards": "Dealing cards...",
+    "virtualFlop": "Dealing the Flop...",
+    "virtualTurn": "Dealing the Turn...",
+    "virtualRiver": "Dealing the River..."
   },
   "error": {
     "minPlayers": "At least 2 active players are required for a new hand.",

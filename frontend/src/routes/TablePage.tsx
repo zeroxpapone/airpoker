@@ -46,7 +46,11 @@ interface TableData {
   tournamentConfig?: any; // To avoid importing types if not exported, using any or explicitly redefining
   currentLevelIndex?: number;
   levelStartedAt?: any;
+  isVirtualCards?: boolean;
 }
+
+
+
 
 
 interface PlayerData {
@@ -63,6 +67,65 @@ interface PlayerData {
   eliminatedAt?: number;
 }
 
+const Card = ({ card, hidden }: { card?: string, hidden?: boolean }) => {
+  if (hidden || !card) {
+    return (
+      <div style={{
+        width: hidden ? "35px" : "45px",
+        height: hidden ? "50px" : "65px",
+        backgroundColor: "#1e3a8a",
+        borderRadius: "6px",
+        border: "2px solid #3b82f6",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%)",
+        boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.3)",
+        boxSizing: "border-box"
+      }}>
+        <div style={{ fontSize: "1.2rem", opacity: 0.6, color: "white" }}>♠️</div>
+      </div>
+    );
+  }
+
+  const rank = card.slice(0, -1);
+  const suit = card.slice(-1);
+  const isRed = suit === 'h' || suit === 'd';
+  
+  const suitIcon = {
+    'h': '♥️',
+    'd': '♦️',
+    's': '♠️',
+    'c': '♣️'
+  }[suit] || suit;
+
+  const rankDisplay = rank === 'T' ? '10' : rank;
+
+  return (
+    <div style={{
+      width: hidden ? "35px" : "45px",
+      height: hidden ? "50px" : "65px",
+      backgroundColor: "white",
+      borderRadius: "4px",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      color: isRed ? "#ef4444" : "#0f172a",
+      fontSize: "0.9rem",
+      fontWeight: "bold",
+      boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
+      position: "relative",
+      transition: "all 0.3s ease"
+    }}>
+      {!hidden && <div style={{ position: "absolute", top: "2px", left: "2px", fontSize: "0.6rem" }}>{rankDisplay}</div>}
+      <div style={{ fontSize: hidden ? "1rem" : "1.2rem" }}>{suitIcon}</div>
+      {!hidden && <div style={{ position: "absolute", bottom: "2px", right: "2px", fontSize: "0.6rem", transform: "rotate(180deg)" }}>{rankDisplay}</div>}
+    </div>
+  );
+};
+
+
 interface ExtendedHandData extends HandData {
   votingOpen?: boolean;
   votes?: Record<string, string>;
@@ -73,6 +136,7 @@ interface ExtendedHandData extends HandData {
   id: string;
   createdAt?: any;
   blindsPopupClosed?: boolean;
+  handResults?: Record<string, { rank: number; rankName: string; bestCards: string[] }>;
 }
 
 export default function TablePage() {
@@ -104,6 +168,14 @@ export default function TablePage() {
   const [showEndGameConfirm, setShowEndGameConfirm] = useState(false);
   const [transferHostConfirmTarget, setTransferHostConfirmTarget] = useState<string | null>(null);
   const [forceFoldConfirmTarget, setForceFoldConfirmTarget] = useState<string | null>(null);
+  const [showMyCards, setShowMyCards] = useState(true);
+  const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
+
+  useEffect(() => {
+    const handleResize = () => setWindowSize({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   const [timeRemainingStr, setTimeRemainingStr] = useState<string>("");
   const [refreshKey, setRefreshKey] = useState(0);
@@ -186,7 +258,8 @@ export default function TablePage() {
             mode: data.mode,
             tournamentConfig: data.tournamentConfig ?? undefined,
             levelStartedAt: data.levelStartedAt ?? undefined,
-            currentLevelIndex: data.currentLevelIndex ?? 0
+            currentLevelIndex: data.currentLevelIndex ?? 0,
+            isVirtualCards: !!data.isVirtualCards
         });
 
         setLoading(false);
@@ -283,7 +356,11 @@ export default function TablePage() {
           handContributions: d.handContributions || {},
           id: snap.id,
           createdAt: d.createdAt ?? null,
-          blindsPopupClosed: d.blindsPopupClosed ?? false
+          blindsPopupClosed: d.blindsPopupClosed ?? false,
+          isVirtualCards: !!d.isVirtualCards,
+          communityCards: d.communityCards || [],
+          playerHands: d.playerHands || {},
+          handResults: d.handResults || null
         };
         setCurrentHand(hand);
       },
@@ -308,7 +385,9 @@ export default function TablePage() {
     const isCurrentlyInGame = table?.state === "IN_GAME";
     if (isCurrentlyInGame && currentHand && currentHand.id !== lastSeenHandId && currentHand.stage === "PREFLOP") {
       setLastSeenHandId(currentHand.id);
-      setBlindsPopupVisible(true);
+      if (!currentHand.isVirtualCards) {
+        setBlindsPopupVisible(true);
+      }
     }
   }, [table?.state, currentHand?.id, currentHand?.stage, lastSeenHandId]);
 
@@ -345,6 +424,19 @@ export default function TablePage() {
       }
     }
   };
+
+  // Auto-advance stage per le carte virtuali (FLOP, TURN, RIVER)
+  useEffect(() => {
+    const checkHost = !!(user?.uid && table && user.uid === table.hostId);
+    if (!checkHost || !currentHand?.isVirtualCards || currentHand.currentTurnIndex !== -1) return;
+    if (currentHand.stage === "SHOWDOWN" || blindsPopupVisible) return;
+
+    const timer = setTimeout(() => {
+      handleAdvanceStage();
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [currentHand?.id, currentHand?.stage, currentHand?.currentTurnIndex, table?.hostId, user?.uid, blindsPopupVisible]);
 
 
   if (!tableId) {
@@ -706,9 +798,26 @@ async function confirmEndGameAction() {
   }
 
   function getSeatPosition(index: number, total: number) {
-    const angle = (2 * Math.PI * index) / total - Math.PI / 2;
-    const radius = 33; // Ridotto da 40 a 33 per lasciare più spazio laterale ai nomi
+    const isTop = index < Math.ceil(total / 2);
+    const topCount = Math.ceil(total / 2);
+    const bottomCount = total - topCount;
 
+    let angle;
+    if (isTop) {
+      // Semicerchio superiore: più schiacciato ai poli (da 210° a 330°)
+      const startAngle = Math.PI + Math.PI/6; 
+      const endAngle = 2*Math.PI - Math.PI/6;
+      const step = topCount > 1 ? (endAngle - startAngle) / (topCount - 1) : 0;
+      angle = topCount > 1 ? startAngle + step * index : (startAngle + endAngle) / 2;
+    } else {
+      // Semicerchio inferiore: più schiacciato ai poli (da 30° a 150°)
+      const startAngle = Math.PI/6;
+      const endAngle = Math.PI - Math.PI/6;
+      const step = bottomCount > 1 ? (endAngle - startAngle) / (bottomCount - 1) : 0;
+      angle = bottomCount > 1 ? startAngle + step * (index - topCount) : (startAngle + endAngle) / 2;
+    }
+
+    const radius = 44; 
     const top = 50 + radius * Math.sin(angle);
     const left = 50 + radius * Math.cos(angle);
 
@@ -1031,7 +1140,8 @@ async function handleConfirmWinners(potId: string) {
           boxSizing: "border-box",
           overflow: "hidden",
           background: "radial-gradient(circle at center, #0f172a 0%, #000000 100%)",
-          color: "#e5e7eb"
+          color: "#e5e7eb",
+          zIndex: 1
         }}
       >
         <header style={{ display: "grid", gap: "0.25rem" }}>
@@ -1179,38 +1289,63 @@ async function handleConfirmWinners(potId: string) {
               boxSizing: "border-box"
             }}
           >
-            {/* Testo centrale: turno */}
-<div
-  style={{
-    position: "absolute",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%, -50%)",
-    textAlign: "center"
-  }}
->
-  <div
-    style={{
-      fontSize: "0.8rem",
-      color: "#9ca3af",
-      marginBottom: "0.25rem"
-    }}
-  >
-    {currentHand?.stage ?? "N/A"}
-  </div>
+            {/* Testo centrale: turno o Carte */}
+            {table?.isVirtualCards && currentHand ? (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "50%",
+                  left: "50%",
+                  transform: "translate(-50%, -50%)",
+                  display: "flex",
+                  gap: "0.4rem",
+                  zIndex: 15,
+                  flexWrap: "wrap",
+                   justifyContent: "center",
+                  width: "min(100%, 300px)"
+                }}
+              >
+                {currentHand.communityCards?.map((card, idx) => {
+                  let hidden = true;
+                  if (currentHand.stage === "FLOP" && idx < 3) hidden = false;
+                  if (currentHand.stage === "TURN" && idx < 4) hidden = false;
+                  if (currentHand.stage === "RIVER" && idx < 5) hidden = false;
+                  if (currentHand.stage === "SHOWDOWN") hidden = false;
+                  return <Card key={idx} card={card} hidden={hidden} />;
+                })}
+              </div>
+            ) : (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "50%",
+                  left: "50%",
+                  transform: "translate(-50%, -50%)",
+                  textAlign: "center"
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: "0.8rem",
+                    color: "#9ca3af",
+                    marginBottom: "0.25rem"
+                  }}
+                >
+                  {currentHand?.stage ?? "N/A"}
+                </div>
 
-  <div style={{ fontSize: "0.9rem", color: "#e5e7eb" }}>
-    {isMyTurn
-      ? t("table.yourTurn")
-      : currentHand &&
-        currentHand.currentTurnIndex != null &&
-        currentHand.currentTurnIndex >= 0 &&
-        players[currentHand.currentTurnIndex]
-      ? t("table.turnOf", { name: players[currentHand.currentTurnIndex].displayName })
-      : t("table.waitingTurn")}
-  </div>
-</div>
-
+                <div style={{ fontSize: "0.9rem", color: "#e5e7eb" }}>
+                  {isMyTurn
+                    ? t("table.yourTurn")
+                    : currentHand &&
+                      currentHand.currentTurnIndex != null &&
+                      currentHand.currentTurnIndex >= 0 &&
+                      players[currentHand.currentTurnIndex]
+                    ? t("table.turnOf", { name: players[currentHand.currentTurnIndex].displayName })
+                    : t("table.waitingTurn")}
+                </div>
+              </div>
+            )}
 
             {/* Giocatori attorno al tavolo */}
             {players.map((p, index) => {
@@ -1243,69 +1378,85 @@ async function handleConfirmWinners(potId: string) {
                     zIndex: 10
                   }}
                 >
-                    <div
+                  {/* Carte del giocatore allo Showdown */}
+                  {table?.isVirtualCards && currentHand?.stage === "SHOWDOWN" && currentHand.playerHands?.[p.userId] && !p.isFolded && (
+                    <div style={{
+                      position: "absolute",
+                      top: "-45px",
+                      left: "50%",
+                      transform: "translateX(-50%)",
+                      display: "flex",
+                      gap: "2px",
+                      zIndex: 100
+                    }}>
+                      {currentHand.playerHands[p.userId].map((c, i) => (
+                        <Card key={i} card={c} />
+                      ))}
+                    </div>
+                  )}
+                  <div
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      borderRadius: "999px",
+                      padding: "0.4rem 0.6rem",
+                      backgroundColor: isMe
+                        ? "rgba(34,197,94,0.15)"
+                        : "rgba(15,23,42,0.9)",
+                      border: isTurn
+                        ? "2px solid #22c55e"
+                        : selectedWinners.includes(p.userId) && votingOpen
+                        ? "2px solid #22c55e"
+                        : "1px solid #1e293b",
+                      boxShadow: isTurn
+                        ? "0 0 15px rgba(34,197,94,0.6)"
+                        : "0 0 8px rgba(15,23,42,0.6)",
+                      fontSize: "0.7rem",
+                      opacity: p.isSittingOut ? 0.4 : p.isFolded || (votingOpen && activePot && !isEligibleForActivePot) ? 0.6 : 1
+                    }}
+                  >
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", gap: "0.4rem" }}>
+                    <span
                       style={{
-                        width: "100%",
-                        boxSizing: "border-box",
-                        borderRadius: "999px",
-                        padding: "0.4rem 0.6rem",
-                        backgroundColor: isMe
-                          ? "rgba(34,197,94,0.15)"
-                          : "rgba(15,23,42,0.9)",
-                        border: isTurn
-                          ? "2px solid #22c55e"
-                          : selectedWinners.includes(p.userId) && votingOpen
-                          ? "2px solid #22c55e"
-                          : "1px solid #1e293b",
-                        boxShadow: isTurn
-                          ? "0 0 15px rgba(34,197,94,0.6)"
-                          : "0 0 8px rgba(15,23,42,0.6)",
-                        fontSize: "0.7rem",
-                        opacity: p.isSittingOut ? 0.4 : p.isFolded || (votingOpen && activePot && !isEligibleForActivePot) ? 0.6 : 1
+                        fontWeight: 500,
+                        color: p.isSittingOut ? "#9ca3af" : p.isFolded ? "#6b7280" : isMe ? "#4ade80" : "#e5e7eb",
+                        textDecoration: p.isFolded && !p.isSittingOut
+                          ? "line-through"
+                          : "none",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        flexShrink: 1,
+                        textAlign: "left"
                       }}
                     >
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", gap: "0.4rem" }}>
-                      <span
-                        style={{
-                          fontWeight: 500,
-                          color: p.isSittingOut ? "#9ca3af" : p.isFolded ? "#6b7280" : isMe ? "#4ade80" : "#e5e7eb",
-                          textDecoration: p.isFolded && !p.isSittingOut
-                            ? "line-through"
-                            : "none",
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          flexShrink: 1,
-                          textAlign: "left"
-                        }}
-                      >
-                        {p.isSittingOut && (
-                          <span style={{ color: table?.mode === "TOURNAMENT" && p.stack === 0 ? "#ef4444" : "#facc15", paddingRight: "0.2rem" }}>
-                            {table?.mode === "TOURNAMENT" && p.stack === 0 ? "[Out]" : t("table.pauseBadge")}
-                          </span>
-                        )}
-                        {p.displayName}
-                      </span>
-                      {renderRoleBadges(index)}
-                    </div>
-                    <div
-                      style={{
-                        marginTop: "0.15rem",
-                        color: "#9ca3af",
-                        fontSize: "0.75rem"
-                      }}
-                    >
-                      {p.stack} • {roundBet}
-                      {p.isFolded && ` • ${t("table.folded")}`}
-                      {votingOpen && myVoteTargetId === p.userId &&
-                        ` • ${t("table.yourChoice")}`}
-                    </div>
+                      {p.isSittingOut && (
+                        <span style={{ color: table?.mode === "TOURNAMENT" && p.stack === 0 ? "#ef4444" : "#facc15", paddingRight: "0.2rem" }}>
+                          {table?.mode === "TOURNAMENT" && p.stack === 0 ? "[Out]" : t("table.pauseBadge")}
+                        </span>
+                      )}
+                      {p.displayName}
+                    </span>
+                    {renderRoleBadges(index)}
+                  </div>
+                  <div
+                    style={{
+                      marginTop: "0.15rem",
+                      color: "#9ca3af",
+                      fontSize: "0.75rem"
+                    }}
+                  >
+                    {p.stack} • {roundBet}
+                    {p.isFolded && ` • ${t("table.folded")}`}
+                    {votingOpen && myVoteTargetId === p.userId &&
+                      ` • ${t("table.yourChoice")}`}
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        </main>
+              </div>
+            );
+          })}
+        </div>
+      </main>
 
         {/* Action bar in basso */}
         <footer
@@ -1556,6 +1707,7 @@ async function handleConfirmWinners(potId: string) {
             </div>
           </div>
         )}
+        {myCardsUI}
       </div>
     );
   }
@@ -1977,12 +2129,99 @@ async function handleConfirmWinners(potId: string) {
         ? currentHand.winnerIds.map(wId => players.find(p => p.userId === wId)?.displayName || t("table.unknown")).join(", ")
         : players.find(p => p.userId === currentHand.winnerId)?.displayName || t("table.unknown");
 
+      // Check if this was a fold-out win (only 1 active player, no handResults)
+      const isFoldOutWin = !currentHand.handResults || Object.keys(currentHand.handResults).length === 0;
+
+      // Winner hand description
+      const winnerResult = currentHand.handResults && currentHand.winnerIds?.[0] 
+        ? currentHand.handResults[currentHand.winnerIds[0]] 
+        : null;
+
       stageModalContent = (
-        <div style={{ color: "#e2e8f0", fontSize: "1rem" }}>
+        <div style={{ color: "#e2e8f0", fontSize: "1rem", display: "flex", flexDirection: "column", flex: "1 1 auto", minHeight: 0 }}>
+          {/* Winner announcement */}
           <div style={{ fontSize: "1.2rem", fontWeight: 700, color: "#facc15", marginBottom: "0.5rem" }}>
             🏆 {winnerNames} 🏆
           </div>
-          <div>{t("table.pot")}: {currentHand.pot}</div>
+          {winnerResult && (
+            <div style={{ fontSize: "0.95rem", color: "#4ade80", fontWeight: 600, marginBottom: "0.75rem" }}>
+              {winnerResult.rankName}
+            </div>
+          )}
+          <div style={{ marginBottom: "1rem" }}>{t("table.pot")}: {currentHand.pot}</div>
+
+          {/* Community Cards — only shown for virtual cards with actual showdown */}
+          {currentHand.isVirtualCards && !isFoldOutWin && currentHand.communityCards && currentHand.communityCards.length > 0 && (
+            <div style={{ marginBottom: "1rem" }}>
+              <div style={{ fontSize: "0.8rem", color: "#9ca3af", marginBottom: "0.4rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                {t("table.communityCards")}
+              </div>
+              <div style={{ display: "flex", gap: "0.35rem", justifyContent: "center", flexWrap: "wrap" }}>
+                {currentHand.communityCards.map((card, idx) => (
+                  <Card key={idx} card={card} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Player Hands — only shown for virtual cards with actual showdown */}
+          {currentHand.isVirtualCards && !isFoldOutWin && currentHand.handResults && (
+            <>
+              <div style={{ fontSize: "0.8rem", color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0, marginBottom: "0.4rem" }}>
+                {t("table.playerHands")}
+              </div>
+              <div style={{ display: "grid", gap: "0.6rem", flex: "1 1 auto", minHeight: 0, overflowY: "auto" }}>
+              {players
+                .filter(p => !p.isFolded && currentHand.playerHands?.[p.userId])
+                .map(p => {
+                  const result = currentHand.handResults?.[p.userId];
+                  const isWinner = currentHand.winnerIds?.includes(p.userId);
+                  return (
+                    <div 
+                      key={p.userId} 
+                      style={{ 
+                        display: "flex", 
+                        alignItems: "center", 
+                        gap: "0.6rem",
+                        padding: "0.5rem 0.7rem",
+                        borderRadius: "0.75rem",
+                        backgroundColor: isWinner ? "rgba(34, 197, 94, 0.15)" : "rgba(30, 41, 59, 0.5)",
+                        border: isWinner ? "1px solid rgba(34, 197, 94, 0.4)" : "1px solid transparent"
+                      }}
+                    >
+                      {/* Player cards */}
+                      <div style={{ display: "flex", gap: "0.2rem", flexShrink: 0 }}>
+                        {currentHand.playerHands?.[p.userId]?.map((card, idx) => (
+                          <Card key={idx} card={card} />
+                        ))}
+                      </div>
+                      {/* Player info */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ 
+                          fontWeight: 600, 
+                          fontSize: "0.85rem",
+                          color: isWinner ? "#4ade80" : "#e2e8f0",
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis"
+                        }}>
+                          {isWinner && "🏆 "}{p.displayName}
+                        </div>
+                        {result && (
+                          <div style={{ fontSize: "0.75rem", color: isWinner ? "#86efac" : "#9ca3af", display: "flex", gap: "0.4rem", alignItems: "center", flexWrap: "wrap" }}>
+                            <span>{result.rankName}</span>
+                            {isWinner && result.chipsWon > 0 && (
+                              <span style={{ color: "#facc15", fontWeight: 700 }}>+{result.chipsWon}</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+            </>
+          )}
         </div>
       );
 
@@ -2075,19 +2314,19 @@ async function handleConfirmWinners(potId: string) {
       stageModalVisible = true;
       if (currentHand.stage === "PREFLOP") {
         stageModalTitle = "Flop";
-        stageModalContent = <div style={{ color: "#facc15", fontWeight: 700, fontSize: "1.1rem" }}>{t("table.dealFlop")}</div>;
+        stageModalContent = <div style={{ color: "#facc15", fontWeight: 700, fontSize: "1.1rem" }}>{currentHand.isVirtualCards ? t("table.virtualFlop") : t("table.dealFlop")}</div>;
         if (isHost) {
           stageModalAction = <button onClick={handleAdvanceStage} style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem" }}>{t("table.continueFlop")}</button>;
         }
       } else if (currentHand.stage === "FLOP") {
         stageModalTitle = "Turn";
-        stageModalContent = <div style={{ color: "#facc15", fontWeight: 700, fontSize: "1.1rem" }}>{t("table.dealTurn")}</div>;
+        stageModalContent = <div style={{ color: "#facc15", fontWeight: 700, fontSize: "1.1rem" }}>{currentHand.isVirtualCards ? t("table.virtualTurn") : t("table.dealTurn")}</div>;
         if (isHost) {
           stageModalAction = <button onClick={handleAdvanceStage} style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem" }}>{t("table.continueTurn")}</button>;
         }
       } else if (currentHand.stage === "TURN") {
         stageModalTitle = "River";
-        stageModalContent = <div style={{ color: "#facc15", fontWeight: 700, fontSize: "1.1rem" }}>{t("table.dealRiver")}</div>;
+        stageModalContent = <div style={{ color: "#facc15", fontWeight: 700, fontSize: "1.1rem" }}>{currentHand.isVirtualCards ? t("table.virtualRiver") : t("table.dealRiver")}</div>;
         if (isHost) {
           stageModalAction = <button onClick={handleAdvanceStage} style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem" }}>{t("table.continueRiver")}</button>;
         }
@@ -2102,7 +2341,7 @@ async function handleConfirmWinners(potId: string) {
         <div style={{ display: "grid", gap: "0.5rem", color: "#e2e8f0", fontSize: "0.95rem" }}>
           <div style={{ display: "flex", justifyContent: "space-between" }}><span>Small Blind:</span> <strong>{sb}</strong></div>
           <div style={{ display: "flex", justifyContent: "space-between" }}><span>Big Blind:</span> <strong>{bb}</strong></div>
-          <div style={{ marginTop: "0.8rem", color: "#facc15", fontWeight: 700 }}>{t("table.dealCards")}</div>
+          <div style={{ marginTop: "0.8rem", color: "#facc15", fontWeight: 700 }}>{currentHand.isVirtualCards ? t("table.virtualDealCards") : t("table.dealCards")}</div>
         </div>
       );
       if (isHost) {
@@ -2115,24 +2354,34 @@ async function handleConfirmWinners(potId: string) {
     <div style={{
       position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
       background: "rgba(2, 6, 23, 0.8)", backdropFilter: "blur(8px)",
-      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
+      padding: "1rem"
     }}>
       <div style={{
         background: "rgba(15,23,42,0.95)", border: "1px solid #1e293b",
-        borderRadius: "1.5rem", padding: "2rem", display: "grid", gap: "1.5rem",
-        textAlign: "center", maxWidth: "360px", width: "90%",
+        borderRadius: "1.5rem", padding: "1.5rem", display: "flex", flexDirection: "column",
+        textAlign: "center", maxWidth: "360px", width: "100%",
         boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.7)",
-        maxHeight: "90vh", overflowY: "auto"
+        maxHeight: "calc(100dvh - 2rem)", overflow: "hidden", gap: "1rem"
       }}>
-        <h2 style={{ fontSize: "1.5rem", margin: 0, color: "#e2e8f0" }}>{stageModalTitle}</h2>
-        {stageModalContent}
-        {stageModalAction}
-        {stageModalFooter}
-        {!isHost && !stageModalFooter && (
-          <div style={{ color: "#9ca3af", fontSize: "0.85rem", fontStyle: "italic", marginTop: "0.5rem" }}>
-            {t("table.waitingHost")}
-          </div>
-        )}
+        {/* Title — pinned */}
+        <h2 style={{ fontSize: "1.5rem", margin: 0, color: "#e2e8f0", flexShrink: 0 }}>{stageModalTitle}</h2>
+        
+        {/* Content — uses flex, hands list inside will scroll */}
+        <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column" }}>
+          {stageModalContent}
+        </div>
+
+        {/* Action + Footer — pinned at bottom */}
+        <div style={{ flexShrink: 0, display: "grid", gap: "0.75rem" }}>
+          {stageModalAction}
+          {stageModalFooter}
+          {!isHost && !stageModalFooter && (
+            <div style={{ color: "#9ca3af", fontSize: "0.85rem", fontStyle: "italic" }}>
+              {t("table.waitingHost")}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -2192,6 +2441,60 @@ async function handleConfirmWinners(potId: string) {
     </div>
   );
 
+  const myCardsUI = table?.isVirtualCards && currentHand && myPlayer && currentHand.playerHands?.[myPlayer.id] && (
+    <div 
+      onClick={() => setShowMyCards(!showMyCards)}
+      style={{
+        position: "absolute",
+        bottom: "100px",
+        left: "1rem",
+        zIndex: 50,
+        cursor: "pointer",
+        transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+        userSelect: "none",
+        WebkitUserSelect: "none"
+      }}
+    >
+      {showMyCards ? (
+        <div style={{
+          display: "flex",
+          gap: "0.5rem",
+          padding: "0.6rem",
+          background: "rgba(15,23,42,0.85)",
+          borderRadius: "1rem",
+          backdropFilter: "blur(8px)",
+          border: "1px solid #1e293b",
+          boxShadow: "0 10px 25px -5px rgba(0,0,0,0.5)",
+          animation: "scaleIn 0.2s ease-out"
+        }}>
+          {currentHand.playerHands[myPlayer.id].map((card, idx) => (
+            <Card key={idx} card={card} />
+          ))}
+        </div>
+      ) : (
+        <div style={{
+          width: "48px",
+          height: "48px",
+          borderRadius: "50%",
+          background: "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          boxShadow: "0 8px 20px rgba(59, 130, 246, 0.4)",
+          border: "2px solid rgba(255,255,255,0.2)",
+          backdropFilter: "blur(4px)",
+          animation: "scaleIn 0.2s ease-out",
+          color: "white"
+        }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+        </div>
+      )}
+    </div>
+  );
+
   const actionErrorUI = actionError && (
     <div style={{
       position: "fixed", top: "2rem", left: "50%", transform: "translateX(-50%)",
@@ -2205,10 +2508,32 @@ async function handleConfirmWinners(potId: string) {
     </div>
   );
 
-if (inLobby) return <>{renderLobby()}{modalUI}{foldConfirmModalUI}{endGameConfirmModalUI}{transferHostConfirmModalUI}{forceFoldConfirmModalUI}{actionErrorUI}</>;
-if (inGame) return <>{renderGame()}{modalUI}{foldConfirmModalUI}{endGameConfirmModalUI}{transferHostConfirmModalUI}{forceFoldConfirmModalUI}{stageModalUI}{hostSettingsPanelUI}{actionErrorUI}</>;
-if (inSummary) return <>{renderSummary()}{modalUI}{foldConfirmModalUI}{endGameConfirmModalUI}{transferHostConfirmModalUI}{forceFoldConfirmModalUI}{actionErrorUI}</>;
-return <p>{t("table.unsupportedState")}</p>;
+  return (
+    <>
+      <style>{`
+        @keyframes scaleIn {
+          from { transform: scale(0.8); opacity: 0; }
+          to { transform: scale(1); opacity: 1; }
+        }
+      `}</style>
+      {inLobby && renderLobby()}
+      {inGame && renderGame()}
+      {inSummary && renderSummary()}
+      {modalUI}
+      {foldConfirmModalUI}
+      {endGameConfirmModalUI}
+      {transferHostConfirmModalUI}
+      {forceFoldConfirmModalUI}
+      {actionErrorUI}
+      {/* Popups specifici del gioco */}
+      {inGame && (
+        <>
+          {stageModalUI}
+          {hostSettingsPanelUI}
+        </>
+      )}
+    </>
+  );
 }
 
 const smallButtonStyle: React.CSSProperties = {

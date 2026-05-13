@@ -1,4 +1,8 @@
 {
+  "common": {
+    "yes": "Sì",
+    "no": "No"
+  },
   "home": {
     "title": "AirPoker - Gioca a poker senza fiches",
     "subtitle": "Dimentica la valigetta delle fiches. Usa il telefono per puntare o rilanciare e tieni traccia del pot, mentre giochi con vere carte al tavolo.",
@@ -44,7 +48,11 @@
     "estimatedPlayers": "Giocatori Stimati",
     "targetDuration": "Durata Desiderata (Ore)",
     "levelDuration": "Durata Livello (Minuti)",
-    "blindSchedulePreview": "Anteprima Livelli Bui",
+    "blindSchedulePreview": "Anteprima Livelli Blinds",
+    "virtualCardsLabel": "Modalità Carte",
+    "virtualCardsDesc": "Scegli se utilizzare carte fisiche o un mazzo virtuale gestito dal sito",
+    "physicalCards": "Fisiche",
+    "virtualCards": "Virtuali",
     "simpleMode": "Modalità Semplice",
     "expertMode": "Modalità Esperto",
     "allowRebuys": "Permetti Rebuy / Add-on",
@@ -165,7 +173,13 @@
     "continueTurn": "Continua (Turn)",
     "continueRiver": "Continua (River)",
     "forceFold": "Fold forzato",
-    "confirmForceFold": "Sei sicuro di voler foldare e far alzare dal tavolo questo giocatore?"
+    "confirmForceFold": "Sei sicuro di voler foldare e far alzare dal tavolo questo giocatore?",
+    "communityCards": "Board",
+    "playerHands": "Mani",
+    "virtualDealCards": "Distribuzione carte in corso...",
+    "virtualFlop": "Girando il Flop...",
+    "virtualTurn": "Girando il Turn...",
+    "virtualRiver": "Girando il River..."
   },
   "error": {
     "minPlayers": "Servono almeno 2 giocatori attivi per una nuova mano.",

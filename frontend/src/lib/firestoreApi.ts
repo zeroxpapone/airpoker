@@ -13,6 +13,7 @@ import {
 } from "firebase/firestore";
 import type { User } from "firebase/auth";
 import { db } from "./firebase";
+import { determineWinners, type HandResult } from "./pokerEvaluator";
 
 
 export interface BlindLevel {
@@ -38,6 +39,7 @@ export interface CreateTableInput {
   bigBlind: number;
   mode?: 'CASH' | 'TOURNAMENT';
   tournamentConfig?: TournamentConfig;
+  isVirtualCards?: boolean;
 }
 
 export interface HandData {
@@ -55,9 +57,13 @@ export interface HandData {
   firstToActIndex: number;
   lastAggressorIndex?: number;
   votingOpen?: boolean;
-  winnerId?: string | null;  // Per retrocompatibilità (singolo vincitore)
-  winnerIds?: string[];      // Array di vincitori (per split pot)
-  confirmedAt?: any;         // Timestamp di conferma
+  winnerId?: string | null;
+  winnerIds?: string[];
+  confirmedAt?: any;
+  isVirtualCards?: boolean;
+  communityCards?: string[];
+  playerHands?: Record<string, string[]>;
+  handResults?: Record<string, { rank: number; rankName: string; bestCards: string[] }>;
 }
 
 export interface Pot {
@@ -84,6 +90,125 @@ function splitPot(amount: number, numWinners: number): number[] {
     shares[luckyIdx] += remainder;
   }
   return shares;
+}
+
+/**
+ * Auto-evaluates the showdown for virtual card hands.
+ * Determines winners for each pot using poker hand evaluation,
+ * distributes chips, and records hand results.
+ * 
+ * @returns handUpdate fields to merge into the hand document
+ */
+function autoEvaluateShowdown(
+  pots: Pot[],
+  playerHands: Record<string, string[]>,
+  communityCards: string[],
+  players: { id: string; ref: any; stack: number; isFolded: boolean }[],
+  batch: ReturnType<typeof writeBatch>
+): Record<string, any> {
+  // Evaluate all non-folded players' hands
+  const activePlayers = players.filter(p => !p.isFolded);
+  const activeHands: Record<string, string[]> = {};
+  for (const p of activePlayers) {
+    if (playerHands[p.id] && playerHands[p.id].length >= 2) {
+      activeHands[p.id] = playerHands[p.id];
+    }
+  }
+
+  // Evaluate to get all results (for display purposes)
+  const { results: allResults } = determineWinners(activeHands, communityCards);
+
+  // Convert HandResult to storable format
+  const handResults: Record<string, { rank: number; rankName: string; bestCards: string[] }> = {};
+  for (const [pid, result] of Object.entries(allResults)) {
+    handResults[pid] = {
+      rank: result.rank,
+      rankName: result.rankName,
+      bestCards: result.bestCards
+    };
+  }
+
+  // Settle each pot
+  const globalWinners = new Set<string>();
+  const playerChipsWon: Record<string, number> = {};
+
+  for (const pot of pots) {
+    if (pot.settled) {
+      // Already settled (e.g. single eligible player / uncalled bet)
+      // Still need to credit chips for these!
+      if (pot.winners && pot.winners.length > 0) {
+        pot.winners.forEach(w => globalWinners.add(w));
+        const shares = splitPot(pot.amount, pot.winners.length);
+        pot.winners.forEach((wId, i) => {
+          playerChipsWon[wId] = (playerChipsWon[wId] || 0) + shares[i];
+          const w = players.find(p => p.id === wId);
+          if (w) {
+            w.stack += shares[i];
+            batch.update(w.ref, { stack: w.stack });
+          }
+        });
+      }
+      continue;
+    }
+
+    // Find eligible active hands for this pot
+    const eligibleIds = pot.eligible.filter(id => activeHands[id]);
+    
+    if (eligibleIds.length === 0) {
+      continue;
+    }
+
+    if (eligibleIds.length === 1) {
+      const winnerId = eligibleIds[0];
+      pot.winners = [winnerId];
+      pot.settled = true;
+      globalWinners.add(winnerId);
+      playerChipsWon[winnerId] = (playerChipsWon[winnerId] || 0) + pot.amount;
+
+      const w = players.find(p => p.id === winnerId);
+      if (w) {
+        w.stack += pot.amount;
+        batch.update(w.ref, { stack: w.stack });
+      }
+      continue;
+    }
+
+    // Evaluate winners among eligible players for this pot
+    const { winners: potWinners } = determineWinners(activeHands, communityCards, eligibleIds);
+    
+    if (potWinners.length === 0) continue;
+
+    pot.winners = potWinners;
+    pot.settled = true;
+    potWinners.forEach(w => globalWinners.add(w));
+
+    // Distribute chips
+    const shares = splitPot(pot.amount, potWinners.length);
+    potWinners.forEach((wId, i) => {
+      playerChipsWon[wId] = (playerChipsWon[wId] || 0) + shares[i];
+      const w = players.find(p => p.id === wId);
+      if (w) {
+        w.stack += shares[i];
+        batch.update(w.ref, { stack: w.stack });
+      }
+    });
+  }
+
+  // Add chipsWon to each player's handResult
+  for (const pid of Object.keys(handResults)) {
+    (handResults[pid] as any).chipsWon = playerChipsWon[pid] || 0;
+  }
+
+  const winnerIds = Array.from(globalWinners);
+
+  return {
+    pots,
+    handResults,
+    votingOpen: false,
+    confirmedAt: serverTimestamp(),
+    winnerIds,
+    winnerId: winnerIds.length === 1 ? winnerIds[0] : null
+  };
 }
 
 /**
@@ -134,28 +259,47 @@ export async function createTable(data: CreateTableInput, user: User | null) {
     state: "LOBBY",
     password: data.password || null,
     createdAt: serverTimestamp(),
-    endedAt: null,
-    currentHandId: null,
     mode: data.mode || "CASH",
     tournamentConfig: data.tournamentConfig || null,
+    isVirtualCards: !!data.isVirtualCards,
+    endedAt: null,
+    currentHandId: null,
     currentLevelIndex: data.mode === "TOURNAMENT" ? 0 : null,
     levelStartedAt: null,
   });
 
   // Aggiunge subito l'host come giocatore seduto al tavolo (seatIndex 0)
-  const playerRef = doc(db, "tables", tableId, "players", uid);
-  await setDoc(playerRef, {
-    userId: uid,
-    displayName: user.displayName,
+  await setDoc(doc(db, "tables", tableId, "players", user.uid), {
+    userId: user.uid,
+    displayName: user.displayName || "Admin",
     stack: data.initialStack,
     seatIndex: 0,
-    isReady: false,
-    isFolded: false,
     isSittingOut: false,
-    joinedAt: serverTimestamp(),
+    joinedAt: serverTimestamp()
   });
 
   return tableId;
+}
+
+function createDeck(): string[] {
+  const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
+  const suits = ['h', 'd', 's', 'c'];
+  const deck: string[] = [];
+  for (const s of suits) {
+    for (const r of ranks) {
+      deck.push(r + s);
+    }
+  }
+  return deck;
+}
+
+function shuffleDeck(deck: string[]): string[] {
+  const shuffled = [...deck];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
 }
 
 /**
@@ -412,6 +556,39 @@ export async function startGame(tableId: string) {
     currentBet = bbAmount;
   }
 
+  const isVirtualCards = !!tableData.isVirtualCards;
+  let communityCards: string[] = [];
+  let playerHands: Record<string, string[]> = {};
+
+  if (isVirtualCards) {
+    const deck = shuffleDeck(createDeck());
+    const activePlayers = players.filter(p => !p.isSittingOut && p.stack > 0);
+    
+    // Dealing logic: 1 to each, then 2nd to each, starting from SB
+    playerHands = {};
+    activePlayers.forEach(p => playerHands[p.id] = []);
+
+    const sbInActiveIdx = activePlayers.findIndex(p => p.id === sbPlayer.id);
+    if (sbInActiveIdx !== -1) {
+      for (let round = 0; round < 2; round++) {
+        for (let i = 0; i < activePlayers.length; i++) {
+          const p = activePlayers[(sbInActiveIdx + i) % activePlayers.length];
+          playerHands[p.id].push(deck.pop()!);
+        }
+      }
+    }
+
+    deck.pop(); // Burn 1 before Flop
+    const f1 = deck.pop()!;
+    const f2 = deck.pop()!;
+    const f3 = deck.pop()!;
+    deck.pop(); // Burn 1 before Turn
+    const t = deck.pop()!;
+    deck.pop(); // Burn 1 before River
+    const r = deck.pop()!;
+    communityCards = [f1, f2, f3, t, r];
+  }
+
   const handData: HandData = {
     handNumber: 1,
     stage: "PREFLOP",
@@ -424,31 +601,25 @@ export async function startGame(tableId: string) {
     roundBets,
     handContributions,
     firstToActIndex,
-    lastAggressorIndex: bigBlindIndex  // Il BB è l'aggressore iniziale preflop
+    lastAggressorIndex: bigBlindIndex,
+    isVirtualCards,
+    communityCards,
+    playerHands
   };
 
-  // Crea una nuova hand nella subcollection "hands"
+  const batch = writeBatch(db);
   const handsRef = collection(db, "tables", tableId, "hands");
   const handRef = doc(handsRef);
-
-  const batch = writeBatch(db);
 
   batch.set(handRef, {
     ...handData,
     createdAt: serverTimestamp()
   });
 
-  // Aggiorna il tavolo: IN_GAME + currentHandId
-  const updateData: any = {
+  batch.update(tableRef, {
     state: "IN_GAME",
     currentHandId: handRef.id
-  };
-  
-  if (tableData.mode === "TOURNAMENT") {
-    updateData.levelStartedAt = serverTimestamp();
-  }
-
-  batch.update(tableRef, updateData);
+  });
 
   // Reset isReady di tutti i giocatori e scala le blind dagli stack
   players.forEach((p, index) => {
@@ -751,6 +922,38 @@ export async function startNextHand(tableId: string, user: User) {
   const handsRef = collection(db, "tables", tableId, "hands");
   const newHandRef = doc(handsRef);
 
+  const isVirtualCards = !!tableData.isVirtualCards;
+  let communityCards: string[] = [];
+  let playerHands: Record<string, string[]> = {};
+
+  if (isVirtualCards) {
+    const deck = shuffleDeck(createDeck());
+    const activePlayers = players.filter(p => !p.isSittingOut && p.stack > 0);
+    
+    playerHands = {};
+    activePlayers.forEach(p => playerHands[p.id] = []);
+
+    const sbInActiveIdx = activePlayers.findIndex(p => p.id === sbPlayer.id);
+    if (sbInActiveIdx !== -1) {
+      for (let round = 0; round < 2; round++) {
+        for (let i = 0; i < activePlayers.length; i++) {
+          const p = activePlayers[(sbInActiveIdx + i) % activePlayers.length];
+          playerHands[p.id].push(deck.pop()!);
+        }
+      }
+    }
+
+    deck.pop(); // Burn 1 before Flop
+    const f1 = deck.pop()!;
+    const f2 = deck.pop()!;
+    const f3 = deck.pop()!;
+    deck.pop(); // Burn 1 before Turn
+    const t = deck.pop()!;
+    deck.pop(); // Burn 1 before River
+    const r = deck.pop()!;
+    communityCards = [f1, f2, f3, t, r];
+  }
+
   const newHand: HandData = {
     handNumber: (prevHand.handNumber || 1) + 1,
     stage: "PREFLOP",
@@ -763,7 +966,10 @@ export async function startNextHand(tableId: string, user: User) {
     roundBets,
     handContributions,
     firstToActIndex,
-    lastAggressorIndex: bigBlindIndex
+    lastAggressorIndex: bigBlindIndex,
+    isVirtualCards,
+    communityCards,
+    playerHands
   };
 
   const batch = writeBatch(db);
@@ -1176,6 +1382,7 @@ export async function playerAction(
   if (newStage === "SHOWDOWN") {
     if (activePlayers.length <= 1) {
       // Tutti gli altri hanno foldato: solo 1 vincitore possibile
+      // Le carte del vincitore NON vengono mostrate
       if (activePlayers.length === 1) {
         handUpdate.winnerId = activePlayers[0].userId;
         handUpdate.winnerIds = [activePlayers[0].userId];
@@ -1197,32 +1404,50 @@ export async function playerAction(
         });
       }
     } else if (potsCalculatedFastForward) {
-      // Scenario all-in: più giocatori attivi ma nessuno può più scommettere
-      // Accredita SUBITO i pots con un solo eligible (uncalled bets / pots automatici)
-      potsCalculatedFastForward.forEach(pt => {
-        if (pt.settled && pt.winners && pt.winners.length === 1) {
-          const wPlayer = players.find(p => p.userId === pt.winners![0]);
-          if (wPlayer) {
-            wPlayer.stack += pt.amount;
-            batch.update(wPlayer.ref, { stack: wPlayer.stack });
-          }
-        }
-      });
+      // Scenario all-in o river completato: più giocatori attivi
 
-      // Verifica se ci sono ancora pot da assegnare manualmente
-      const hasUnseattledPots = potsCalculatedFastForward.some(pt => !pt.settled);
-      if (hasUnseattledPots) {
-        // L'host deve selezionare i vincitori per i pot contesi
-        handUpdate.votingOpen = true;
-        handUpdate.winnerIds = [];
+      // Se carte virtuali e abbiamo le mani dei giocatori, auto-valuta
+      if (handData.isVirtualCards && handData.playerHands && handData.communityCards && handData.communityCards.length === 5) {
+        const playersForEval = players.map(p => ({
+          id: p.userId,
+          ref: p.ref,
+          stack: p.stack,
+          isFolded: p.isFolded
+        }));
+        const evalResult = autoEvaluateShowdown(
+          potsCalculatedFastForward,
+          handData.playerHands,
+          handData.communityCards,
+          playersForEval,
+          batch
+        );
+        Object.assign(handUpdate, evalResult);
       } else {
-        // Tutti i pots sono stati assegnati automaticamente
-        const globalWinners = new Set<string>();
-        potsCalculatedFastForward.forEach(pt => pt.winners?.forEach(w => globalWinners.add(w)));
-        handUpdate.winnerIds = Array.from(globalWinners);
-        handUpdate.winnerId = handUpdate.winnerIds.length === 1 ? handUpdate.winnerIds[0] : null;
-        handUpdate.votingOpen = false;
-        handUpdate.confirmedAt = serverTimestamp();
+        // Carte fisiche o dati mancanti: fallback al flusso manuale
+        // Accredita SUBITO i pots con un solo eligible (uncalled bets / pots automatici)
+        potsCalculatedFastForward.forEach(pt => {
+          if (pt.settled && pt.winners && pt.winners.length === 1) {
+            const wPlayer = players.find(p => p.userId === pt.winners![0]);
+            if (wPlayer) {
+              wPlayer.stack += pt.amount;
+              batch.update(wPlayer.ref, { stack: wPlayer.stack });
+            }
+          }
+        });
+
+        // Verifica se ci sono ancora pot da assegnare manualmente
+        const hasUnseattledPots = potsCalculatedFastForward.some(pt => !pt.settled);
+        if (hasUnseattledPots) {
+          handUpdate.votingOpen = true;
+          handUpdate.winnerIds = [];
+        } else {
+          const globalWinners = new Set<string>();
+          potsCalculatedFastForward.forEach(pt => pt.winners?.forEach(w => globalWinners.add(w)));
+          handUpdate.winnerIds = Array.from(globalWinners);
+          handUpdate.winnerId = handUpdate.winnerIds.length === 1 ? handUpdate.winnerIds[0] : null;
+          handUpdate.votingOpen = false;
+          handUpdate.confirmedAt = serverTimestamp();
+        }
       }
     }
   }
@@ -1327,8 +1552,8 @@ export async function advanceStage(tableId: string, user: User) {
     updateData.lastAggressorIndex = lastAggressorIndex;
   }
 
-  // Se passiamo a SHOWDOWN dopo il river, apriamo la votazione
-  if (hand.stage === "RIVER" && nextStage === "SHOWDOWN") {
+  // Se passiamo a SHOWDOWN, valutiamo le mani (virtuali) o apriamo la votazione (fisiche)
+  if (nextStage === "SHOWDOWN") {
     // Controlliamo quanti giocatori sono ancora attivi
     const playersRef = collection(db, "tables", tableId, "players");
     const playersSnap = await getDocs(playersRef);
@@ -1343,21 +1568,16 @@ export async function advanceStage(tableId: string, user: User) {
     const calcPots = calculatePotsCore(plyrsData, hand.handContributions || {});
     updateData.pots = calcPots;
 
-    // Se c'è solo un giocatore attivo o i pot sono già tutti settled (nessuna reale concorrenza)
-    const allPotsSettled = calcPots.every(p => p.settled);
-
-    if (activePlayers.length === 1 || allPotsSettled) {
+    if (activePlayers.length <= 1) {
+      // Solo 1 giocatore — vince automaticamente, carte non mostrate
       const batch = writeBatch(db);
-      
-      // Accredita automaticamente le chips dei vari pots ai vincitori automatici (unici eligible)
       calcPots.forEach(pt => {
-        if (pt.settled && pt.winners) {
-          // Dividi equamente (potrebbe esserci un rounding, ma per ora teniamo semplice se un solo winner default)
-          const share = Math.floor(pt.amount / pt.winners.length);
-          pt.winners.forEach(wid => {
+        if (pt.settled && pt.winners && pt.winners.length > 0) {
+          const shares = splitPot(pt.amount, pt.winners.length);
+          pt.winners.forEach((wid, i) => {
             const w = plyrsData.find(p => p.id === wid);
             if (w) {
-              w.stack += share;
+              w.stack += shares[i];
               batch.update(w.ref, { stack: w.stack });
             }
           });
@@ -1373,23 +1593,53 @@ export async function advanceStage(tableId: string, user: User) {
       
       batch.update(handRef, updateData);
       await batch.commit();
-    } else {
-      // Più di un giocatore contende almeno un pot unsettled: l'host dovrà confermare i vincitori
-      // Accreditiamo SUBITO solo gli uncalled bets (pot dove c'è solo 1 giocatore)
+    } else if (hand.isVirtualCards && hand.playerHands && hand.communityCards && hand.communityCards.length === 5) {
+      // Carte virtuali con 2+ giocatori: auto-valutazione
       const batch = writeBatch(db);
-      calcPots.forEach(pt => {
-        if (pt.settled && pt.winners && pt.winners.length === 1) {
-           const wid = pt.winners[0];
-           const w = plyrsData.find(p => p.id === wid);
-           if (w) {
-             w.stack += pt.amount;
-             batch.update(w.ref, { stack: w.stack });
-           }
-        }
-      });
+      const evalResult = autoEvaluateShowdown(
+        calcPots,
+        hand.playerHands,
+        hand.communityCards,
+        plyrsData,
+        batch
+      );
+      Object.assign(updateData, evalResult);
+      batch.update(handRef, updateData);
+      await batch.commit();
+    } else {
+      // Carte fisiche: flusso manuale con votazione
+      const batch = writeBatch(db);
+      const allPotsSettled = calcPots.every(p => p.settled);
 
-      updateData.votingOpen = true;
-      updateData.winnerIds = [];
+      if (allPotsSettled) {
+        calcPots.forEach(pt => {
+          if (pt.settled && pt.winners && pt.winners.length > 0) {
+            const shares = splitPot(pt.amount, pt.winners.length);
+            pt.winners.forEach((wid, i) => {
+              const w = plyrsData.find(p => p.id === wid);
+              if (w) {
+                w.stack += shares[i];
+                batch.update(w.ref, { stack: w.stack });
+              }
+            });
+          }
+        });
+        updateData.votingOpen = false;
+        updateData.confirmedAt = serverTimestamp();
+      } else {
+        // Accredita solo i pots auto-settled
+        calcPots.forEach(pt => {
+          if (pt.settled && pt.winners && pt.winners.length === 1) {
+            const w = plyrsData.find(p => p.id === pt.winners![0]);
+            if (w) {
+              w.stack += pt.amount;
+              batch.update(w.ref, { stack: w.stack });
+            }
+          }
+        });
+        updateData.votingOpen = true;
+        updateData.winnerIds = [];
+      }
       batch.update(handRef, updateData);
       await batch.commit();
     }
