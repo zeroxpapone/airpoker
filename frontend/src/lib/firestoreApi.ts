@@ -616,10 +616,17 @@ export async function startGame(tableId: string) {
     createdAt: serverTimestamp()
   });
 
-  batch.update(tableRef, {
+  const tableUpdate: any = {
     state: "IN_GAME",
     currentHandId: handRef.id
-  });
+  };
+
+  if (tableData.mode === "TOURNAMENT") {
+    tableUpdate.levelStartedAt = serverTimestamp();
+    tableUpdate.currentLevelIndex = 0;
+  }
+
+  batch.update(tableRef, tableUpdate);
 
   // Reset isReady di tutti i giocatori e scala le blind dagli stack
   players.forEach((p, index) => {

@@ -71,8 +71,8 @@ const Card = ({ card, hidden }: { card?: string, hidden?: boolean }) => {
   if (hidden || !card) {
     return (
       <div style={{
-        width: hidden ? "35px" : "45px",
-        height: hidden ? "50px" : "65px",
+        width: "45px",
+        height: "65px",
         backgroundColor: "#1e3a8a",
         borderRadius: "6px",
         border: "2px solid #3b82f6",
@@ -168,7 +168,7 @@ export default function TablePage() {
   const [showEndGameConfirm, setShowEndGameConfirm] = useState(false);
   const [transferHostConfirmTarget, setTransferHostConfirmTarget] = useState<string | null>(null);
   const [forceFoldConfirmTarget, setForceFoldConfirmTarget] = useState<string | null>(null);
-  const [showMyCards, setShowMyCards] = useState(true);
+  const [showMyCards, setShowMyCards] = useState(false);
   const [, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
 
   useEffect(() => {
@@ -184,6 +184,11 @@ export default function TablePage() {
   const [lastSeenHandId, setLastSeenHandId] = useState<string | null>(null);
 
   const navigate = useNavigate();
+
+  // Pre-action states for virtual cards mode
+  const [preAction, setPreAction] = useState<{ type: "CHECK_FOLD" | "CHECK" | "CALL_ANY" | "CALL_X" | "FOLD"; amount?: number } | null>(null);
+  const [lastStage, setLastStage] = useState<string>("");
+  const [lastHandNumber, setLastHandNumber] = useState<number>(0);
 
   useEffect(() => {
     const handleVisChange = () => {
@@ -205,10 +210,10 @@ export default function TablePage() {
     const currentLevelIndex = table.currentLevelIndex || 0;
     const levelDurationMins = config.blindSchedule[currentLevelIndex]?.durationMins || 15;
     
-    // Check if levelStartedAt has toMillis
+    // Check if levelStartedAt has toMillis or seconds
     const startMillis = typeof table.levelStartedAt.toMillis === "function" 
       ? table.levelStartedAt.toMillis() 
-      : table.levelStartedAt.seconds * 1000;
+      : (table.levelStartedAt.seconds ? table.levelStartedAt.seconds * 1000 : Date.now());
 
     const endMillis = startMillis + levelDurationMins * 60 * 1000;
 
@@ -438,6 +443,103 @@ export default function TablePage() {
     return () => clearTimeout(timer);
   }, [currentHand?.id, currentHand?.stage, currentHand?.currentTurnIndex, table?.hostId, user?.uid, blindsPopupVisible]);
 
+  // Local variables for pre-action hooks
+  const localMyUid = user?.uid || null;
+  const localInGame = table?.state === "IN_GAME";
+  const localIsMyTurn = !!(
+    localInGame &&
+    currentHand &&
+    localMyUid &&
+    currentHand.currentTurnIndex != null &&
+    currentHand.currentTurnIndex >= 0 &&
+    players[currentHand.currentTurnIndex] &&
+    players[currentHand.currentTurnIndex].userId === localMyUid &&
+    !players[currentHand.currentTurnIndex].isFolded
+  );
+
+  const togglePreAction = (type: "CHECK_FOLD" | "CHECK" | "CALL_ANY" | "CALL_X" | "FOLD", amount?: number) => {
+    setPreAction(prev => {
+      if (prev?.type === type && prev?.amount === amount) {
+        return null;
+      }
+      return { type, amount };
+    });
+  };
+
+  // Pre-action auto-execution when turn reaches this player
+  useEffect(() => {
+    if (!localIsMyTurn || !preAction || !currentHand || actionLoading || !localMyUid) return;
+
+    const myRoundBet = currentHand.roundBets[localMyUid] ?? 0;
+    const currentBet = currentHand.currentBet ?? 0;
+    const actualDiff = Math.max(0, currentBet - myRoundBet);
+
+    const executeAutoAction = async () => {
+      const chosenPreAction = preAction;
+      setPreAction(null);
+      
+      if (chosenPreAction.type === "CHECK_FOLD") {
+        if (actualDiff === 0) {
+          await doAction("CHECK");
+        } else {
+          await doAction("FOLD");
+        }
+      } else if (chosenPreAction.type === "CHECK") {
+        if (actualDiff === 0) {
+          await doAction("CHECK");
+        }
+      } else if (chosenPreAction.type === "FOLD") {
+        if (actualDiff > 0) {
+          await doAction("FOLD");
+        } else {
+          await doAction("CHECK");
+        }
+      } else if (chosenPreAction.type === "CALL_X") {
+        if (actualDiff === chosenPreAction.amount) {
+          await doAction("CALL");
+        }
+      } else if (chosenPreAction.type === "CALL_ANY") {
+        if (actualDiff === 0) {
+          await doAction("CHECK");
+        } else {
+          await doAction("CALL");
+        }
+      }
+    };
+
+    executeAutoAction();
+  }, [localIsMyTurn, preAction, currentHand, actionLoading, localMyUid]);
+
+  // Pre-action real-time cancellation based on other players' actions
+  useEffect(() => {
+    if (localIsMyTurn || !preAction || !currentHand || !localMyUid) return;
+
+    const myRoundBet = currentHand.roundBets[localMyUid] ?? 0;
+    const currentBet = currentHand.currentBet ?? 0;
+    const actualDiff = Math.max(0, currentBet - myRoundBet);
+
+    if (preAction.type === "CALL_X" && actualDiff !== preAction.amount) {
+      setPreAction(null);
+    } else if (preAction.type === "CHECK" && actualDiff > 0) {
+      setPreAction(null);
+    } else if (preAction.type === "FOLD" && actualDiff === 0) {
+      setPreAction(null);
+    }
+  }, [currentHand, localIsMyTurn, preAction, localMyUid]);
+
+  // Clear pre-action when stage or hand changes, and cover cards at start of hand
+  useEffect(() => {
+    if (!currentHand) return;
+    if (currentHand.stage !== lastStage || currentHand.handNumber !== lastHandNumber) {
+      setPreAction(null);
+      if (currentHand.handNumber !== lastHandNumber) {
+        setShowMyCards(false);
+      }
+      setLastStage(currentHand.stage);
+      setLastHandNumber(currentHand.handNumber || 0);
+    }
+  }, [currentHand, lastStage, lastHandNumber]);
+
 
   if (!tableId) {
     return <p>ID tavolo mancante.</p>;
@@ -513,8 +615,17 @@ export default function TablePage() {
     }
   }
 
-  // Host bloccato dal terminare la partita durante una mano, sbloccato solo a vincitore assegnato
   const disableEndGame = inGame && !!currentHand && !(currentHand.stage === "SHOWDOWN" && hasWinner);
+
+  const inActiveHand = !!(
+    inGame &&
+    currentHand &&
+    myPlayer &&
+    !myPlayer.isFolded &&
+    !myPlayer.isSittingOut &&
+    (myPlayer.stack ?? 0) > 0 &&
+    currentHand.stage !== "SHOWDOWN"
+  );
 
   const allReady =
     table.state === "LOBBY" &&
@@ -798,28 +909,14 @@ async function confirmEndGameAction() {
   }
 
   function getSeatPosition(index: number, total: number) {
-    const isTop = index < Math.ceil(total / 2);
-    const topCount = Math.ceil(total / 2);
-    const bottomCount = total - topCount;
+    // index 0 is Me, placed at the bottom center (90 degrees or PI/2).
+    // The others are spaced clockwise.
+    const angle = Math.PI / 2 + index * (2 * Math.PI / total);
 
-    let angle;
-    if (isTop) {
-      // Semicerchio superiore: più schiacciato ai poli (da 210° a 330°)
-      const startAngle = Math.PI + Math.PI/6; 
-      const endAngle = 2*Math.PI - Math.PI/6;
-      const step = topCount > 1 ? (endAngle - startAngle) / (topCount - 1) : 0;
-      angle = topCount > 1 ? startAngle + step * index : (startAngle + endAngle) / 2;
-    } else {
-      // Semicerchio inferiore: più schiacciato ai poli (da 30° a 150°)
-      const startAngle = Math.PI/6;
-      const endAngle = Math.PI - Math.PI/6;
-      const step = bottomCount > 1 ? (endAngle - startAngle) / (bottomCount - 1) : 0;
-      angle = bottomCount > 1 ? startAngle + step * (index - topCount) : (startAngle + endAngle) / 2;
-    }
-
-    const radius = 44; 
-    const top = 50 + radius * Math.sin(angle);
-    const left = 50 + radius * Math.cos(angle);
+    const radiusX = 42; // Horizontal radius (wider)
+    const radiusY = 38; // Vertical radius (shorter)
+    const top = 50 + radiusY * Math.sin(angle);
+    const left = 50 + radiusX * Math.cos(angle);
 
     return {
       top: `${top}%`,
@@ -1349,7 +1446,9 @@ async function handleConfirmWinners(potId: string) {
 
             {/* Giocatori attorno al tavolo */}
             {players.map((p, index) => {
-              const { top, left } = getSeatPosition(index, players.length);
+              const myIndex = players.findIndex(orig => orig.userId === myUid);
+              const visualIndex = myIndex >= 0 ? (index - myIndex + players.length) % players.length : index;
+              const { top, left } = getSeatPosition(visualIndex, players.length);
               const isMe = myUid === p.userId;
               const isTurn =
                 currentHand &&
@@ -1392,6 +1491,64 @@ async function handleConfirmWinners(potId: string) {
                       {currentHand.playerHands[p.userId].map((c, i) => (
                         <Card key={i} card={c} />
                       ))}
+                    </div>
+                  )}
+
+                  {/* Le mie carte personali durante il gioco (non allo showdown) */}
+                  {isMe && table?.isVirtualCards && currentHand && currentHand.stage !== "SHOWDOWN" && currentHand.playerHands?.[p.userId] && !p.isFolded && (
+                    <div 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowMyCards(!showMyCards);
+                      }}
+                      style={{
+                        position: "absolute",
+                        bottom: "calc(100% + 45px)",
+                        left: "50%",
+                        transform: "translate(-50%, 50%)",
+                        zIndex: 100,
+                        cursor: "pointer",
+                        userSelect: "none",
+                        WebkitUserSelect: "none"
+                      }}
+                    >
+                      {showMyCards ? (
+                        <div style={{
+                          display: "flex",
+                          gap: "3px",
+                          padding: "0.3rem",
+                          background: "rgba(15,23,42,0.95)",
+                          borderRadius: "0.5rem",
+                          backdropFilter: "blur(8px)",
+                          border: "1px solid #1e293b",
+                          boxShadow: "0 8px 20px rgba(0,0,0,0.6)",
+                          animation: "scaleIn 0.2s ease-out"
+                        }}>
+                          {currentHand.playerHands[p.userId].map((c, i) => (
+                            <Card key={i} card={c} />
+                          ))}
+                        </div>
+                      ) : (
+                        <div style={{
+                          width: "40px",
+                          height: "40px",
+                          borderRadius: "50%",
+                          background: "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          boxShadow: "0 8px 20px rgba(59, 130, 246, 0.4)",
+                          border: "2px solid rgba(255,255,255,0.2)",
+                          backdropFilter: "blur(4px)",
+                          animation: "scaleIn 0.2s ease-out",
+                          color: "white"
+                        }}>
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                            <circle cx="12" cy="12" r="3"></circle>
+                          </svg>
+                        </div>
+                      )}
                     </div>
                   )}
                   <div
@@ -1505,73 +1662,179 @@ async function handleConfirmWinners(potId: string) {
               style={{
                   display: "flex",
                   gap: "0.5rem",
-                  alignItems: "center"
+                  alignItems: "center",
+                  width: "100%"
                 }}
               >
-                {/* Fold sempre disponibile se è il tuo turno */}
-                <button
-                  disabled={!isMyTurn || actionLoading}
-                  onClick={() => setShowFoldConfirm(true)}
-                  style={{
-                    ...pillActionButton,
-                    backgroundColor: 
-                      isMyTurn 
-                        ? "#ef4444"
-                        : "#ef444473",
-                    color: "#f8fafc"
-                  }}
-                >
-                  Fold
-                </button>
+                {table?.isVirtualCards && !isMyTurn && inActiveHand ? (
+                  <>
+                    {/* Pre-action buttons */}
+                    {diffToCall === 0 ? (
+                      <>
+                        {/* 1. CHECK/FOLD */}
+                        <button
+                          onClick={() => togglePreAction("CHECK_FOLD")}
+                          style={{
+                            ...pillActionButton,
+                            flex: 1,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            backgroundColor: preAction?.type === "CHECK_FOLD" ? "#ef4444" : "rgba(15, 23, 42, 0.6)",
+                            border: preAction?.type === "CHECK_FOLD" ? "1px solid transparent" : "1px solid rgba(239, 68, 68, 0.45)",
+                            color: preAction?.type === "CHECK_FOLD" ? "#ffffff" : "rgba(239, 68, 68, 0.85)",
+                            boxShadow: preAction?.type === "CHECK_FOLD" ? "0 0 12px rgba(239, 68, 68, 0.6)" : "none",
+                            transition: "all 0.2s ease"
+                          }}
+                        >
+                          Check/Fold
+                        </button>
+                        {/* 2. CHECK */}
+                        <button
+                          onClick={() => togglePreAction("CHECK")}
+                          style={{
+                            ...pillActionButton,
+                            flex: 1,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            backgroundColor: preAction?.type === "CHECK" ? "#3b82f6" : "rgba(15, 23, 42, 0.6)",
+                            border: preAction?.type === "CHECK" ? "1px solid transparent" : "1px solid rgba(59, 130, 246, 0.45)",
+                            color: preAction?.type === "CHECK" ? "#ffffff" : "rgba(59, 130, 246, 0.85)",
+                            boxShadow: preAction?.type === "CHECK" ? "0 0 12px rgba(59, 130, 246, 0.6)" : "none",
+                            transition: "all 0.2s ease"
+                          }}
+                        >
+                          Check
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        {/* 1. FOLD */}
+                        <button
+                          onClick={() => togglePreAction("FOLD")}
+                          style={{
+                            ...pillActionButton,
+                            flex: 1,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            backgroundColor: preAction?.type === "FOLD" ? "#ef4444" : "rgba(15, 23, 42, 0.6)",
+                            border: preAction?.type === "FOLD" ? "1px solid transparent" : "1px solid rgba(239, 68, 68, 0.45)",
+                            color: preAction?.type === "FOLD" ? "#ffffff" : "rgba(239, 68, 68, 0.85)",
+                            boxShadow: preAction?.type === "FOLD" ? "0 0 12px rgba(239, 68, 68, 0.6)" : "none",
+                            transition: "all 0.2s ease"
+                          }}
+                        >
+                          Fold
+                        </button>
+                        {/* 2. CALL x */}
+                        <button
+                          onClick={() => togglePreAction("CALL_X", diffToCall)}
+                          style={{
+                            ...pillActionButton,
+                            flex: 1,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            backgroundColor: preAction?.type === "CALL_X" ? "#f59e0b" : "rgba(15, 23, 42, 0.6)",
+                            border: preAction?.type === "CALL_X" ? "1px solid transparent" : "1px solid rgba(245, 158, 11, 0.45)",
+                            color: preAction?.type === "CALL_X" ? "#020617" : "rgba(245, 158, 11, 0.85)",
+                            boxShadow: preAction?.type === "CALL_X" ? "0 0 12px rgba(245, 158, 11, 0.6)" : "none",
+                            transition: "all 0.2s ease"
+                          }}
+                        >
+                          {t("table.call")} {diffToCall}
+                        </button>
+                      </>
+                    )}
+                    {/* 3. CALL ANY */}
+                    <button
+                      onClick={() => togglePreAction("CALL_ANY")}
+                      style={{
+                        ...pillActionButton,
+                        flex: 1,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        backgroundColor: preAction?.type === "CALL_ANY" ? "#22c55e" : "rgba(15, 23, 42, 0.6)",
+                        border: preAction?.type === "CALL_ANY" ? "1px solid transparent" : "1px solid rgba(34, 197, 94, 0.45)",
+                        color: preAction?.type === "CALL_ANY" ? "#020617" : "rgba(34, 197, 94, 0.85)",
+                        boxShadow: preAction?.type === "CALL_ANY" ? "0 0 12px rgba(34, 197, 94, 0.6)" : "none",
+                        transition: "all 0.2s ease"
+                      }}
+                    >
+                      Call Any
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {/* Fold sempre disponibile se è il tuo turno */}
+                    <button
+                      disabled={!isMyTurn || actionLoading}
+                      onClick={() => setShowFoldConfirm(true)}
+                      style={{
+                        ...pillActionButton,
+                        backgroundColor: 
+                          isMyTurn 
+                            ? "#ef4444"
+                            : "#ef444473",
+                        color: "#f8fafc"
+                      }}
+                    >
+                      Fold
+                    </button>
 
-                {/* Bottone centrale: Check o Call */}
-                <button
-                  disabled={!isMyTurn || actionLoading || (!canCheck && !canCall)}
-                  onClick={() =>
-                    canCall ? doAction("CALL") : canCheck ? doAction("CHECK") : null
-                  }
-                  style={{
-                    flex: 1,
-                    padding: "0.6rem 0.9rem",
-                    borderRadius: "999px",
-                    border: "none",
-                    cursor:
-                      isMyTurn && (canCheck || canCall) && !actionLoading
-                        ? "pointer"
-                        : "default",
-                    backgroundColor:
-                      isMyTurn && (canCheck || canCall)
-                        ? (canCall ? "#f59e0b" : "#3b82f6")
-                        : "#4b5563",
-                    color: "#f8fafc",
-                    fontWeight: 600,
-                    fontSize: "0.9rem",
-                    textAlign: "center"
-                  }}
-                >
-                  {!isMyTurn
-                    ? t("table.waitingTurn")
-                    : canCall
-                    ? isGoingAllIn
-                      ? `ALL IN ${effectiveCallAmount}`
-                      : `${t("table.call")} ${effectiveCallAmount}`
-                    : canCheck
-                    ? t("table.check")
-                    : "—"}
-                </button>
+                    {/* Bottone centrale: Check o Call */}
+                    <button
+                      disabled={!isMyTurn || actionLoading || (!canCheck && !canCall)}
+                      onClick={() =>
+                        canCall ? doAction("CALL") : canCheck ? doAction("CHECK") : null
+                      }
+                      style={{
+                        flex: 1,
+                        padding: "0.6rem 0.9rem",
+                        borderRadius: "999px",
+                        border: "none",
+                        cursor:
+                          isMyTurn && (canCheck || canCall) && !actionLoading
+                            ? "pointer"
+                            : "default",
+                        backgroundColor:
+                          isMyTurn && (canCheck || canCall)
+                            ? (canCall ? "#f59e0b" : "#3b82f6")
+                            : "#4b5563",
+                        color: "#f8fafc",
+                        fontWeight: 600,
+                        fontSize: "0.9rem",
+                        textAlign: "center"
+                      }}
+                    >
+                      {!isMyTurn
+                        ? t("table.waitingTurn")
+                        : canCall
+                        ? isGoingAllIn
+                          ? `ALL IN ${effectiveCallAmount}`
+                          : `${t("table.call")} ${effectiveCallAmount}`
+                        : canCheck
+                        ? t("table.check")
+                        : "—"}
+                    </button>
 
-                {/* Bottone Bet/Raise + pannello */}
-                <button
-                  disabled={!isMyTurn || actionLoading || !canBetOrRaise}
-                  onClick={openBetPanel}
-                  style={{
-                    ...pillActionButton,
-                    backgroundColor:
-                      isMyTurn && canBetOrRaise ? "#22c55e" : "#4b5563"
-                  }}
-                >
-                  {currentBet === 0 && myRoundBet === 0 ? t("table.bet") : t("table.raise")}
-                </button>
+                    {/* Bottone Bet/Raise + pannello */}
+                    <button
+                      disabled={!isMyTurn || actionLoading || !canBetOrRaise}
+                      onClick={openBetPanel}
+                      style={{
+                        ...pillActionButton,
+                        backgroundColor:
+                          isMyTurn && canBetOrRaise ? "#22c55e" : "#4b5563"
+                      }}
+                    >
+                      {currentBet === 0 && myRoundBet === 0 ? t("table.bet") : t("table.raise")}
+                    </button>
+                  </>
+                )}
               </div>
           </div>
 
@@ -1707,7 +1970,6 @@ async function handleConfirmWinners(potId: string) {
             </div>
           </div>
         )}
-        {myCardsUI}
       </div>
     );
   }
@@ -2441,59 +2703,7 @@ async function handleConfirmWinners(potId: string) {
     </div>
   );
 
-  const myCardsUI = table?.isVirtualCards && currentHand && myPlayer && currentHand.playerHands?.[myPlayer.id] && (
-    <div 
-      onClick={() => setShowMyCards(!showMyCards)}
-      style={{
-        position: "absolute",
-        bottom: "100px",
-        left: "1rem",
-        zIndex: 50,
-        cursor: "pointer",
-        transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-        userSelect: "none",
-        WebkitUserSelect: "none"
-      }}
-    >
-      {showMyCards ? (
-        <div style={{
-          display: "flex",
-          gap: "0.5rem",
-          padding: "0.6rem",
-          background: "rgba(15,23,42,0.85)",
-          borderRadius: "1rem",
-          backdropFilter: "blur(8px)",
-          border: "1px solid #1e293b",
-          boxShadow: "0 10px 25px -5px rgba(0,0,0,0.5)",
-          animation: "scaleIn 0.2s ease-out"
-        }}>
-          {currentHand.playerHands[myPlayer.id].map((card, idx) => (
-            <Card key={idx} card={card} />
-          ))}
-        </div>
-      ) : (
-        <div style={{
-          width: "48px",
-          height: "48px",
-          borderRadius: "50%",
-          background: "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          boxShadow: "0 8px 20px rgba(59, 130, 246, 0.4)",
-          border: "2px solid rgba(255,255,255,0.2)",
-          backdropFilter: "blur(4px)",
-          animation: "scaleIn 0.2s ease-out",
-          color: "white"
-        }}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-            <circle cx="12" cy="12" r="3"></circle>
-          </svg>
-        </div>
-      )}
-    </div>
-  );
+
 
   const actionErrorUI = actionError && (
     <div style={{

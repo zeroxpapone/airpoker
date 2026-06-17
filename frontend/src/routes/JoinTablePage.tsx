@@ -18,12 +18,36 @@ export default function JoinTablePage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
 
+  const [attemptedTableId, setAttemptedTableId] = useState<string | null>(null);
+
+  const performJoin = async (targetTableId: string, targetPassword?: string) => {
+    if (!targetTableId || !user) return;
+    setErrorMsg(null);
+    setLoading(true);
+    try {
+      await joinTable(targetTableId.trim(), user, targetPassword?.trim() || undefined);
+      navigate(`/table/${targetTableId.trim()}`);
+    } catch (err: any) {
+      console.error(err);
+      setErrorMsg(err.message || t("joinTable.errorGeneric"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     const tid = searchParams.get("tableId");
-    const pwd = searchParams.get("pwd");
-    if (tid) setTableId(tid);
-    if (pwd) setPassword(pwd);
-  }, [searchParams]);
+    const pwd = searchParams.get("pwd") || "";
+    if (tid) {
+      setTableId(tid);
+      if (pwd) setPassword(pwd);
+      
+      if (user && tid !== attemptedTableId) {
+        setAttemptedTableId(tid);
+        performJoin(tid, pwd);
+      }
+    }
+  }, [searchParams, user, attemptedTableId]);
 
   if (!user) {
     return <p>{t("joinTable.errorNotLoggedIn")}</p>;
@@ -31,18 +55,7 @@ export default function JoinTablePage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setErrorMsg(null);
-
-    try {
-      setLoading(true);
-    await joinTable(tableId.trim(), user, password.trim() || undefined);
-      navigate(`/table/${tableId.trim()}`);
-    } catch (err: any) {
-      console.error(err);
-      setErrorMsg(err.message || t("joinTable.errorGeneric"));
-    } finally {
-      setLoading(false);
-    }
+    await performJoin(tableId, password);
   }
 
   return (
@@ -97,23 +110,26 @@ export default function JoinTablePage() {
                   if (detectedCodes && detectedCodes.length > 0) {
                     const val = detectedCodes[0].rawValue;
                     if (val) {
+                      let tId = "";
+                      let pwd = "";
                       try {
                         const url = new URL(val);
-                        const tId = url.searchParams.get("tableId");
-                        const pwd = url.searchParams.get("pwd");
-                        if (tId) {
-                          setTableId(tId);
-                          if (pwd) setPassword(pwd);
-                        } else if (val.includes("/table/")) {
-                          const extractedId = url.pathname.split("/table/")[1].replace(/\//g, "");
-                          setTableId(extractedId);
-                        } else {
-                          setTableId(val);
+                        tId = url.searchParams.get("tableId") || "";
+                        pwd = url.searchParams.get("pwd") || "";
+                        if (!tId && val.includes("/table/")) {
+                          tId = url.pathname.split("/table/")[1].replace(/\//g, "");
                         }
                       } catch (e) {
-                         setTableId(val);
+                         tId = val;
                       }
-                      setIsScanning(false);
+                      
+                      if (tId) {
+                        setTableId(tId);
+                        setPassword(pwd);
+                        setIsScanning(false);
+                        setAttemptedTableId(tId);
+                        performJoin(tId, pwd);
+                      }
                     }
                   }
                 }}

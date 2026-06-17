@@ -23,6 +23,16 @@ function ProtectedTableRoute() {
   return <TablePage />;
 }
 
+function ProtectedJoinRoute() {
+  const { user } = useAuth();
+  
+  if (!user) {
+    const redirectPath = `/join${window.location.search}`;
+    return <Navigate to={`/?redirect=${encodeURIComponent(redirectPath)}`} replace />;
+  }
+  return <JoinTablePage />;
+}
+
 function App() {
   const { user, loading } = useAuth();
   const { i18n } = useTranslation();
@@ -59,7 +69,7 @@ function App() {
           />
           <Route
             path="/join"
-            element={user ? <JoinTablePage /> : <Navigate to="/" replace />}
+            element={<ProtectedJoinRoute />}
           />
           <Route
             path="/table/:tableId"
