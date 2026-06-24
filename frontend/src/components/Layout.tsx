@@ -25,9 +25,9 @@ export default function Layout({ children }: Props) {
         minHeight: "100dvh",
         display: "flex",
         flexDirection: "column",
-        background: "radial-gradient(circle at center, #0f172a 0%, #000000 100%)",
-        color: "#e2e8f0",
-        fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        background: "radial-gradient(circle at 50% 20%, #0f172a 0%, #020617 80%, #000000 100%)",
+        color: "var(--text-main)",
+        fontFamily: "var(--font-sans)"
       }}
     >
       <header style={{ 
@@ -41,16 +41,18 @@ export default function Layout({ children }: Props) {
           <button
             onClick={() => navigate("/home")}
             style={{
-              background: "rgba(15, 23, 42, 0.7)",
-              color: "#e2e8f0",
-              border: "1px solid rgba(255,255,255,0.1)",
-              borderRadius: "0.5rem",
-              padding: "0.4rem 0.6rem",
+              background: "rgba(15, 23, 42, 0.65)",
+              color: "var(--text-main)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: "0.6rem",
+              padding: "0.45rem 0.65rem",
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.5)"
+              boxShadow: "0 4px 12px rgba(0, 0, 0, 0.4)",
+              backdropFilter: "blur(8px)",
+              transition: "all 0.2s"
             }}
             title="Home"
           >
@@ -61,15 +63,17 @@ export default function Layout({ children }: Props) {
         <button
           onClick={toggleLanguage}
           style={{
-            background: "rgba(15, 23, 42, 0.7)",
-            color: "#e2e8f0",
-            border: "1px solid rgba(255,255,255,0.1)",
-            borderRadius: "0.5rem",
-            padding: "0.4rem 0.7rem",
+            background: "rgba(15, 23, 42, 0.65)",
+            color: "var(--text-main)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: "0.6rem",
+            padding: "0.45rem 0.8rem",
             fontSize: "0.85rem",
             cursor: "pointer",
             fontWeight: 600,
-            boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.5)"
+            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.4)",
+            backdropFilter: "blur(8px)",
+            transition: "all 0.2s"
           }}
         >
           {currentLang === "it" ? "🇮🇹 IT" : "🇬🇧 EN"}

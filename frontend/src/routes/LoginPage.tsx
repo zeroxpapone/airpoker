@@ -56,36 +56,37 @@ export default function LoginPage() {
       }}
     >
       <div
-    style={{
-      width: "100%",
-      maxWidth: "380px",
-      padding: "1.5rem 1.25rem",
-      borderRadius: "1rem",
-      border: "1px solid #1f2937",
-      backgroundColor: "rgba(15,23,42,0.96)",
-      boxShadow: "0 20px 40px rgba(0,0,0,0.6)",
-      display: "grid",
-      gap: "1rem",
-      maxHeight: "90vh",
-      overflowY: "auto"
-    }}
-  >
+        className="glass-panel"
+        style={{
+          width: "100%",
+          maxWidth: "380px",
+          display: "grid",
+          gap: "1.2rem",
+          maxHeight: "90vh",
+          overflowY: "auto",
+          padding: "2rem 1.5rem"
+        }}
+      >
         <div style={{ textAlign: "center" }}>
           <h1
             style={{
-              fontSize: "1.7rem",
-              fontWeight: 700,
-              letterSpacing: "0.02em"
+              fontSize: "2rem",
+              fontWeight: 800,
+              letterSpacing: "0.02em",
+              fontFamily: "var(--font-display)",
+              background: "linear-gradient(135deg, #3b82f6 0%, #10b981 100%)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent"
             }}
           >
             {t("login.title")}
           </h1>
           <h2
             style={{
-              marginTop: "0.4rem",
+              marginTop: "0.5rem",
               fontSize: "0.9rem",
               fontWeight: 400,
-              color: "#9ca3af"
+              color: "var(--text-muted)"
             }}
             dangerouslySetInnerHTML={{ __html: t("login.subtitle") }}
           />
@@ -95,39 +96,32 @@ export default function LoginPage() {
           style={{
             padding: "0.75rem 0.9rem",
             borderRadius: "0.75rem",
-            backgroundColor: "rgba(15,23,42,0.9)",
-            border: "1px solid #111827",
+            backgroundColor: "rgba(15, 23, 42, 0.4)",
+            border: "1px solid rgba(255, 255, 255, 0.05)",
             fontSize: "0.85rem",
-            color: "#e5e7eb"
+            color: "var(--text-main)"
           }}
         >
-          <p dangerouslySetInnerHTML={{ __html: t("login.instructions") }} />
+          <p style={{ margin: 0, lineHeight: 1.4 }} dangerouslySetInnerHTML={{ __html: t("login.instructions") }} />
         </div>
 
         <form
           onSubmit={handleLogin}
-          style={{ display: "grid", gap: "0.8rem" }}
+          style={{ display: "grid", gap: "0.9rem" }}
         >
-          <div style={{ display: "grid", gap: "0.25rem" }}>
+          <div style={{ display: "grid", gap: "0.35rem" }}>
             <label
               style={{
-                fontSize: "0.9rem",
-                fontWeight: 500,
-                color: "#e5e7eb"
+                fontSize: "0.85rem",
+                fontWeight: 600,
+                color: "var(--text-main)",
+                textTransform: "uppercase",
+                letterSpacing: "0.03em"
               }}
             >
               {t("login.nicknameLabel")}
             </label>
             <input
-              style={{
-                width: "100%",
-                padding: "0.55rem 0.75rem",
-                backgroundColor: "#020617",
-                border: "1px solid #1e293b",
-                borderRadius: "0.6rem",
-                color: "#e2e8f0",
-                fontSize: "0.9rem"
-              }}
               type="text"
               placeholder={t("login.nicknamePlaceholder")}
               value={nickname}
@@ -137,29 +131,27 @@ export default function LoginPage() {
           </div>
 
           {errorMsg && (
-            <p style={{ fontSize: "0.8rem", color: "#f97373" }}>{errorMsg}</p>
+            <p style={{ fontSize: "0.8rem", color: "var(--color-danger)", margin: "0.2rem 0" }}>{errorMsg}</p>
           )}
 
           <button
             type="submit"
             disabled={disabled || !nickname.trim()}
+            className={disabled || !nickname.trim() ? "" : "poker-btn-primary"}
             style={{
-              marginTop: "0.3rem",
+              marginTop: "0.4rem",
               width: "100%",
-              padding: "0.7rem 1rem",
+              padding: "0.75rem 1rem",
               borderRadius: "999px",
               border: "none",
-              cursor:
-                disabled || !nickname.trim() ? "not-allowed" : "pointer",
-              background:
-                disabled || !nickname.trim()
-                  ? "#4b5563"
-                  : "linear-gradient(135deg, #22c55e, #4ade80, #22c55e)",
-              color: "#020617",
-              fontWeight: 700,
+              cursor: disabled || !nickname.trim() ? "not-allowed" : "pointer",
+              backgroundColor: disabled || !nickname.trim() ? "rgba(75, 85, 99, 0.4)" : undefined,
+              color: disabled || !nickname.trim() ? "var(--text-muted)" : "var(--text-inverse)",
+              fontWeight: 800,
               fontSize: "0.95rem",
-              letterSpacing: "0.03em",
+              letterSpacing: "0.04em",
               textTransform: "uppercase",
+              boxShadow: disabled || !nickname.trim() ? "none" : "0 4px 15px rgba(16, 185, 129, 0.25)",
               opacity: loading ? 0.7 : 1
             }}
           >
@@ -169,15 +161,16 @@ export default function LoginPage() {
 
         <p
           style={{
-            marginTop: "0.3rem",
+            marginTop: "0.4rem",
             fontSize: "0.8rem",
-            color: "#6b7280",
-            textAlign: "center"
+            color: "var(--text-muted)",
+            textAlign: "center",
+            margin: 0
           }}
         >
           <Trans
             i18nKey="login.footer"
-            components={{ termsLink: <Link to="/terms" style={{ color: "#38bdf8", textDecoration: "underline" }} /> }}
+            components={{ termsLink: <Link to="/terms" style={{ color: "#38bdf8", textDecoration: "underline", fontWeight: 500 }} /> }}
           />
         </p>
       </div>

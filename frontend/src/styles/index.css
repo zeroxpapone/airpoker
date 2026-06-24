@@ -1,3 +1,33 @@
+:root {
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-display: 'Outfit', sans-serif;
+  
+  /* Modern Dark Mode Color Palette */
+  --bg-main: #020617; /* Slate 950 */
+  --bg-card: rgba(15, 23, 42, 0.75); /* Slate 900 with opacity */
+  --bg-card-hover: rgba(30, 41, 59, 0.6);
+  --bg-input: #020617;
+  --border-color: rgba(255, 255, 255, 0.08);
+  --border-color-glow: rgba(59, 130, 246, 0.25);
+  
+  /* Accent Colors */
+  --color-primary: #3b82f6; /* Cyber blue */
+  --color-primary-glow: rgba(59, 130, 246, 0.4);
+  --color-success: #10b981; /* Emerald green */
+  --color-success-glow: rgba(16, 185, 129, 0.4);
+  --color-danger: #ef4444; /* Rose red */
+  --color-danger-glow: rgba(239, 68, 68, 0.4);
+  --color-warning: #fbbf24; /* Gold/Amber */
+  --color-warning-glow: rgba(251, 191, 36, 0.4);
+  --color-tournament: #8b5cf6; /* Violet */
+  --color-tournament-glow: rgba(139, 92, 246, 0.35);
+
+  /* Typography colors */
+  --text-main: #f3f4f6; /* Gray 100 */
+  --text-muted: #9ca3af; /* Gray 400 */
+  --text-inverse: #020617;
+}
+
 *,
 *::before,
 *::after {
@@ -11,11 +41,458 @@ body,
   padding: 0;
   height: 100%;
   overscroll-behavior: none; /* Blocks pull-to-refresh and rubber-banding */
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
-    "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
+  background-color: var(--bg-main);
+  color: var(--text-main);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
-body {
-  background: #020617; /* blu notte */
-  color: #e2e8f0;      /* grigio chiaro */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0;
 }
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.5);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Base Form Inputs */
+input[type="text"],
+input[type="number"],
+input[type="password"] {
+  width: 100%;
+  padding: 0.65rem 0.9rem;
+  background-color: var(--bg-input);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.75rem;
+  color: var(--text-main);
+  font-size: 0.95rem;
+  font-family: var(--font-sans);
+  transition: all 0.2s ease-in-out;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+input[type="password"]:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.3), inset 0 2px 4px rgba(0,0,0,0.5);
+}
+
+/* Range Inputs */
+input[type="range"] {
+  -webkit-appearance: none;
+  width: 100%;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="range"]:focus {
+  outline: none;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 99px;
+  border: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  height: 18px;
+  width: 18px;
+  border-radius: 50%;
+  background: var(--color-success);
+  cursor: pointer;
+  -webkit-appearance: none;
+  margin-top: -6px;
+  box-shadow: 0 0 10px var(--color-success-glow);
+  transition: transform 0.1s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+input[type="range"]::-moz-range-track {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 99px;
+}
+
+input[type="range"]::-moz-range-thumb {
+  height: 18px;
+  width: 18px;
+  border-radius: 50%;
+  background: var(--color-success);
+  cursor: pointer;
+  box-shadow: 0 0 10px var(--color-success-glow);
+  border: none;
+}
+
+/* Button Micro-interactions */
+button {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  font-family: var(--font-sans);
+}
+
+button:active {
+  transform: scale(0.96) !important;
+}
+
+/* --- Premium UI Classes --- */
+
+/* Glass Cards */
+.glass-panel {
+  background: var(--bg-card);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-color);
+  border-radius: 1.25rem;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+  padding: 2rem 1.5rem;
+  transition: all 0.3s ease;
+}
+
+.glass-panel:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* Action Buttons */
+.poker-btn-primary {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: var(--text-inverse);
+  font-weight: 700;
+  border: none;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+.poker-btn-primary:hover:not(:disabled) {
+  box-shadow: 0 6px 18px rgba(16, 185, 129, 0.5);
+  filter: brightness(1.1);
+}
+
+.poker-btn-secondary {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--color-primary);
+  color: var(--text-main);
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+}
+.poker-btn-secondary:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.1);
+  box-shadow: 0 6px 18px rgba(59, 130, 246, 0.3);
+}
+
+/* --- Poker Table felt and components --- */
+
+.poker-felt {
+  position: relative;
+  /* Constrain width to 95vw on mobile, 520px max, and restrict height to 54vh of viewport.
+     Since aspect-ratio is 1.12/1, width = height * 1.12, so max width from height is 54vh * 1.12 = 60vh approx. */
+  width: min(95vw, 54vh, 520px);
+  height: auto;
+  aspect-ratio: 1.12 / 1;
+  border-radius: 42% / 50%;
+  background: radial-gradient(circle at center, #065f46 0%, #022c22 80%, #020617 100%);
+  border: 10px solid #18181b; /* Metal/wood rail bumper */
+  box-shadow: 
+    inset 0 0 50px rgba(0, 0, 0, 0.85),
+    0 12px 35px rgba(0, 0, 0, 0.7),
+    0 0 25px rgba(16, 185, 129, 0.12);
+  padding: 1.2rem;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: all 0.3s ease;
+}
+
+/* Outer Table Rim highlight */
+.poker-felt::before {
+  content: "";
+  position: absolute;
+  top: -15px; left: -15px; right: -15px; bottom: -15px;
+  border-radius: 42% / 50%;
+  border: 3px solid rgba(255, 255, 255, 0.04);
+  pointer-events: none;
+}
+
+/* Player Pods */
+.player-pod {
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 12px;
+  padding: 0.45rem 0.65rem;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.55);
+  font-size: 0.75rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  text-align: center;
+}
+
+.player-pod-me {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.35);
+  box-shadow: 0 4px 15px rgba(16, 185, 129, 0.15);
+}
+
+.player-pod-active-turn {
+  border-color: #10b981;
+  box-shadow: 
+    0 0 16px rgba(16, 185, 129, 0.5),
+    inset 0 0 8px rgba(16, 185, 129, 0.25);
+  animation: pulse-turn 1.8s infinite;
+}
+
+.player-pod-folded {
+  opacity: 0.5;
+  background: rgba(30, 41, 59, 0.4);
+  border-color: rgba(255, 255, 255, 0.02);
+}
+
+.player-pod-sitout {
+  opacity: 0.4;
+  border-style: dashed;
+}
+
+/* Role Badges as poker chips */
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  font-size: 0.55rem;
+  font-weight: 900;
+  border: 1.2px dashed rgba(255, 255, 255, 0.5);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+  flex-shrink: 0;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.7);
+  user-select: none;
+}
+
+.role-badge-d {
+  background: radial-gradient(circle, #ffffff 0%, #cbd5e1 100%);
+  color: #0f172a;
+  border-color: #64748b;
+}
+
+.role-badge-sb {
+  background: radial-gradient(circle, #3b82f6 0%, #1d4ed8 100%);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.8);
+}
+
+.role-badge-bb {
+  background: radial-gradient(circle, #ef4444 0%, #b91c1c 100%);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.8);
+}
+
+/* Cards Design */
+.poker-card {
+  width: 48px;
+  height: 70px;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+  position: relative;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  user-select: none;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-sizing: border-box;
+}
+
+
+.poker-card-hidden {
+  background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%);
+  border: 2px solid #3b82f6;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+}
+
+.poker-card-hidden::after {
+  content: "♦️";
+  font-size: 1.1rem;
+  opacity: 0.25;
+}
+
+.poker-card-red {
+  color: #ef4444;
+}
+
+.poker-card-black {
+  color: #0f172a;
+}
+
+.poker-card-corner-top {
+  position: absolute;
+  top: 1px;
+  left: 3px;
+  font-size: 0.65rem;
+  line-height: 1;
+}
+
+.poker-card-corner-bottom {
+  position: absolute;
+  bottom: 1px;
+  right: 3px;
+  font-size: 0.65rem;
+  line-height: 1;
+  transform: rotate(180deg);
+}
+
+.poker-card-center-suit {
+  font-size: 1.1rem;
+}
+
+/* Animations */
+@keyframes pulse-turn {
+  0% { border-color: rgba(16, 185, 129, 0.5); box-shadow: 0 0 10px rgba(16, 185, 129, 0.25); }
+  50% { border-color: rgba(16, 185, 129, 1); box-shadow: 0 0 18px rgba(16, 185, 129, 0.5); }
+  100% { border-color: rgba(16, 185, 129, 0.5); box-shadow: 0 0 10px rgba(16, 185, 129, 0.25); }
+}
+
+@keyframes scaleIn {
+  from { transform: scale(0.9); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.scale-in {
+  animation: scaleIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Local Player Cards Overlay Positioning & Animations */
+.my-cards-container {
+  display: flex;
+  gap: 3px;
+  padding: 0.3rem;
+  background: rgba(15, 23, 42, 0.95);
+  border-radius: 0.5rem;
+  backdrop-filter: blur(8px);
+  border: 1px solid #1e293b;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.6);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  z-index: 100;
+  cursor: pointer;
+  animation: cardsScaleIn 0.2s ease-out forwards;
+}
+
+@keyframes cardsScaleIn {
+  from { transform: translateX(-50%) scale(0.95); opacity: 0; }
+  to { transform: translateX(-50%) scale(1); opacity: 1; }
+}
+
+.my-cards-trigger {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 15px rgba(59, 130, 246, 0.45);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(4px);
+  color: white;
+  cursor: pointer;
+  z-index: 100;
+  animation: triggerScaleIn 0.2s ease-out forwards;
+}
+
+.my-cards-trigger svg {
+  width: 18px;
+  height: 18px;
+}
+
+@keyframes triggerScaleIn {
+  from { transform: translateX(-50%) scale(0.9); opacity: 0; }
+  to { transform: translateX(-50%) scale(1); opacity: 1; }
+}
+
+/* Card and elements scaling for mobile viewports */
+@media (max-width: 480px) {
+  .poker-card {
+    width: 40px !important;
+    height: 57px !important;
+  }
+  .poker-card-center-suit {
+    font-size: 0.95rem !important;
+  }
+  .poker-card-corner-top,
+  .poker-card-corner-bottom {
+    font-size: 0.55rem !important;
+  }
+  .player-pod {
+    padding: 0.3rem 0.45rem !important;
+    font-size: 0.68rem !important;
+    border-radius: 8px !important;
+  }
+  .role-badge {
+    width: 14px !important;
+    height: 14px !important;
+    font-size: 0.5rem !important;
+  }
+  .my-cards-trigger {
+    width: 32px !important;
+    height: 32px !important;
+    bottom: calc(100% + 5px) !important;
+  }
+  .my-cards-trigger svg {
+    width: 15px !important;
+    height: 15px !important;
+  }
+  .my-cards-container {
+    bottom: calc(100% + 4px) !important;
+    padding: 0.2rem !important;
+    gap: 2px !important;
+  }
+}
+
+.my-cards-felt-display .poker-card {
+  width: 52px !important;
+  height: 75px !important;
+}
+@media (max-width: 480px) {
+  .my-cards-felt-display .poker-card {
+    width: 44px !important;
+    height: 63px !important;
+  }
+}
+

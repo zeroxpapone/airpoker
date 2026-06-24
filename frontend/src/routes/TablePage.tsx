@@ -70,21 +70,7 @@ interface PlayerData {
 const Card = ({ card, hidden }: { card?: string, hidden?: boolean }) => {
   if (hidden || !card) {
     return (
-      <div style={{
-        width: "45px",
-        height: "65px",
-        backgroundColor: "#1e3a8a",
-        borderRadius: "6px",
-        border: "2px solid #3b82f6",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%)",
-        boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.3)",
-        boxSizing: "border-box"
-      }}>
-        <div style={{ fontSize: "1.2rem", opacity: 0.6, color: "white" }}>♠️</div>
-      </div>
+      <div className="poker-card poker-card-hidden" />
     );
   }
 
@@ -102,25 +88,10 @@ const Card = ({ card, hidden }: { card?: string, hidden?: boolean }) => {
   const rankDisplay = rank === 'T' ? '10' : rank;
 
   return (
-    <div style={{
-      width: hidden ? "35px" : "45px",
-      height: hidden ? "50px" : "65px",
-      backgroundColor: "white",
-      borderRadius: "4px",
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
-      color: isRed ? "#ef4444" : "#0f172a",
-      fontSize: "0.9rem",
-      fontWeight: "bold",
-      boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
-      position: "relative",
-      transition: "all 0.3s ease"
-    }}>
-      {!hidden && <div style={{ position: "absolute", top: "2px", left: "2px", fontSize: "0.6rem" }}>{rankDisplay}</div>}
-      <div style={{ fontSize: hidden ? "1rem" : "1.2rem" }}>{suitIcon}</div>
-      {!hidden && <div style={{ position: "absolute", bottom: "2px", right: "2px", fontSize: "0.6rem", transform: "rotate(180deg)" }}>{rankDisplay}</div>}
+    <div className={`poker-card ${isRed ? 'poker-card-red' : 'poker-card-black'}`}>
+      <div className="poker-card-corner-top">{rankDisplay}</div>
+      <div className="poker-card-center-suit">{suitIcon}</div>
+      <div className="poker-card-corner-bottom">{rankDisplay}</div>
     </div>
   );
 };
@@ -883,28 +854,27 @@ async function confirmEndGameAction() {
   function renderRoleBadges(index: number) {
     if (!currentHand) return null;
 
-    const badges: string[] = [];
-    if (index === currentHand.dealerIndex) badges.push("D");
-    if (index === currentHand.smallBlindIndex) badges.push("SB");
-    if (index === currentHand.bigBlindIndex) badges.push("BB");
+    const badges: { type: string; label: string; className: string }[] = [];
+    if (index === currentHand.dealerIndex) {
+      badges.push({ type: "D", label: "D", className: "role-badge role-badge-d" });
+    }
+    if (index === currentHand.smallBlindIndex) {
+      badges.push({ type: "SB", label: "SB", className: "role-badge role-badge-sb" });
+    }
+    if (index === currentHand.bigBlindIndex) {
+      badges.push({ type: "BB", label: "BB", className: "role-badge role-badge-bb" });
+    }
 
     if (badges.length === 0) return null;
 
     return (
-      <span
-        style={{
-          marginLeft: "0.5rem",
-          flexShrink: 0,
-          whiteSpace: "nowrap",
-          fontSize: "0.75rem",
-          padding: "0.1rem 0.35rem",
-          borderRadius: "999px",
-          backgroundColor: "#1f2933",
-          color: "#e5e7eb"
-        }}
-      >
-        {badges.join(" • ")}
-      </span>
+      <div style={{ display: "flex", gap: "0.2rem", flexShrink: 0, marginLeft: "0.3rem" }}>
+        {badges.map((b) => (
+          <span key={b.type} className={b.className} title={b.label}>
+            {b.label}
+          </span>
+        ))}
+      </div>
     );
   }
 
@@ -913,8 +883,8 @@ async function confirmEndGameAction() {
     // The others are spaced clockwise.
     const angle = Math.PI / 2 + index * (2 * Math.PI / total);
 
-    const radiusX = 42; // Horizontal radius (wider)
-    const radiusY = 38; // Vertical radius (shorter)
+    const radiusX = 46; // Horizontal radius (wider, pushes seats to rails)
+    const radiusY = 43; // Vertical radius (shorter, pushes seats to rails)
     const top = 50 + radiusY * Math.sin(angle);
     const left = 50 + radiusX * Math.cos(angle);
 
@@ -923,6 +893,8 @@ async function confirmEndGameAction() {
       left: `${left}%`
     };
   }
+
+
 
   // Toglie/aggiunge un giocatore dalla lista dei vincitori selezionati
 function toggleWinnerSelection(userId: string) {
@@ -980,30 +952,27 @@ async function handleConfirmWinners(potId: string) {
 
     return (
       <div
-      style={{
-        minHeight: "100dvh",
-        padding: "1rem",
-        background:
-          "radial-gradient(circle at top, #020617, #020617 40%, #000000)",
-        boxSizing: "border-box",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "flex-start"
-      }}
-    >
-      <div
         style={{
-          width: "100%",
-          maxWidth: "640px",
-          padding: "1.2rem 1rem",
-          borderRadius: "1rem",
-          border: "1px solid #1f2937",
-          backgroundColor: "rgba(15,23,42,0.98)",
-          boxShadow: "0 18px 35px rgba(0,0,0,0.55)",
-          display: "grid",
-          gap: "1rem"
+          minHeight: "100dvh",
+          padding: "1rem",
+          background:
+            "radial-gradient(circle at top, #020617, #020617 40%, #000000)",
+          boxSizing: "border-box",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "flex-start"
         }}
       >
+        <div
+          className="glass-panel"
+          style={{
+            width: "100%",
+            maxWidth: "640px",
+            padding: "2rem 1.5rem",
+            display: "grid",
+            gap: "1.2rem"
+          }}
+        >
         <header style={{ display: "grid", gap: "0.25rem" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.25rem" }}>
             <h1 style={{ fontSize: "1.4rem", fontWeight: 600, margin: 0 }}>
@@ -1236,29 +1205,36 @@ async function handleConfirmWinners(potId: string) {
           gap: "0.5rem",
           boxSizing: "border-box",
           overflow: "hidden",
-          background: "radial-gradient(circle at center, #0f172a 0%, #000000 100%)",
-          color: "#e5e7eb",
+          background: "radial-gradient(circle at 50% 20%, #0f172a 0%, #020617 80%, #000000 100%)",
+          color: "var(--text-main)",
+          fontFamily: "var(--font-sans)",
           zIndex: 1
         }}
       >
-        <header style={{ display: "grid", gap: "0.25rem" }}>
-          <h1 style={{ fontSize: "1.3rem", fontWeight: 600 }}>
+        <header style={{ display: "grid", gap: "0.25rem", paddingTop: "3rem" }}>
+          <h1 style={{ fontSize: "1.4rem", fontWeight: 800, fontFamily: "var(--font-display)" }}>
             {table.name}
           </h1>
-          <p style={{ fontSize: "0.85rem", color: "#cbd5f5" }}>
+          <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: 0 }}>
             {t("table.hand")} #{currentHand?.handNumber ?? "-"} •{" "}
-            {currentHand?.stage ?? "N/A"} • {t("table.pot")}: {currentHand?.pot ?? 0} •{" "}
-            {t("table.currentBet")}: {currentHand?.currentBet ?? 0}
+            {t("table.blinds")} {table.smallBlind}/{table.bigBlind}
+            {table?.mode === "TOURNAMENT" && (
+              <>
+                {" • "}
+                {t("table.level")} {(table.currentLevelIndex || 0) + 1}
+                {timeRemainingStr && ` (${timeRemainingStr})`}
+              </>
+            )}
           </p>
           {/* Indicatore Side Pots — visibile solo quando esistono più pot */}
           {currentHand?.pots && currentHand.pots.length > 1 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.3rem", marginTop: "0.1rem" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.3rem", marginTop: "0.15rem" }}>
               {currentHand.pots.map((pot, i) => (
                 <span
                   key={pot.id}
                   style={{
                     fontSize: "0.72rem",
-                    fontWeight: 600,
+                    fontWeight: 700,
                     padding: "0.15rem 0.5rem",
                     borderRadius: "999px",
                     backgroundColor: pot.settled ? "rgba(74,222,128,0.15)" : "rgba(251,191,36,0.15)",
@@ -1275,23 +1251,6 @@ async function handleConfirmWinners(potId: string) {
               ))}
             </div>
           )}
-          {table?.mode === "TOURNAMENT" ? (
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.2rem" }}>
-               <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "#e2e8f0", backgroundColor: "#8b5cf6", padding: "0.1rem 0.4rem", borderRadius: "0.25rem" }}>
-                 {t("table.level")} {(table.currentLevelIndex || 0) + 1}
-               </span>
-               <span style={{ fontSize: "0.8rem", color: "#f87171", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.2rem" }}>
-                 ⏱️ {timeRemainingStr || "--:--"}
-               </span>
-               <span style={{ fontSize: "0.8rem", color: "#9ca3af", marginLeft: "auto" }}>
-                 {table.smallBlind}/{table.bigBlind}
-               </span>
-            </div>
-          ) : (
-            <p style={{ fontSize: "0.8rem", color: "#9ca3af" }}>
-              {t("table.blinds")} {table?.smallBlind}/{table?.bigBlind}
-            </p>
-          )}
           <div
             style={{
               marginTop: "0.4rem",
@@ -1307,13 +1266,14 @@ async function handleConfirmWinners(potId: string) {
                   onClick={handleToggleSittingOut}
                   disabled={!!disableSitToggle}
                   style={{
-                    padding: "0.3rem 0.6rem",
+                    padding: "0.35rem 0.75rem",
                     borderRadius: "999px",
-                    border: "1px solid #f59e0b",
+                    border: "1px solid var(--color-warning)",
                     backgroundColor: "transparent",
-                    color: disableSitToggle ? "#6b7280" : "#fcd34d",
+                    color: disableSitToggle ? "var(--text-muted)" : "var(--color-warning)",
                     cursor: disableSitToggle ? "default" : "pointer",
                     fontSize: "0.8rem",
+                    fontWeight: 600,
                     opacity: disableSitToggle ? 0.5 : 1
                   }}
                 >
@@ -1324,14 +1284,16 @@ async function handleConfirmWinners(potId: string) {
               {isHost && !disableEndGame && table?.mode !== "TOURNAMENT" && (
                 <button
                   onClick={handleEndGame}
+                  className="poker-btn-primary"
                   style={{
-                    padding: "0.3rem 0.6rem",
+                    padding: "0.35rem 0.75rem",
                     borderRadius: "999px",
                     border: "none",
-                    backgroundColor: "#ef4444",
-                    color: "#020617",
+                    backgroundColor: "var(--color-danger)",
+                    color: "#ffffff",
                     cursor: "pointer",
-                    fontWeight: 600
+                    fontWeight: 700,
+                    boxShadow: "0 2px 8px rgba(239, 68, 68, 0.3)"
                   }}
                 >
                   {t("table.endGame")}
@@ -1342,11 +1304,11 @@ async function handleConfirmWinners(potId: string) {
                   onClick={() => setShowSettings(s => !s)}
                   title="Impostazioni"
                   style={{
-                    padding: "0.3rem 0.55rem",
+                    padding: "0.35rem 0.55rem",
                     borderRadius: "999px",
-                    border: "1px solid #4b5563",
-                    backgroundColor: showSettings ? "#1e293b" : "transparent",
-                    color: "#94a3b8",
+                    border: "1px solid rgba(255, 255, 255, 0.12)",
+                    backgroundColor: showSettings ? "rgba(255, 255, 255, 0.1)" : "transparent",
+                    color: "var(--text-muted)",
                     cursor: "pointer",
                     fontSize: "1rem",
                     lineHeight: 1
@@ -1373,33 +1335,41 @@ async function handleConfirmWinners(potId: string) {
         >
 
           <div
+            className="poker-felt"
             style={{
-              position: "relative",
-              width: "min(100%, 600px)",
-              maxHeight: "100%",
-              aspectRatio: "1 / 1",
-              borderRadius: "999px",
-              background: "radial-gradient(circle at 30% 30%, #1f2937, #020617)",
-              border: "2px solid #1e293b",
-              boxShadow: "0 0 30px rgba(15,23,42,0.8)",
-              padding: "1rem",
-              boxSizing: "border-box"
+              width: "min(100%, 530px)"
             }}
           >
-            {/* Testo centrale: turno o Carte */}
-            {table?.isVirtualCards && currentHand ? (
+            {/* Testo centrale: pot, stage, turno e community cards */}
+            <div style={{
+              position: "absolute",
+              top: "32%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              textAlign: "center",
+              zIndex: 14
+            }}>
+              <span style={{ fontSize: "0.7rem", color: "rgba(255, 255, 255, 0.6)", textTransform: "uppercase", letterSpacing: "0.06em", display: "block" }}>
+                {t("table.pot")}
+              </span>
+              <span style={{ fontSize: "1.3rem", fontWeight: 800, color: "var(--color-warning)", textShadow: "0 2px 4px rgba(0,0,0,0.6)" }}>
+                🪙 {currentHand?.pot ?? 0}
+              </span>
+            </div>
+
+            {table?.isVirtualCards && currentHand && (
               <div
                 style={{
                   position: "absolute",
-                  top: "50%",
+                  top: "52%",
                   left: "50%",
                   transform: "translate(-50%, -50%)",
                   display: "flex",
-                  gap: "0.4rem",
+                  gap: "0.3rem",
                   zIndex: 15,
                   flexWrap: "wrap",
-                   justifyContent: "center",
-                  width: "min(100%, 300px)"
+                  justifyContent: "center",
+                  width: "min(100%, 280px)"
                 }}
               >
                 {currentHand.communityCards?.map((card, idx) => {
@@ -1411,40 +1381,33 @@ async function handleConfirmWinners(potId: string) {
                   return <Card key={idx} card={card} hidden={hidden} />;
                 })}
               </div>
-            ) : (
-              <div
-                style={{
-                  position: "absolute",
-                  top: "50%",
-                  left: "50%",
-                  transform: "translate(-50%, -50%)",
-                  textAlign: "center"
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: "0.8rem",
-                    color: "#9ca3af",
-                    marginBottom: "0.25rem"
-                  }}
-                >
-                  {currentHand?.stage ?? "N/A"}
-                </div>
-
-                <div style={{ fontSize: "0.9rem", color: "#e5e7eb" }}>
-                  {isMyTurn
-                    ? t("table.yourTurn")
-                    : currentHand &&
-                      currentHand.currentTurnIndex != null &&
-                      currentHand.currentTurnIndex >= 0 &&
-                      players[currentHand.currentTurnIndex]
-                    ? t("table.turnOf", { name: players[currentHand.currentTurnIndex].displayName })
-                    : t("table.waitingTurn")}
-                </div>
-              </div>
             )}
 
-            {/* Giocatori attorno al tavolo */}
+            <div style={{
+              position: "absolute",
+              top: "70%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              textAlign: "center",
+              zIndex: 14,
+              width: "160px"
+            }}>
+              <div style={{ fontSize: "0.7rem", color: "rgba(255, 255, 255, 0.6)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                {currentHand?.stage ?? "N/A"}
+              </div>
+              <div style={{ fontSize: "0.8rem", color: "var(--text-main)", fontWeight: 700, marginTop: "0.15rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {isMyTurn
+                  ? t("table.yourTurn")
+                  : currentHand &&
+                    currentHand.currentTurnIndex != null &&
+                    currentHand.currentTurnIndex >= 0 &&
+                    players[currentHand.currentTurnIndex]
+                  ? t("table.turnOf", { name: players[currentHand.currentTurnIndex].displayName })
+                  : t("table.waitingTurn")}
+              </div>
+            </div>
+
+            {/* Giocatori e Fiches puntate attorno al tavolo */}
             {players.map((p, index) => {
               const myIndex = players.findIndex(orig => orig.userId === myUid);
               const visualIndex = myIndex >= 0 ? (index - myIndex + players.length) % players.length : index;
@@ -1455,14 +1418,15 @@ async function handleConfirmWinners(potId: string) {
                 currentHand.currentTurnIndex === index &&
                 !p.isFolded;
 
-              const roundBet =
-                currentHand && currentHand.roundBets[p.userId]
-                  ? currentHand.roundBets[p.userId]
-                  : 0;
-
               const isEligibleForActivePot = activePot 
                 ? activePot.eligible?.includes(p.userId) 
                 : (!p.isFolded && !p.isSittingOut);
+
+              const roundBet = currentHand && currentHand.roundBets[p.userId] ? currentHand.roundBets[p.userId] : 0;
+              const hasVirtualCardsDealt = isMe && table?.isVirtualCards && currentHand && currentHand.stage !== "SHOWDOWN" && currentHand.playerHands?.[p.userId] && !p.isFolded;
+              
+              const angle = Math.PI / 2 + visualIndex * (2 * Math.PI / players.length);
+              const isOnRightSide = Math.cos(angle) > 0.01;
 
               return (
                 <div
@@ -1472,8 +1436,8 @@ async function handleConfirmWinners(potId: string) {
                     top,
                     left,
                     transform: "translate(-50%, -50%)",
-                    minWidth: "75px",
-                    maxWidth: "140px",
+                    width: (isMe && showMyCards) ? "32%" : "22%",
+                    maxWidth: (isMe && showMyCards) ? "150px" : "120px",
                     zIndex: 10
                   }}
                 >
@@ -1494,126 +1458,176 @@ async function handleConfirmWinners(potId: string) {
                     </div>
                   )}
 
-                  {/* Le mie carte personali durante il gioco (non allo showdown) */}
-                  {isMe && table?.isVirtualCards && currentHand && currentHand.stage !== "SHOWDOWN" && currentHand.playerHands?.[p.userId] && !p.isFolded && (
+                  {/* Le mie carte personali durante il gioco (al posto del pod capsule) */}
+                  {hasVirtualCardsDealt && showMyCards ? (
                     <div 
+                      className="my-cards-felt-display"
                       onClick={(e) => {
                         e.stopPropagation();
-                        setShowMyCards(!showMyCards);
+                        setShowMyCards(false);
                       }}
                       style={{
-                        position: "absolute",
-                        bottom: "calc(100% + 45px)",
-                        left: "50%",
-                        transform: "translate(-50%, 50%)",
-                        zIndex: 100,
-                        cursor: "pointer",
-                        userSelect: "none",
-                        WebkitUserSelect: "none"
+                        display: "flex",
+                        gap: "4px",
+                        justifyContent: "center",
+                        alignItems: "center",
+                        width: "100%",
+                        animation: "scaleIn 0.18s ease-out forwards",
+                        cursor: "pointer"
                       }}
                     >
-                      {showMyCards ? (
-                        <div style={{
+                      {currentHand.playerHands?.[p.userId]?.map((c, i) => (
+                        <Card key={i} card={c} />
+                      ))}
+                    </div>
+                  ) : (
+                    <div
+                      className={`player-pod ${isMe ? 'player-pod-me' : ''} ${isTurn ? 'player-pod-active-turn' : ''} ${p.isFolded ? 'player-pod-folded' : ''} ${p.isSittingOut ? 'player-pod-sitout' : ''}`}
+                      onClick={() => {
+                        if (hasVirtualCardsDealt) {
+                          setShowMyCards(true);
+                        }
+                      }}
+                      style={{
+                        borderWidth: isTurn || (selectedWinners.includes(p.userId) && votingOpen) ? "2px" : "1px",
+                        borderColor: isTurn || (selectedWinners.includes(p.userId) && votingOpen) ? "var(--color-success)" : undefined,
+                        boxShadow: isTurn ? "0 0 15px var(--color-success-glow)" : undefined,
+                        opacity: p.isSittingOut ? 0.4 : p.isFolded || (votingOpen && activePot && !isEligibleForActivePot) ? 0.6 : 1,
+                        cursor: hasVirtualCardsDealt ? "pointer" : undefined
+                      }}
+                    >
+                      <div style={{
+                        display: "flex",
+                        flexDirection: isOnRightSide ? "row-reverse" : "row",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        width: "100%",
+                        gap: "0.4rem"
+                      }}>
+                        <span
+                          style={{
+                            fontWeight: 600,
+                            color: p.isSittingOut ? "var(--text-muted)" : p.isFolded ? "#6b7280" : isMe ? "var(--color-success)" : "var(--text-main)",
+                            textDecoration: p.isFolded && !p.isSittingOut ? "line-through" : "none",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            flexShrink: 1,
+                            textAlign: isOnRightSide ? "right" : "left"
+                          }}
+                        >
+                          {p.isSittingOut && table?.mode === "TOURNAMENT" && p.stack === 0 && (
+                            <span style={{ color: "var(--color-danger)", paddingRight: "0.2rem", fontWeight: 700 }}>
+                              [Out]
+                            </span>
+                          )}
+                          {p.displayName}
+                        </span>
+                        {renderRoleBadges(index)}
+                      </div>
+                      <div
+                        style={{
+                          marginTop: "0.1rem",
+                          color: "#94a3b8",
+                          fontWeight: 600,
+                          fontSize: "0.75rem",
+                          textAlign: isOnRightSide ? "right" : "left"
+                        }}
+                      >
+                        {p.stack}
+                        {votingOpen && myVoteTargetId === p.userId && ` • ${t("table.yourChoice")}`}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Fiche puntata e badge di stato (Fold/Pause) posizionati in un layer relativo al suo pod */}
+                  <div
+                    style={{
+                      position: "absolute",
+                      bottom: "-6px",
+                      left: isOnRightSide ? "-10px" : undefined,
+                      right: isOnRightSide ? undefined : "-10px",
+                      zIndex: 20,
+                      display: "flex",
+                      flexDirection: isOnRightSide ? "row" : "row-reverse",
+                      gap: "0.25rem"
+                    }}
+                  >
+                    {roundBet > 0 && !(isMe && showMyCards) && (
+                      <div
+                        style={{
+                          backgroundColor: "rgba(15, 23, 42, 0.95)",
+                          border: "1.5px solid var(--color-warning)",
+                          color: "var(--color-warning)",
+                          borderRadius: "999px",
+                          padding: "0.25rem 0.55rem",
+                          fontSize: "0.75rem",
+                          fontWeight: "bold",
+                          boxShadow: "0 3px 8px rgba(0,0,0,0.6), 0 0 8px rgba(251, 191, 36, 0.2)",
                           display: "flex",
-                          gap: "3px",
-                          padding: "0.3rem",
-                          background: "rgba(15,23,42,0.95)",
-                          borderRadius: "0.5rem",
-                          backdropFilter: "blur(8px)",
-                          border: "1px solid #1e293b",
-                          boxShadow: "0 8px 20px rgba(0,0,0,0.6)",
-                          animation: "scaleIn 0.2s ease-out"
-                        }}>
-                          {currentHand.playerHands[p.userId].map((c, i) => (
-                            <Card key={i} card={c} />
-                          ))}
-                        </div>
-                      ) : (
-                        <div style={{
-                          width: "40px",
-                          height: "40px",
-                          borderRadius: "50%",
-                          background: "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)",
+                          alignItems: "center",
+                          gap: "0.25rem",
+                          animation: "scaleIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards",
+                          whiteSpace: "nowrap"
+                        }}
+                      >
+                        🪙 {roundBet}
+                      </div>
+                    )}
+
+                    {p.isFolded && !p.isSittingOut && (
+                      <div
+                        style={{
+                          backgroundColor: "rgba(15, 23, 42, 0.95)",
+                          border: "1.5px solid var(--color-danger)",
+                          color: "var(--color-danger)",
+                          borderRadius: "999px",
+                          fontSize: "0.68rem",
+                          fontWeight: "bold",
+                          boxShadow: "0 3px 8px rgba(0,0,0,0.6), 0 0 8px rgba(239, 68, 68, 0.2)",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
-                          boxShadow: "0 8px 20px rgba(59, 130, 246, 0.4)",
-                          border: "2px solid rgba(255,255,255,0.2)",
-                          backdropFilter: "blur(4px)",
-                          animation: "scaleIn 0.2s ease-out",
-                          color: "white"
-                        }}>
-                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                            <circle cx="12" cy="12" r="3"></circle>
-                          </svg>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  <div
-                    style={{
-                      width: "100%",
-                      boxSizing: "border-box",
-                      borderRadius: "999px",
-                      padding: "0.4rem 0.6rem",
-                      backgroundColor: isMe
-                        ? "rgba(34,197,94,0.15)"
-                        : "rgba(15,23,42,0.9)",
-                      border: isTurn
-                        ? "2px solid #22c55e"
-                        : selectedWinners.includes(p.userId) && votingOpen
-                        ? "2px solid #22c55e"
-                        : "1px solid #1e293b",
-                      boxShadow: isTurn
-                        ? "0 0 15px rgba(34,197,94,0.6)"
-                        : "0 0 8px rgba(15,23,42,0.6)",
-                      fontSize: "0.7rem",
-                      opacity: p.isSittingOut ? 0.4 : p.isFolded || (votingOpen && activePot && !isEligibleForActivePot) ? 0.6 : 1
-                    }}
-                  >
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", gap: "0.4rem" }}>
-                    <span
-                      style={{
-                        fontWeight: 500,
-                        color: p.isSittingOut ? "#9ca3af" : p.isFolded ? "#6b7280" : isMe ? "#4ade80" : "#e5e7eb",
-                        textDecoration: p.isFolded && !p.isSittingOut
-                          ? "line-through"
-                          : "none",
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        flexShrink: 1,
-                        textAlign: "left"
-                      }}
-                    >
-                      {p.isSittingOut && (
-                        <span style={{ color: table?.mode === "TOURNAMENT" && p.stack === 0 ? "#ef4444" : "#facc15", paddingRight: "0.2rem" }}>
-                          {table?.mode === "TOURNAMENT" && p.stack === 0 ? "[Out]" : t("table.pauseBadge")}
-                        </span>
-                      )}
-                      {p.displayName}
-                    </span>
-                    {renderRoleBadges(index)}
-                  </div>
-                  <div
-                    style={{
-                      marginTop: "0.15rem",
-                      color: "#9ca3af",
-                      fontSize: "0.75rem"
-                    }}
-                  >
-                    {p.stack} • {roundBet}
-                    {p.isFolded && ` • ${t("table.folded")}`}
-                    {votingOpen && myVoteTargetId === p.userId &&
-                      ` • ${t("table.yourChoice")}`}
+                          animation: "scaleIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards",
+                          width: "22px",
+                          height: "22px",
+                          minWidth: "22px"
+                        }}
+                        title={t("table.folded")}
+                      >
+                        F
+                      </div>
+                    )}
+
+                    {p.isSittingOut && (
+                      <div
+                        style={{
+                          backgroundColor: "rgba(15, 23, 42, 0.95)",
+                          border: "1.5px solid #a78bfa",
+                          color: "#a78bfa",
+                          borderRadius: "999px",
+                          fontSize: "0.68rem",
+                          fontWeight: "bold",
+                          boxShadow: "0 3px 8px rgba(0,0,0,0.6), 0 0 8px rgba(167, 139, 250, 0.2)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          animation: "scaleIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards",
+                          width: "22px",
+                          height: "22px",
+                          minWidth: "22px"
+                        }}
+                        title={t("table.pauseBadge")}
+                      >
+                        P
+                      </div>
+                    )}
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      </main>
+              );
+            })}
+          </div>
+        </main>
 
         {/* Action bar in basso */}
         <footer
@@ -1635,207 +1649,186 @@ async function handleConfirmWinners(potId: string) {
               gap: "0.4rem"
             }}
           >
-            {/* Barra pot/info */}
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                fontSize: "0.85rem",
-                color: "#cbd5f5"
-              }}
-            >
-              <span>{t("table.pot")}: {currentHand?.pot ?? 0}</span>
-              <span>
-                {t("table.currentBet")}: {currentHand?.currentBet ?? 0} • {t("table.yours")}:{" "}
-                {showBetPanel ? (
-                  <span style={{ color: "#22c55e", fontWeight: "bold" }}>
-                    {betAmount}
-                  </span>
-                ) : (
-                  myRoundBet
-                )}
-              </span>
-            </div>
-
             {/* Pulsanti azione */}
             <div
               style={{
-                  display: "flex",
-                  gap: "0.5rem",
-                  alignItems: "center",
-                  width: "100%"
-                }}
-              >
-                {table?.isVirtualCards && !isMyTurn && inActiveHand ? (
-                  <>
-                    {/* Pre-action buttons */}
-                    {diffToCall === 0 ? (
-                      <>
-                        {/* 1. CHECK/FOLD */}
-                        <button
-                          onClick={() => togglePreAction("CHECK_FOLD")}
-                          style={{
-                            ...pillActionButton,
-                            flex: 1,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            backgroundColor: preAction?.type === "CHECK_FOLD" ? "#ef4444" : "rgba(15, 23, 42, 0.6)",
-                            border: preAction?.type === "CHECK_FOLD" ? "1px solid transparent" : "1px solid rgba(239, 68, 68, 0.45)",
-                            color: preAction?.type === "CHECK_FOLD" ? "#ffffff" : "rgba(239, 68, 68, 0.85)",
-                            boxShadow: preAction?.type === "CHECK_FOLD" ? "0 0 12px rgba(239, 68, 68, 0.6)" : "none",
-                            transition: "all 0.2s ease"
-                          }}
-                        >
-                          Check/Fold
-                        </button>
-                        {/* 2. CHECK */}
-                        <button
-                          onClick={() => togglePreAction("CHECK")}
-                          style={{
-                            ...pillActionButton,
-                            flex: 1,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            backgroundColor: preAction?.type === "CHECK" ? "#3b82f6" : "rgba(15, 23, 42, 0.6)",
-                            border: preAction?.type === "CHECK" ? "1px solid transparent" : "1px solid rgba(59, 130, 246, 0.45)",
-                            color: preAction?.type === "CHECK" ? "#ffffff" : "rgba(59, 130, 246, 0.85)",
-                            boxShadow: preAction?.type === "CHECK" ? "0 0 12px rgba(59, 130, 246, 0.6)" : "none",
-                            transition: "all 0.2s ease"
-                          }}
-                        >
-                          Check
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        {/* 1. FOLD */}
-                        <button
-                          onClick={() => togglePreAction("FOLD")}
-                          style={{
-                            ...pillActionButton,
-                            flex: 1,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            backgroundColor: preAction?.type === "FOLD" ? "#ef4444" : "rgba(15, 23, 42, 0.6)",
-                            border: preAction?.type === "FOLD" ? "1px solid transparent" : "1px solid rgba(239, 68, 68, 0.45)",
-                            color: preAction?.type === "FOLD" ? "#ffffff" : "rgba(239, 68, 68, 0.85)",
-                            boxShadow: preAction?.type === "FOLD" ? "0 0 12px rgba(239, 68, 68, 0.6)" : "none",
-                            transition: "all 0.2s ease"
-                          }}
-                        >
-                          Fold
-                        </button>
-                        {/* 2. CALL x */}
-                        <button
-                          onClick={() => togglePreAction("CALL_X", diffToCall)}
-                          style={{
-                            ...pillActionButton,
-                            flex: 1,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            backgroundColor: preAction?.type === "CALL_X" ? "#f59e0b" : "rgba(15, 23, 42, 0.6)",
-                            border: preAction?.type === "CALL_X" ? "1px solid transparent" : "1px solid rgba(245, 158, 11, 0.45)",
-                            color: preAction?.type === "CALL_X" ? "#020617" : "rgba(245, 158, 11, 0.85)",
-                            boxShadow: preAction?.type === "CALL_X" ? "0 0 12px rgba(245, 158, 11, 0.6)" : "none",
-                            transition: "all 0.2s ease"
-                          }}
-                        >
-                          {t("table.call")} {diffToCall}
-                        </button>
-                      </>
-                    )}
-                    {/* 3. CALL ANY */}
-                    <button
-                      onClick={() => togglePreAction("CALL_ANY")}
-                      style={{
-                        ...pillActionButton,
-                        flex: 1,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        backgroundColor: preAction?.type === "CALL_ANY" ? "#22c55e" : "rgba(15, 23, 42, 0.6)",
-                        border: preAction?.type === "CALL_ANY" ? "1px solid transparent" : "1px solid rgba(34, 197, 94, 0.45)",
-                        color: preAction?.type === "CALL_ANY" ? "#020617" : "rgba(34, 197, 94, 0.85)",
-                        boxShadow: preAction?.type === "CALL_ANY" ? "0 0 12px rgba(34, 197, 94, 0.6)" : "none",
-                        transition: "all 0.2s ease"
-                      }}
-                    >
-                      Call Any
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    {/* Fold sempre disponibile se è il tuo turno */}
-                    <button
-                      disabled={!isMyTurn || actionLoading}
-                      onClick={() => setShowFoldConfirm(true)}
-                      style={{
-                        ...pillActionButton,
-                        backgroundColor: 
-                          isMyTurn 
-                            ? "#ef4444"
-                            : "#ef444473",
-                        color: "#f8fafc"
-                      }}
-                    >
-                      Fold
-                    </button>
+                display: "flex",
+                gap: "0.5rem",
+                alignItems: "center",
+                width: "100%"
+              }}
+            >
+              {table?.isVirtualCards && !isMyTurn && inActiveHand ? (
+                <>
+                  {/* Pre-action buttons */}
+                  {diffToCall === 0 ? (
+                    <>
+                      {/* 1. CHECK/FOLD */}
+                      <button
+                        onClick={() => togglePreAction("CHECK_FOLD")}
+                        style={{
+                          ...pillActionButton,
+                          flex: 1,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          backgroundColor: preAction?.type === "CHECK_FOLD" ? "#ef4444" : "rgba(15, 23, 42, 0.6)",
+                          border: preAction?.type === "CHECK_FOLD" ? "1px solid transparent" : "1px solid rgba(239, 68, 68, 0.45)",
+                          color: preAction?.type === "CHECK_FOLD" ? "#ffffff" : "rgba(239, 68, 68, 0.85)",
+                          boxShadow: preAction?.type === "CHECK_FOLD" ? "0 2px 8px rgba(239, 68, 68, 0.35)" : "none",
+                          transition: "all 0.2s ease"
+                        }}
+                      >
+                        Check/Fold
+                      </button>
+                      {/* 2. CHECK */}
+                      <button
+                        onClick={() => togglePreAction("CHECK")}
+                        style={{
+                          ...pillActionButton,
+                          flex: 1,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          backgroundColor: preAction?.type === "CHECK" ? "#3b82f6" : "rgba(15, 23, 42, 0.6)",
+                          border: preAction?.type === "CHECK" ? "1px solid transparent" : "1px solid rgba(59, 130, 246, 0.45)",
+                          color: preAction?.type === "CHECK" ? "#ffffff" : "rgba(59, 130, 246, 0.85)",
+                          boxShadow: preAction?.type === "CHECK" ? "0 2px 8px rgba(59, 130, 246, 0.35)" : "none",
+                          transition: "all 0.2s ease"
+                        }}
+                      >
+                        Check
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {/* 1. FOLD */}
+                      <button
+                        onClick={() => togglePreAction("FOLD")}
+                        style={{
+                          ...pillActionButton,
+                          flex: 1,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          backgroundColor: preAction?.type === "FOLD" ? "#ef4444" : "rgba(15, 23, 42, 0.6)",
+                          border: preAction?.type === "FOLD" ? "1px solid transparent" : "1px solid rgba(239, 68, 68, 0.45)",
+                          color: preAction?.type === "FOLD" ? "#ffffff" : "rgba(239, 68, 68, 0.85)",
+                          boxShadow: preAction?.type === "FOLD" ? "0 2px 8px rgba(239, 68, 68, 0.35)" : "none",
+                          transition: "all 0.2s ease"
+                        }}
+                      >
+                        Fold
+                      </button>
+                      {/* 2. CALL x */}
+                      <button
+                        onClick={() => togglePreAction("CALL_X", diffToCall)}
+                        style={{
+                          ...pillActionButton,
+                          flex: 1,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          backgroundColor: preAction?.type === "CALL_X" ? "#f59e0b" : "rgba(15, 23, 42, 0.6)",
+                          border: preAction?.type === "CALL_X" ? "1px solid transparent" : "1px solid rgba(245, 158, 11, 0.45)",
+                          color: preAction?.type === "CALL_X" ? "#020617" : "rgba(245, 158, 11, 0.85)",
+                          boxShadow: preAction?.type === "CALL_X" ? "0 2px 8px rgba(245, 158, 11, 0.35)" : "none",
+                          transition: "all 0.2s ease"
+                        }}
+                      >
+                        {t("table.call")} {diffToCall}
+                      </button>
+                    </>
+                  )}
+                  {/* 3. CALL ANY */}
+                  <button
+                    onClick={() => togglePreAction("CALL_ANY")}
+                    style={{
+                      ...pillActionButton,
+                      flex: 1,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      backgroundColor: preAction?.type === "CALL_ANY" ? "#22c55e" : "rgba(15, 23, 42, 0.6)",
+                      border: preAction?.type === "CALL_ANY" ? "1px solid transparent" : "1px solid rgba(34, 197, 94, 0.45)",
+                      color: preAction?.type === "CALL_ANY" ? "#020617" : "rgba(34, 197, 94, 0.85)",
+                      boxShadow: preAction?.type === "CALL_ANY" ? "0 2px 8px rgba(34, 197, 94, 0.35)" : "none",
+                      transition: "all 0.2s ease"
+                    }}
+                  >
+                    Call Any
+                  </button>
+                </>
+              ) : (
+                <>
+                  {/* Fold sempre disponibile se è il tuo turno */}
+                  <button
+                    disabled={!isMyTurn || actionLoading}
+                    onClick={() => setShowFoldConfirm(true)}
+                    style={{
+                      ...pillActionButton,
+                      backgroundColor: isMyTurn ? "#ef4444" : "#ef444433",
+                      color: isMyTurn ? "#f8fafc" : "rgba(248, 250, 252, 0.4)",
+                      boxShadow: isMyTurn ? "0 4px 12px rgba(239, 68, 68, 0.25)" : "none",
+                      cursor: isMyTurn && !actionLoading ? "pointer" : "default"
+                    }}
+                  >
+                    Fold
+                  </button>
 
-                    {/* Bottone centrale: Check o Call */}
-                    <button
-                      disabled={!isMyTurn || actionLoading || (!canCheck && !canCall)}
-                      onClick={() =>
-                        canCall ? doAction("CALL") : canCheck ? doAction("CHECK") : null
-                      }
-                      style={{
-                        flex: 1,
-                        padding: "0.6rem 0.9rem",
-                        borderRadius: "999px",
-                        border: "none",
-                        cursor:
-                          isMyTurn && (canCheck || canCall) && !actionLoading
-                            ? "pointer"
-                            : "default",
-                        backgroundColor:
-                          isMyTurn && (canCheck || canCall)
-                            ? (canCall ? "#f59e0b" : "#3b82f6")
-                            : "#4b5563",
-                        color: "#f8fafc",
-                        fontWeight: 600,
-                        fontSize: "0.9rem",
-                        textAlign: "center"
-                      }}
-                    >
-                      {!isMyTurn
-                        ? t("table.waitingTurn")
-                        : canCall
-                        ? isGoingAllIn
-                          ? `ALL IN ${effectiveCallAmount}`
-                          : `${t("table.call")} ${effectiveCallAmount}`
-                        : canCheck
-                        ? t("table.check")
-                        : "—"}
-                    </button>
+                  {/* Bottone centrale: Check o Call */}
+                  <button
+                    disabled={!isMyTurn || actionLoading || (!canCheck && !canCall)}
+                    onClick={() =>
+                      canCall ? doAction("CALL") : canCheck ? doAction("CHECK") : null
+                    }
+                    style={{
+                      flex: 1,
+                      padding: "0.6rem 0.9rem",
+                      borderRadius: "999px",
+                      border: "none",
+                      cursor: isMyTurn && (canCheck || canCall) && !actionLoading ? "pointer" : "default",
+                      backgroundColor: isMyTurn && (canCheck || canCall)
+                        ? (canCall ? "#f59e0b" : "#3b82f6")
+                        : "#4b556333",
+                      color: isMyTurn && (canCheck || canCall) ? "#f8fafc" : "rgba(248, 250, 252, 0.4)",
+                      fontWeight: 600,
+                      fontSize: "0.9rem",
+                      textAlign: "center",
+                      boxShadow: isMyTurn && (canCheck || canCall)
+                        ? (canCall ? "0 4px 12px rgba(245, 158, 11, 0.25)" : "0 4px 12px rgba(59, 130, 246, 0.25)")
+                        : "none",
+                      transition: "all 0.2s"
+                    }}
+                  >
+                    {!isMyTurn
+                      ? t("table.waitingTurn")
+                      : canCall
+                      ? isGoingAllIn
+                        ? `ALL IN ${effectiveCallAmount}`
+                        : `${t("table.call")} ${effectiveCallAmount}`
+                      : canCheck
+                      ? t("table.check")
+                      : "—"}
+                  </button>
 
-                    {/* Bottone Bet/Raise + pannello */}
-                    <button
-                      disabled={!isMyTurn || actionLoading || !canBetOrRaise}
-                      onClick={openBetPanel}
-                      style={{
-                        ...pillActionButton,
-                        backgroundColor:
-                          isMyTurn && canBetOrRaise ? "#22c55e" : "#4b5563"
-                      }}
-                    >
-                      {currentBet === 0 && myRoundBet === 0 ? t("table.bet") : t("table.raise")}
-                    </button>
-                  </>
-                )}
-              </div>
+                  {/* Bottone Bet/Raise + pannello */}
+                  <button
+                    disabled={!isMyTurn || actionLoading || !canBetOrRaise}
+                    onClick={openBetPanel}
+                    style={{
+                      ...pillActionButton,
+                      backgroundColor: isMyTurn && canBetOrRaise ? "#22c55e" : "#22c55e33",
+                      color: isMyTurn && canBetOrRaise ? "#020617" : "rgba(248, 250, 252, 0.4)",
+                      boxShadow: isMyTurn && canBetOrRaise ? "0 4px 12px rgba(34, 197, 94, 0.25)" : "none",
+                      cursor: isMyTurn && canBetOrRaise && !actionLoading ? "pointer" : "default"
+                    }}
+                  >
+                    {currentBet === 0 && myRoundBet === 0 ? t("table.bet") : t("table.raise")}
+                  </button>
+                </>
+              )}
+            </div>
           </div>
 
         </footer>
@@ -2491,7 +2484,7 @@ async function handleConfirmWinners(potId: string) {
       stageModalFooter = (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", marginTop: "0.5rem", paddingTop: "0.75rem", borderTop: "1px solid #1e293b" }}>
           {isHost && (
-            <button onClick={handleNextHand} style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem" }}>
+            <button onClick={handleNextHand} style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem", backgroundColor: "#22c55e" }}>
               {t("table.nextHand")}
             </button>
           )}
@@ -2747,37 +2740,43 @@ async function handleConfirmWinners(potId: string) {
 }
 
 const smallButtonStyle: React.CSSProperties = {
-  padding: "0.25rem 0.5rem",
-  borderRadius: "0.375rem",
-  border: "none",
+  padding: "0.3rem 0.6rem",
+  borderRadius: "0.5rem",
+  border: "1px solid rgba(255, 255, 255, 0.08)",
   cursor: "pointer",
-  backgroundColor: "#4b5563",
-  color: "#e5e7eb",
-  fontSize: "0.8rem"
+  backgroundColor: "rgba(15, 23, 42, 0.6)",
+  color: "var(--text-main)",
+  fontSize: "0.8rem",
+  fontWeight: 600,
+  transition: "all 0.2s"
 };
 
 
 const pillActionButton: React.CSSProperties = {
-  padding: "0.6rem 0.9rem",
+  padding: "0.65rem 1rem",
   borderRadius: "999px",
   border: "none",
   cursor: "pointer",
-  backgroundColor: "#22c55e",
-  color: "#020617",
-  fontWeight: 600,
+  backgroundColor: "rgba(15, 23, 42, 0.6)",
+  color: "#f8fafc",
+  fontWeight: 700,
   fontSize: "0.9rem",
   minWidth: "80px",
-  textAlign: "center"
+  textAlign: "center",
+  boxShadow: "0 2px 5px rgba(0,0,0,0.3)",
+  transition: "all 0.2s"
 };
 
 const quickBetButtonStyle: React.CSSProperties = {
   flex: 1,
-  padding: "0.35rem 0.4rem",
-  borderRadius: "0.5rem",
-  border: "none",
+  padding: "0.45rem 0.6rem",
+  borderRadius: "0.6rem",
+  border: "1px solid rgba(255, 255, 255, 0.08)",
   cursor: "pointer",
-  backgroundColor: "#1f2937",
-  color: "#e5e7eb",
-  fontSize: "0.8rem",
-  fontWeight: 500
+  backgroundColor: "rgba(15, 23, 42, 0.65)",
+  color: "var(--text-main)",
+  fontSize: "0.85rem",
+  fontWeight: 600,
+  boxShadow: "0 2px 4px rgba(0,0,0,0.3)",
+  transition: "all 0.2s"
 };

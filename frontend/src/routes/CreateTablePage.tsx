@@ -149,32 +149,28 @@ export default function CreateTablePage() {
       }}
     >
       <div
+        className="glass-panel"
         style={{
           width: "100%",
           maxWidth: "420px",
-          padding: "1.6rem 1.4rem",
-          borderRadius: "1rem",
-          border: "1px solid #1f2937",
-          backgroundColor: "rgba(15,23,42,0.98)",
-          boxShadow: "0 18px 35px rgba(0,0,0,0.55)",
+          padding: "2rem 1.5rem",
           display: "grid",
-          gap: "1rem"
+          gap: "1.2rem"
         }}
       >
-        <h1 style={{ fontSize: "1.4rem", fontWeight: 600 }}>
+        <h1 style={{ fontSize: "1.6rem", fontWeight: 800, fontFamily: "var(--font-display)" }}>
           {t("createTable.title")}
         </h1>
 
         <form
           onSubmit={handleSubmit}
-          style={{ display: "grid", gap: "0.85rem" }}
+          style={{ display: "grid", gap: "1rem" }}
         >
           <Field
             label={t("createTable.nameLabel")}
             description={t("createTable.nameDesc")}
           >
             <input
-              style={inputStyle}
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -187,8 +183,7 @@ export default function CreateTablePage() {
             description={t("createTable.stackDesc")}
           >
             <input
-              style={inputStyle}
-              type="text"
+              type="number"
               min={100}
               step={10}
               value={initialStack}
@@ -199,136 +194,153 @@ export default function CreateTablePage() {
             />
           </Field>
 
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: "0.4rem",
+              backgroundColor: "rgba(15, 23, 42, 0.5)",
+              border: "1px solid rgba(255, 255, 255, 0.08)",
+              padding: "0.25rem",
+              borderRadius: "0.75rem",
+              marginBottom: "0.2rem"
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setMode('CASH')}
+              style={{
+                padding: "0.6rem",
+                borderRadius: "0.5rem",
+                border: "none",
+                backgroundColor: mode === 'CASH' ? "var(--color-primary)" : "transparent",
+                color: mode === 'CASH' ? "var(--text-main)" : "var(--text-muted)",
+                fontWeight: mode === 'CASH' ? 700 : 500,
+                fontSize: "0.9rem",
+                cursor: "pointer",
+                boxShadow: mode === 'CASH' ? "0 4px 10px rgba(59, 130, 246, 0.25)" : "none"
+              }}
+            >
+              {t("createTable.cashGame")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('TOURNAMENT')}
+              style={{
+                padding: "0.6rem",
+                borderRadius: "0.5rem",
+                border: "none",
+                backgroundColor: mode === 'TOURNAMENT' ? "var(--color-tournament)" : "transparent",
+                color: mode === 'TOURNAMENT' ? "var(--text-main)" : "var(--text-muted)",
+                fontWeight: mode === 'TOURNAMENT' ? 700 : 500,
+                fontSize: "0.9rem",
+                cursor: "pointer",
+                boxShadow: mode === 'TOURNAMENT' ? "0 4px 10px rgba(139, 92, 246, 0.25)" : "none"
+              }}
+            >
+              {t("createTable.tournament")}
+            </button>
+          </div>
+
+          {mode === 'CASH' ? (
             <div
               style={{
                 display: "grid",
                 gridTemplateColumns: "1fr 1fr",
-                gap: "0.5rem",
-                backgroundColor: "#0f172a",
-                padding: "0.3rem",
-                borderRadius: "0.75rem",
-                marginBottom: "0.5rem"
+                gap: "0.85rem"
               }}
             >
-              <button
-                type="button"
-                onClick={() => setMode('CASH')}
-                style={{
-                  padding: "0.6rem",
-                  borderRadius: "0.5rem",
-                  border: "none",
-                  backgroundColor: mode === 'CASH' ? "#3b82f6" : "transparent",
-                  color: mode === 'CASH' ? "#ffffff" : "#9ca3af",
-                  fontWeight: mode === 'CASH' ? 600 : 400,
-                  cursor: "pointer",
-                  transition: "all 0.2s"
-                }}
-              >
-                {t("createTable.cashGame")}
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode('TOURNAMENT')}
-                style={{
-                  padding: "0.6rem",
-                  borderRadius: "0.5rem",
-                  border: "none",
-                  backgroundColor: mode === 'TOURNAMENT' ? "#8b5cf6" : "transparent",
-                  color: mode === 'TOURNAMENT' ? "#ffffff" : "#9ca3af",
-                  fontWeight: mode === 'TOURNAMENT' ? 600 : 400,
-                  cursor: "pointer",
-                  transition: "all 0.2s"
-                }}
-              >
-                {t("createTable.tournament")}
-              </button>
+              <Field label={t("createTable.smallBlindLabel")}>
+                <input
+                  type="number"
+                  min={5}
+                  step={5}
+                  value={smallBlind}
+                  onChange={(e) => setSmallBlind(Number(e.target.value))}
+                />
+              </Field>
+              <Field label={t("createTable.bigBlindLabel")}>
+                <input
+                  type="number"
+                  min={10}
+                  step={5}
+                  value={bigBlind}
+                  onChange={(e) => setBigBlind(Number(e.target.value))}
+                />
+              </Field>
             </div>
-
-            {mode === 'CASH' ? (
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: "0.75rem"
-                }}
-              >
-                <Field label={t("createTable.smallBlindLabel")}>
-                  <input
-                    style={inputStyle}
-                    type="text"
-                    min={5}
-                    step={5}
-                    value={smallBlind}
-                    onChange={(e) => setSmallBlind(Number(e.target.value))}
-                  />
-                </Field>
-                <Field label={t("createTable.bigBlindLabel")}>
-                  <input
-                    style={inputStyle}
-                    type="text"
-                    min={10}
-                    step={5}
-                    value={bigBlind}
-                    onChange={(e) => setBigBlind(Number(e.target.value))}
-                  />
-                </Field>
+          ) : (
+            <div style={{
+              display: "grid",
+              gap: "0.9rem",
+              padding: "0.8rem",
+              backgroundColor: "rgba(139, 92, 246, 0.03)",
+              borderRadius: "0.75rem",
+              border: "1px solid rgba(139, 92, 246, 0.15)"
+            }}>
+              <div style={{ display: "flex", justifyContent: "center", gap: "1.5rem", marginBottom: "0.3rem" }}>
+                <label style={{ fontSize: "0.85rem", color: "var(--text-main)", display: "flex", alignItems: "center", gap: "0.4rem", cursor: "pointer" }}>
+                  <input type="radio" checked={tournamentSettingMode === 'SIMPLE'} onChange={() => setTournamentSettingMode('SIMPLE')} style={{ cursor: "pointer" }} />
+                  {t("createTable.simpleMode")}
+                </label>
+                <label style={{ fontSize: "0.85rem", color: "var(--text-main)", display: "flex", alignItems: "center", gap: "0.4rem", cursor: "pointer" }}>
+                  <input type="radio" checked={tournamentSettingMode === 'EXPERT'} onChange={() => setTournamentSettingMode('EXPERT')} style={{ cursor: "pointer" }} />
+                  {t("createTable.expertMode")}
+                </label>
               </div>
-            ) : (
-              <div style={{ display: "grid", gap: "0.85rem", padding: "0.5rem", backgroundColor: "rgba(139, 92, 246, 0.05)", borderRadius: "0.75rem", border: "1px solid rgba(139, 92, 246, 0.2)" }}>
-                <div style={{ display: "flex", justifyContent: "center", gap: "1.5rem", marginBottom: "0.5rem" }}>
-                  <label style={{ fontSize: "0.85rem", color: "#e2e8f0", display: "flex", alignItems: "center", gap: "0.4rem", cursor: "pointer" }}>
-                    <input type="radio" checked={tournamentSettingMode === 'SIMPLE'} onChange={() => setTournamentSettingMode('SIMPLE')} />
-                    {t("createTable.simpleMode")}
-                  </label>
-                  <label style={{ fontSize: "0.85rem", color: "#e2e8f0", display: "flex", alignItems: "center", gap: "0.4rem", cursor: "pointer" }}>
-                    <input type="radio" checked={tournamentSettingMode === 'EXPERT'} onChange={() => setTournamentSettingMode('EXPERT')} />
-                    {t("createTable.expertMode")}
-                  </label>
-                </div>
 
-                <Field label={t("createTable.estimatedPlayers")}>
-                   <input
-                     type="range" min="2" max="20" step="1"
-                     value={estimatedPlayers}
-                     onChange={(e) => setEstimatedPlayers(Number(e.target.value))}
-                   />
-                   <div style={{ textAlign: "center", color: "#e2e8f0", fontSize: "0.9rem" }}>{estimatedPlayers}</div>
-                </Field>
-                <Field label={t("createTable.targetDuration")}>
-                   <input
-                     type="range" min="1" max="8" step="0.5"
-                     value={durationHours}
-                     onChange={(e) => setDurationHours(Number(e.target.value))}
-                   />
-                   <div style={{ textAlign: "center", color: "#e2e8f0", fontSize: "0.9rem" }}>{durationHours}</div>
-                </Field>
-                
-                {tournamentSettingMode === 'EXPERT' && (
-                  <>
-                    <Field label={t("createTable.levelDuration")}>
-                       <input
-                         type="range" min="5" max="60" step="5"
-                         value={levelMins}
-                         onChange={(e) => setLevelMins(Number(e.target.value))}
-                       />
-                       <div style={{ textAlign: "center", color: "#e2e8f0", fontSize: "0.9rem" }}>{levelMins}</div>
-                    </Field>
+              <Field label={t("createTable.estimatedPlayers")}>
+                 <input
+                   type="range" min="2" max="20" step="1"
+                   value={estimatedPlayers}
+                   onChange={(e) => setEstimatedPlayers(Number(e.target.value))}
+                 />
+                 <div style={{ textAlign: "center", color: "var(--text-main)", fontSize: "0.9rem", fontWeight: 600 }}>{estimatedPlayers}</div>
+              </Field>
+              <Field label={t("createTable.targetDuration")}>
+                 <input
+                   type="range" min="1" max="8" step="0.5"
+                   value={durationHours}
+                   onChange={(e) => setDurationHours(Number(e.target.value))}
+                 />
+                 <div style={{ textAlign: "center", color: "var(--text-main)", fontSize: "0.9rem", fontWeight: 600 }}>{durationHours}</div>
+              </Field>
+              
+              {tournamentSettingMode === 'EXPERT' && (
+                <>
+                  <Field label={t("createTable.levelDuration")}>
+                     <input
+                       type="range" min="5" max="60" step="5"
+                       value={levelMins}
+                       onChange={(e) => setLevelMins(Number(e.target.value))}
+                     />
+                     <div style={{ textAlign: "center", color: "var(--text-main)", fontSize: "0.9rem", fontWeight: 600 }}>{levelMins}</div>
+                  </Field>
 
-                    <div style={{ marginTop: "0.5rem" }}>
-                      <label style={{ fontSize: "0.85rem", fontWeight: 500, color: "#cbd5e1" }}>{t("createTable.blindSchedulePreview")}</label>
-                      <div style={{ maxHeight: "120px", overflowY: "auto", border: "1px solid #334155", borderRadius: "0.5rem", padding: "0.5rem", marginTop: "0.25rem", fontSize: "0.8rem", backgroundColor: "#0f172a" }}>
-                        {blindSchedule.map((lvl, idx) => (
-                          <div key={idx} style={{ display: "flex", justifyContent: "space-between", padding: "0.2rem 0", borderBottom: idx === blindSchedule.length - 1 ? "none" : "1px solid #1e293b", color: "#94a3b8" }}>
-                             <span>Lvl {idx + 1}</span>
-                             <span style={{ fontWeight: 600, color: "#e2e8f0" }}>{lvl.sb} / {lvl.bb}</span>
-                          </div>
-                        ))}
-                      </div>
+                  <div style={{ marginTop: "0.4rem" }}>
+                    <label style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-main)" }}>{t("createTable.blindSchedulePreview")}</label>
+                    <div style={{
+                      maxHeight: "120px",
+                      overflowY: "auto",
+                      border: "1px solid rgba(255, 255, 255, 0.06)",
+                      borderRadius: "0.75rem",
+                      padding: "0.6rem",
+                      marginTop: "0.25rem",
+                      fontSize: "0.8rem",
+                      backgroundColor: "rgba(15, 23, 42, 0.5)"
+                    }}>
+                      {blindSchedule.map((lvl, idx) => (
+                        <div key={idx} style={{ display: "flex", justifyContent: "space-between", padding: "0.25rem 0", borderBottom: idx === blindSchedule.length - 1 ? "none" : "1px solid rgba(255, 255, 255, 0.04)", color: "var(--text-muted)" }}>
+                           <span>Lvl {idx + 1}</span>
+                           <span style={{ fontWeight: 700, color: "var(--text-main)" }}>{lvl.sb} / {lvl.bb}</span>
+                        </div>
+                      ))}
                     </div>
-                  </>
-                )}
-              </div>
-            )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           <Field
             label={t("createTable.virtualCardsLabel")}
@@ -338,9 +350,10 @@ export default function CreateTablePage() {
               style={{
                 display: "grid",
                 gridTemplateColumns: "1fr 1fr",
-                gap: "0.5rem",
-                backgroundColor: "#0f172a",
-                padding: "0.3rem",
+                gap: "0.4rem",
+                backgroundColor: "rgba(15, 23, 42, 0.5)",
+                border: "1px solid rgba(255, 255, 255, 0.08)",
+                padding: "0.25rem",
                 borderRadius: "0.75rem"
               }}
             >
@@ -348,19 +361,19 @@ export default function CreateTablePage() {
                 type="button"
                 onClick={() => setIsVirtualCards(false)}
                 style={{
-                  padding: "0.55rem 0.5rem",
+                  padding: "0.6rem",
                   borderRadius: "0.5rem",
                   border: "none",
-                  backgroundColor: !isVirtualCards ? "#3b82f6" : "transparent",
-                  color: !isVirtualCards ? "#ffffff" : "#9ca3af",
-                  fontWeight: !isVirtualCards ? 600 : 400,
-                  cursor: "pointer",
-                  transition: "all 0.2s",
+                  backgroundColor: !isVirtualCards ? "var(--color-primary)" : "transparent",
+                  color: !isVirtualCards ? "var(--text-main)" : "var(--text-muted)",
+                  fontWeight: !isVirtualCards ? 700 : 500,
                   fontSize: "0.85rem",
+                  cursor: "pointer",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  gap: "0.4rem"
+                  gap: "0.4rem",
+                  boxShadow: !isVirtualCards ? "0 4px 10px rgba(59, 130, 246, 0.25)" : "none"
                 }}
               >
                 🃏 {t("createTable.physicalCards")}
@@ -369,19 +382,19 @@ export default function CreateTablePage() {
                 type="button"
                 onClick={() => setIsVirtualCards(true)}
                 style={{
-                  padding: "0.55rem 0.5rem",
+                  padding: "0.6rem",
                   borderRadius: "0.5rem",
                   border: "none",
-                  backgroundColor: isVirtualCards ? "#8b5cf6" : "transparent",
-                  color: isVirtualCards ? "#ffffff" : "#9ca3af",
-                  fontWeight: isVirtualCards ? 600 : 400,
-                  cursor: "pointer",
-                  transition: "all 0.2s",
+                  backgroundColor: isVirtualCards ? "var(--color-tournament)" : "transparent",
+                  color: isVirtualCards ? "var(--text-main)" : "var(--text-muted)",
+                  fontWeight: isVirtualCards ? 700 : 500,
                   fontSize: "0.85rem",
+                  cursor: "pointer",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  gap: "0.4rem"
+                  gap: "0.4rem",
+                  boxShadow: isVirtualCards ? "0 4px 10px rgba(139, 92, 246, 0.25)" : "none"
                 }}
               >
                 💻 {t("createTable.virtualCards")}
@@ -394,7 +407,6 @@ export default function CreateTablePage() {
             description={t("createTable.passwordDesc")}
           >
             <input
-              style={inputStyle}
               type="text"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -403,24 +415,26 @@ export default function CreateTablePage() {
           </Field>
 
           {errorMsg && (
-            <p style={{ fontSize: "0.8rem", color: "#f97373" }}>{errorMsg}</p>
+            <p style={{ fontSize: "0.8rem", color: "var(--color-danger)", margin: "0.2rem 0" }}>{errorMsg}</p>
           )}
 
           <button
             type="submit"
             disabled={loading}
+            className="poker-btn-primary"
             style={{
               marginTop: "0.5rem",
               width: "100%",
-              padding: "0.7rem 1rem",
+              padding: "0.8rem 1.2rem",
               borderRadius: "999px",
               border: "none",
               cursor: loading ? "default" : "pointer",
-              backgroundColor: "#22c55e",
               opacity: loading ? 0.7 : 1,
-              color: "#020617",
-              fontWeight: 700,
-              fontSize: "0.95rem"
+              color: "var(--text-inverse)",
+              fontWeight: 800,
+              fontSize: "1rem",
+              textTransform: "uppercase",
+              letterSpacing: "0.04em"
             }}
           >
             {loading ? t("createTable.creatingBtn") : t("createTable.submitBtn")}
@@ -437,14 +451,14 @@ function Field(props: {
   children: React.ReactNode;
 }) {
   return (
-    <div style={{ display: "grid", gap: "0.2rem" }}>
+    <div style={{ display: "grid", gap: "0.3rem" }}>
       <label
-        style={{ fontSize: "0.9rem", fontWeight: 500, color: "#e5e7eb" }}
+        style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-main)", textTransform: "uppercase", letterSpacing: "0.02em" }}
       >
         {props.label}
       </label>
       {props.description && (
-        <p style={{ fontSize: "0.75rem", color: "#9ca3af" }}>
+        <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: "0 0 0.1rem 0", lineHeight: 1.3 }}>
           {props.description}
         </p>
       )}
@@ -452,13 +466,3 @@ function Field(props: {
     </div>
   );
 }
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "0.5rem 0.75rem",
-  backgroundColor: "#020617",
-  border: "1px solid #1e293b",
-  borderRadius: "0.6rem",
-  color: "#e2e8f0",
-  fontSize: "0.9rem"
-};

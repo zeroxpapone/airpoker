@@ -29,30 +29,27 @@ async function handleLogout() {
       }}
     >
       <div
+        className="glass-panel"
         style={{
           width: "100%",
           maxWidth: "420px",
-          padding: "1.6rem 1.4rem",
-          borderRadius: "1rem",
-          border: "1px solid #1f2937",
-          backgroundColor: "rgba(15,23,42,0.98)",
-          boxShadow: "0 18px 35px rgba(0,0,0,0.55)",
+          padding: "2rem 1.5rem",
           display: "grid",
-          gap: "1rem"
+          gap: "1.2rem"
         }}
       >
-        <header style={{ display: "grid", gap: "0.25rem" }}>
-          <h1 style={{ fontSize: "1.6rem", fontWeight: 700, lineHeight: 1.2 }}>
+        <header style={{ display: "grid", gap: "0.3rem" }}>
+          <h1 style={{ fontSize: "2rem", fontWeight: 800, lineHeight: 1.2, fontFamily: "var(--font-display)" }}>
             {t("home.title")}
           </h1>
-          <h2 style={{ fontSize: "1rem", fontWeight: 400, color: "#9ca3af", marginTop: "0.25rem" }}>
+          <h2 style={{ fontSize: "0.95rem", fontWeight: 400, color: "var(--text-muted)", marginTop: "0.1rem" }}>
             {t("home.subtitle")}
           </h2>
-          <p style={{ fontSize: "0.9rem", color: "#9ca3af", marginTop: "0.5rem" }}>
+          <p style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginTop: "0.6rem", margin: 0 }}>
             <Trans
               i18nKey="home.welcome"
               values={{ name: nickname }}
-              components={{ nicknameSpan: <span style={{ color: "#22c55e", fontWeight: 600 }} /> }}
+              components={{ nicknameSpan: <span style={{ color: "var(--color-success)", fontWeight: 700 }} /> }}
             />
           </p>
         </header>
@@ -60,21 +57,19 @@ async function handleLogout() {
         <div
           style={{
             display: "grid",
-            gap: "0.75rem",
-            marginTop: "0.5rem"
+            gap: "0.85rem",
+            marginTop: "0.4rem"
           }}
         >
           <button
             onClick={() => navigate("/create")}
+            className="poker-btn-primary"
             style={{
               width: "100%",
-              padding: "0.9rem 1rem",
+              padding: "1rem",
               borderRadius: "0.9rem",
               border: "none",
               cursor: "pointer",
-              background:
-                "linear-gradient(135deg, #22c55e, #4ade80, #22c55e)",
-              color: "#020617",
               fontWeight: 700,
               fontSize: "1rem",
               display: "flex",
@@ -89,15 +84,13 @@ async function handleLogout() {
 
           <button
             onClick={() => navigate("/join")}
+            className="poker-btn-secondary"
             style={{
               width: "100%",
-              padding: "0.9rem 1rem",
+              padding: "1rem",
               borderRadius: "0.9rem",
-              border: "1px solid #3b82f6",
               cursor: "pointer",
-              backgroundColor: "transparent",
-              color: "#e5e7eb",
-              fontWeight: 600,
+              fontWeight: 700,
               fontSize: "1rem",
               display: "flex",
               alignItems: "center",
@@ -111,32 +104,33 @@ async function handleLogout() {
         </div>
 
         <button
-            onClick={handleLogout}
-            style={{
-                marginTop: "0.5rem",
-                width: "100%",
-                padding: "0.6rem 1rem",
-                borderRadius: "999px",
-                border: "1px solid #4b5563",
-                cursor: "pointer",
-                backgroundColor: "transparent",
-                color: "#9ca3af",
-                fontSize: "0.85rem",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "0.4rem"
-            }}
-            >
-            <LogOut size={16} />
-            {t("home.logoutBtn")}
+          onClick={handleLogout}
+          style={{
+            marginTop: "0.4rem",
+            width: "100%",
+            padding: "0.65rem 1rem",
+            borderRadius: "999px",
+            border: "1px solid rgba(255, 255, 255, 0.12)",
+            cursor: "pointer",
+            backgroundColor: "rgba(255, 255, 255, 0.02)",
+            color: "var(--text-muted)",
+            fontSize: "0.85rem",
+            fontWeight: 600,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "0.4rem"
+          }}
+        >
+          <LogOut size={16} />
+          {t("home.logoutBtn")}
         </button>
 
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid #1f2937" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.8rem", paddingTop: "0.8rem", borderTop: "1px solid rgba(255, 255, 255, 0.06)" }}>
           <button
             onClick={() => navigate("/about")}
             style={{
-              background: "transparent", border: "none", color: "#60a5fa", cursor: "pointer", fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "0.3rem", padding: "0.2rem"
+              background: "transparent", border: "none", color: "var(--color-primary)", cursor: "pointer", fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "0.3rem", padding: "0.3rem 0.5rem", borderRadius: "0.4rem", transition: "background 0.2s"
             }}
           >
             <Info size={15} />
@@ -146,7 +140,7 @@ async function handleLogout() {
           <button
             onClick={() => navigate("/terms")}
             style={{
-              background: "transparent", border: "none", color: "#9ca3af", cursor: "pointer", fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "0.3rem", padding: "0.2rem"
+              background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "0.3rem", padding: "0.3rem 0.5rem", borderRadius: "0.4rem", transition: "background 0.2s"
             }}
           >
             <FileText size={15} />

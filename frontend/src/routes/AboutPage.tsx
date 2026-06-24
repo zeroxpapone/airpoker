@@ -16,37 +16,34 @@ export default function AboutPage() {
       }}
     >
       <div
+        className="glass-panel"
         style={{
-          background: "rgba(30, 41, 59, 0.7)",
-          backdropFilter: "blur(12px)",
-          borderRadius: "1.5rem",
-          padding: "2.5rem 2rem",
-          boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)",
-          border: "1px solid rgba(255, 255, 255, 0.1)",
           width: "100%",
           maxWidth: "800px",
-          color: "#e2e8f0"
+          padding: "2rem 1.5rem",
+          color: "var(--text-main)"
         }}
       >
         <button
           onClick={() => navigate(-1)}
           style={{
-            background: "rgba(255, 255, 255, 0.1)",
-            color: "#ffffff",
-            border: "none",
-            padding: "0.6rem 1.2rem",
+            background: "rgba(255, 255, 255, 0.08)",
+            color: "var(--text-main)",
+            border: "1px solid rgba(255, 255, 255, 0.08)",
+            padding: "0.5rem 1.1rem",
             borderRadius: "999px",
             cursor: "pointer",
             fontWeight: 600,
-            marginBottom: "2rem",
+            marginBottom: "1.8rem",
             display: "inline-flex",
             alignItems: "center",
-            gap: "0.4rem"
+            gap: "0.4rem",
+            fontSize: "0.85rem"
           }}
         >
           ← {t("about.backBtn")}
         </button>
-        <h1 style={{ fontSize: "2rem", fontWeight: 700, marginBottom: "2rem" }}>
+        <h1 style={{ fontSize: "2.2rem", fontWeight: 800, marginBottom: "1.8rem", fontFamily: "var(--font-display)" }}>
           {t("about.title")}
         </h1>
 
