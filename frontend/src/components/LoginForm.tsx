@@ -6,41 +6,24 @@ interface Props {
 
 export default function LoginForm({ name, onChange, onSubmit }: Props) {
   return (
-    <form onSubmit={onSubmit} style={{ display: "grid", gap: "1rem" }}>
-      <div style={{ display: "grid", gap: "0.25rem" }}>
-        <label style={{ fontSize: "0.9rem", fontWeight: 500 }}>
+    <form onSubmit={onSubmit} className="form-field-group" id="form-login-legacy">
+      <div className="form-field-group" id="field-login-legacy-name">
+        <label className="form-label-title" htmlFor="input-login-legacy-name">
           Nome giocatore
         </label>
         <input
+          id="input-login-legacy-name"
           type="text"
           value={name}
           onChange={(e) => onChange(e.target.value)}
           placeholder="Es. Pippo, Nico, Mira..."
-          style={{
-            width: "100%",
-            borderRadius: "0.5rem",
-            border: "1px solid #1f2933",
-            backgroundColor: "#020617",
-            padding: "0.5rem 0.75rem",
-            color: "#e2e8f0",
-            fontSize: "0.9rem",
-            outline: "none"
-          }}
         />
       </div>
       <button
+        id="btn-login-legacy-submit"
         type="submit"
-        style={{
-          width: "100%",
-          borderRadius: "0.5rem",
-          backgroundColor: "#22c55e",
-          color: "#020617",
-          fontWeight: 600,
-          padding: "0.5rem 0.75rem",
-          fontSize: "0.9rem",
-          border: "none",
-          cursor: "pointer"
-        }}
+        className="poker-btn-primary"
+        style={{ width: "100%", padding: "0.55rem 0.75rem", borderRadius: "0.5rem" }}
       >
         Entra
       </button>

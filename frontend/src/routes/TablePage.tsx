@@ -1194,28 +1194,12 @@ async function handleConfirmWinners(potId: string) {
     if (!table) return null;
 
     return (
-      <div
-        style={{
-          position: "fixed",
-          top: 0, left: 0, right: 0, bottom: 0,
-          display: "flex",
-          flexDirection: "column",
-          padding: "0.5rem",
-          paddingBottom: "max(env(safe-area-inset-bottom), 0.5rem)",
-          gap: "0.5rem",
-          boxSizing: "border-box",
-          overflow: "hidden",
-          background: "radial-gradient(circle at 50% 20%, #0f172a 0%, #020617 80%, #000000 100%)",
-          color: "var(--text-main)",
-          fontFamily: "var(--font-sans)",
-          zIndex: 1
-        }}
-      >
-        <header style={{ display: "grid", gap: "0.25rem", paddingTop: "3rem" }}>
-          <h1 style={{ fontSize: "1.4rem", fontWeight: 800, fontFamily: "var(--font-display)" }}>
+      <div className="game-page-container" id="game-table-screen">
+        <header className="game-header" id="game-table-header">
+          <h1 className="game-title" id="game-table-title-label">
             {table.name}
           </h1>
-          <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: 0 }}>
+          <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: 0 }} id="game-table-info-label">
             {t("table.hand")} #{currentHand?.handNumber ?? "-"} •{" "}
             {t("table.blinds")} {table.smallBlind}/{table.bigBlind}
             {table?.mode === "TOURNAMENT" && (
@@ -1228,19 +1212,11 @@ async function handleConfirmWinners(potId: string) {
           </p>
           {/* Indicatore Side Pots — visibile solo quando esistono più pot */}
           {currentHand?.pots && currentHand.pots.length > 1 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.3rem", marginTop: "0.15rem" }}>
+            <div className="pots-indicator-container" id="side-pots-box">
               {currentHand.pots.map((pot, i) => (
                 <span
                   key={pot.id}
-                  style={{
-                    fontSize: "0.72rem",
-                    fontWeight: 700,
-                    padding: "0.15rem 0.5rem",
-                    borderRadius: "999px",
-                    backgroundColor: pot.settled ? "rgba(74,222,128,0.15)" : "rgba(251,191,36,0.15)",
-                    color: pot.settled ? "#4ade80" : "#fbbf24",
-                    border: `1px solid ${pot.settled ? "#4ade8055" : "#fbbf2455"}`
-                  }}
+                  className={`pot-badge ${pot.settled ? "settled" : "unsettled"}`}
                 >
                   {i === 0 ? "Main" : `Side ${i}`}: {pot.amount}
                   {!pot.settled && pot.eligible.length > 0 && (
@@ -1251,18 +1227,11 @@ async function handleConfirmWinners(potId: string) {
               ))}
             </div>
           )}
-          <div
-            style={{
-              marginTop: "0.4rem",
-              display: "flex",
-              justifyContent: "flex-end",
-              alignItems: "center",
-              fontSize: "0.8rem"
-            }}
-          >
-            <div style={{ display: "flex", gap: "0.4rem" }}>
+          <div className="game-controls-bar" id="game-table-controls-bar">
+            <div className="game-controls-flex" id="game-table-controls-buttons">
               {table?.mode !== "TOURNAMENT" && (
                 <button
+                  id="btn-table-toggle-sit"
                   onClick={handleToggleSittingOut}
                   disabled={!!disableSitToggle}
                   style={{
@@ -1283,6 +1252,7 @@ async function handleConfirmWinners(potId: string) {
 
               {isHost && !disableEndGame && table?.mode !== "TOURNAMENT" && (
                 <button
+                  id="btn-table-end-game"
                   onClick={handleEndGame}
                   className="poker-btn-primary"
                   style={{
@@ -1341,14 +1311,7 @@ async function handleConfirmWinners(potId: string) {
             }}
           >
             {/* Testo centrale: pot, stage, turno e community cards */}
-            <div style={{
-              position: "absolute",
-              top: "32%",
-              left: "50%",
-              transform: "translate(-50%, -50%)",
-              textAlign: "center",
-              zIndex: 14
-            }}>
+            <div className="felt-pot" id="felt-pot-display">
               <span style={{ fontSize: "0.7rem", color: "rgba(255, 255, 255, 0.6)", textTransform: "uppercase", letterSpacing: "0.06em", display: "block" }}>
                 {t("table.pot")}
               </span>
@@ -1358,20 +1321,7 @@ async function handleConfirmWinners(potId: string) {
             </div>
 
             {table?.isVirtualCards && currentHand && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: "52%",
-                  left: "50%",
-                  transform: "translate(-50%, -50%)",
-                  display: "flex",
-                  gap: "0.3rem",
-                  zIndex: 15,
-                  flexWrap: "wrap",
-                  justifyContent: "center",
-                  width: "min(100%, 280px)"
-                }}
-              >
+              <div className="felt-cards" id="felt-cards-display">
                 {currentHand.communityCards?.map((card, idx) => {
                   let hidden = true;
                   if (currentHand.stage === "FLOP" && idx < 3) hidden = false;
@@ -1383,15 +1333,7 @@ async function handleConfirmWinners(potId: string) {
               </div>
             )}
 
-            <div style={{
-              position: "absolute",
-              top: "70%",
-              left: "50%",
-              transform: "translate(-50%, -50%)",
-              textAlign: "center",
-              zIndex: 14,
-              width: "160px"
-            }}>
+            <div className="felt-turn" id="felt-turn-display">
               <div style={{ fontSize: "0.7rem", color: "rgba(255, 255, 255, 0.6)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
                 {currentHand?.stage ?? "N/A"}
               </div>
@@ -1496,23 +1438,13 @@ async function handleConfirmWinners(potId: string) {
                         cursor: hasVirtualCardsDealt ? "pointer" : undefined
                       }}
                     >
-                      <div style={{
-                        display: "flex",
-                        flexDirection: isOnRightSide ? "row-reverse" : "row",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        width: "100%",
-                        gap: "0.4rem"
-                      }}>
+                      <div className={`player-pod-inner ${isOnRightSide ? "right-side" : ""}`} id={`player-pod-inner-${p.userId}`}>
                         <span
+                          className="player-pod-name"
+                          id={`player-pod-name-${p.userId}`}
                           style={{
-                            fontWeight: 600,
                             color: p.isSittingOut ? "var(--text-muted)" : p.isFolded ? "#6b7280" : isMe ? "var(--color-success)" : "var(--text-main)",
                             textDecoration: p.isFolded && !p.isSittingOut ? "line-through" : "none",
-                            whiteSpace: "nowrap",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            flexShrink: 1,
                             textAlign: isOnRightSide ? "right" : "left"
                           }}
                         >
@@ -1526,13 +1458,8 @@ async function handleConfirmWinners(potId: string) {
                         {renderRoleBadges(index)}
                       </div>
                       <div
-                        style={{
-                          marginTop: "0.1rem",
-                          color: "#94a3b8",
-                          fontWeight: 600,
-                          fontSize: "0.75rem",
-                          textAlign: isOnRightSide ? "right" : "left"
-                        }}
+                        className={`player-pod-stack ${isOnRightSide ? "right-side" : "left-side"}`}
+                        id={`player-pod-stack-${p.userId}`}
                       >
                         {p.stack}
                         {votingOpen && myVoteTargetId === p.userId && ` • ${t("table.yourChoice")}`}
@@ -1630,41 +1557,16 @@ async function handleConfirmWinners(potId: string) {
         </main>
 
         {/* Action bar in basso */}
-        <footer
-          style={{
-            position: "relative",
-            display: "grid",
-            gap: "0.5rem",
-            paddingTop: "0.5rem",
-            borderTop: "1px solid #1e293b",
-            flexShrink: 0
-          }}
-        >
-
-
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "0.4rem"
-            }}
-          >
-            {/* Pulsanti azione */}
-            <div
-              style={{
-                display: "flex",
-                gap: "0.5rem",
-                alignItems: "center",
-                width: "100%"
-              }}
-            >
+        <footer className="table-action-footer-bar" id="table-action-footer">
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+            <div className="action-buttons-flex-row" id="action-buttons-container">
               {table?.isVirtualCards && !isMyTurn && inActiveHand ? (
                 <>
                   {/* Pre-action buttons */}
                   {diffToCall === 0 ? (
                     <>
-                      {/* 1. CHECK/FOLD */}
                       <button
+                        id="btn-preaction-check-fold"
                         onClick={() => togglePreAction("CHECK_FOLD")}
                         style={{
                           ...pillActionButton,
@@ -1704,6 +1606,7 @@ async function handleConfirmWinners(potId: string) {
                     <>
                       {/* 1. FOLD */}
                       <button
+                        id="btn-preaction-fold"
                         onClick={() => togglePreAction("FOLD")}
                         style={{
                           ...pillActionButton,
@@ -1722,6 +1625,7 @@ async function handleConfirmWinners(potId: string) {
                       </button>
                       {/* 2. CALL x */}
                       <button
+                        id="btn-preaction-call-x"
                         onClick={() => togglePreAction("CALL_X", diffToCall)}
                         style={{
                           ...pillActionButton,
@@ -1742,6 +1646,7 @@ async function handleConfirmWinners(potId: string) {
                   )}
                   {/* 3. CALL ANY */}
                   <button
+                    id="btn-preaction-call-any"
                     onClick={() => togglePreAction("CALL_ANY")}
                     style={{
                       ...pillActionButton,
@@ -1763,6 +1668,7 @@ async function handleConfirmWinners(potId: string) {
                 <>
                   {/* Fold sempre disponibile se è il tuo turno */}
                   <button
+                    id="btn-action-fold"
                     disabled={!isMyTurn || actionLoading}
                     onClick={() => setShowFoldConfirm(true)}
                     style={{
@@ -1778,6 +1684,7 @@ async function handleConfirmWinners(potId: string) {
 
                   {/* Bottone centrale: Check o Call */}
                   <button
+                    id="btn-action-check-call"
                     disabled={!isMyTurn || actionLoading || (!canCheck && !canCall)}
                     onClick={() =>
                       canCall ? doAction("CALL") : canCheck ? doAction("CHECK") : null
@@ -1814,6 +1721,7 @@ async function handleConfirmWinners(potId: string) {
 
                   {/* Bottone Bet/Raise + pannello */}
                   <button
+                    id="btn-action-bet-raise"
                     disabled={!isMyTurn || actionLoading || !canBetOrRaise}
                     onClick={openBetPanel}
                     style={{
@@ -2425,7 +2333,7 @@ async function handleConfirmWinners(potId: string) {
               <div style={{ fontSize: "0.8rem", color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0, marginBottom: "0.4rem" }}>
                 {t("table.playerHands")}
               </div>
-              <div style={{ display: "grid", gap: "0.6rem", flex: "1 1 auto", minHeight: 0, overflowY: "auto" }}>
+              <div className="winner-players-scroll-container" id="showdown-players-list">
               {players
                 .filter(p => !p.isFolded && currentHand.playerHands?.[p.userId])
                 .map(p => {
@@ -2434,32 +2342,18 @@ async function handleConfirmWinners(potId: string) {
                   return (
                     <div 
                       key={p.userId} 
-                      style={{ 
-                        display: "flex", 
-                        alignItems: "center", 
-                        gap: "0.6rem",
-                        padding: "0.5rem 0.7rem",
-                        borderRadius: "0.75rem",
-                        backgroundColor: isWinner ? "rgba(34, 197, 94, 0.15)" : "rgba(30, 41, 59, 0.5)",
-                        border: isWinner ? "1px solid rgba(34, 197, 94, 0.4)" : "1px solid transparent"
-                      }}
+                      className={`winner-player-card-row ${isWinner ? "winner" : "loser"}`}
+                      id={`showdown-player-row-${p.userId}`}
                     >
                       {/* Player cards */}
-                      <div style={{ display: "flex", gap: "0.2rem", flexShrink: 0 }}>
+                      <div className="winner-cards-container">
                         {currentHand.playerHands?.[p.userId]?.map((card, idx) => (
                           <Card key={idx} card={card} />
                         ))}
                       </div>
                       {/* Player info */}
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ 
-                          fontWeight: 600, 
-                          fontSize: "0.85rem",
-                          color: isWinner ? "#4ade80" : "#e2e8f0",
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis"
-                        }}>
+                        <div className={`winner-player-name-title ${isWinner ? "winner" : "loser"}`}>
                           {isWinner && "🏆 "}{p.displayName}
                         </div>
                         {result && (

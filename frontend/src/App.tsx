@@ -12,6 +12,8 @@ import AboutPage from "./routes/AboutPage";
 const CreateTablePage = lazy(() => import("./routes/CreateTablePage"));
 const JoinTablePage = lazy(() => import("./routes/JoinTablePage"));
 const TablePage = lazy(() => import("./routes/TablePage"));
+const ProfilePage = lazy(() => import("./routes/ProfilePage"));
+const PlayerProfilePage = lazy(() => import("./routes/PlayerProfilePage"));
 
 function ProtectedTableRoute() {
   const { tableId } = useParams();
@@ -50,7 +52,6 @@ function App() {
 
   if (loading) return <p>Caricamento</p>;
 
-  // Return statement
   return (
     <Suspense fallback={<div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh", color: "#9ca3af" }}>Caricamento applicazione...</div>}>
       <Layout>
@@ -75,9 +76,16 @@ function App() {
             path="/table/:tableId"
             element={<ProtectedTableRoute />}
           />
+          <Route
+            path="/profile"
+            element={user ? <ProfilePage /> : <Navigate to="/" replace />}
+          />
+          <Route
+            path="/user/:username"
+            element={user ? <PlayerProfilePage /> : <Navigate to="/" replace />}
+          />
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/about" element={<AboutPage />} />
-          {/* eventuale 404 */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Layout>

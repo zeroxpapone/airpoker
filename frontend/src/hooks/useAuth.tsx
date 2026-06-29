@@ -5,26 +5,125 @@ import {
   signInAnonymously,
   updateProfile,
   signOut,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  linkWithCredential,
+  linkWithPopup,
+  EmailAuthProvider,
   type User
 } from "firebase/auth";
-import { auth } from "../lib/firebase";
+import { doc, getDoc, runTransaction, serverTimestamp } from "firebase/firestore";
+import { auth, db, googleProvider } from "../lib/firebase";
 
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
+  isRegisteredUser: boolean;
+  username: string | null;
   login: (displayName: string) => Promise<void>;
+  registerWithEmail: (email: string, password: string, username: string) => Promise<void>;
+  loginWithEmail: (email: string, password: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
+  linkGuestToRegistered: (email: string, password: string, username: string, type: "email" | "google") => Promise<void>;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+// Helper to create user profile and enforce unique username in Firestore
+async function createProfileForUser(uid: string, email: string | null, preferredUsername: string, forceUnique = false) {
+  const cleanUsername = preferredUsername.trim();
+  if (!cleanUsername || cleanUsername.length < 3) {
+    throw new Error("Il nome utente deve essere di almeno 3 caratteri.");
+  }
+  if (!/^[a-zA-Z0-9_]+$/.test(cleanUsername)) {
+    throw new Error("Il nome utente può contenere solo lettere, numeri e underscore.");
+  }
+
+  let usernameToClaim = cleanUsername;
+
+  await runTransaction(db, async (transaction) => {
+    let usernameDocRef = doc(db, "usernames", usernameToClaim.toLowerCase());
+    let usernameDoc = await transaction.get(usernameDocRef);
+
+    if (usernameDoc.exists()) {
+      if (forceUnique) {
+        throw new Error("Questo nome utente è già stato registrato da un altro utente.");
+      }
+      // auto-fallback for Google login if already taken
+      let attempts = 0;
+      while (usernameDoc.exists() && attempts < 10) {
+        usernameToClaim = cleanUsername + Math.floor(Math.random() * 1000);
+        usernameDocRef = doc(db, "usernames", usernameToClaim.toLowerCase());
+        usernameDoc = await transaction.get(usernameDocRef);
+        attempts++;
+      }
+      if (usernameDoc.exists()) {
+        throw new Error("Impossibile generare un nome utente univoco. Riprova.");
+      }
+    }
+
+    // Reserve username
+    transaction.set(usernameDocRef, { uid });
+
+    // Create user profile doc
+    const userDocRef = doc(db, "users", uid);
+    transaction.set(userDocRef, {
+      uid,
+      username: usernameToClaim,
+      email: email,
+      isRegistered: true,
+      createdAt: serverTimestamp(),
+      stats: {
+        handsPlayed: 0,
+        handsWon: 0,
+        totalChipsWon: 0,
+        totalChipsLost: 0,
+        netProfit: 0,
+        sessionsPlayed: 0,
+        bestHandName: ""
+      }
+    });
+  });
+
+  return usernameToClaim;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [username, setUsername] = useState<string | null>(null);
+  const [isRegisteredUser, setIsRegisteredUser] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (firebaseUser) => {
-      setUser(firebaseUser);
+    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        setUser(firebaseUser);
+        if (!firebaseUser.isAnonymous) {
+          setIsRegisteredUser(true);
+          // Fetch username from Firestore
+          try {
+            const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+            if (userDoc.exists()) {
+              setUsername(userDoc.data().username || firebaseUser.displayName || "Giocatore");
+            } else {
+              // Fallback if doc doesn't exist yet (e.g., interrupted OAuth flow)
+              setUsername(firebaseUser.displayName || "Giocatore");
+            }
+          } catch (e) {
+            console.error("Errore nel recupero dello username:", e);
+            setUsername(firebaseUser.displayName || "Giocatore");
+          }
+        } else {
+          setIsRegisteredUser(false);
+          setUsername(firebaseUser.displayName);
+        }
+      } else {
+        setUser(null);
+        setIsRegisteredUser(false);
+        setUsername(null);
+      }
       setLoading(false);
     });
     return () => unsub();
@@ -36,32 +135,135 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error("Devi scegliere un nickname per continuare.");
     }
 
-    // Se c'è già un utente loggato, aggiorno solo il displayName
     if (auth.currentUser) {
       if (auth.currentUser.displayName !== trimmed) {
         await updateProfile(auth.currentUser, { displayName: trimmed });
       }
       setUser(auth.currentUser);
+      setUsername(trimmed);
       return;
     }
 
-    // Login anonimo + impostazione nickname come displayName
     const cred = await signInAnonymously(auth);
     if (cred.user) {
       await updateProfile(cred.user, { displayName: trimmed });
       setUser({ ...cred.user, displayName: trimmed } as User);
+      setUsername(trimmed);
     }
+  }
+
+  async function registerWithEmail(email: string, password: string, desiredUsername: string) {
+    if (!email.trim() || !password || !desiredUsername.trim()) {
+      throw new Error("Tutti i campi sono obbligatori.");
+    }
+
+    // 1. Create firebase auth user
+    const cred = await createUserWithEmailAndPassword(auth, email, password);
+    const u = cred.user;
+
+    try {
+      // 2. Create firestore profile and reserve username
+      const finalUsername = await createProfileForUser(u.uid, email, desiredUsername, true);
+      // 3. Update auth profile displayName
+      await updateProfile(u, { displayName: finalUsername });
+      setUser(u);
+      setUsername(finalUsername);
+      setIsRegisteredUser(true);
+    } catch (err) {
+      // Rollback auth user if firestore registration fails
+      await u.delete();
+      throw err;
+    }
+  }
+
+  async function loginWithEmail(email: string, password: string) {
+    if (!email.trim() || !password) {
+      throw new Error("Email e password sono obbligatorie.");
+    }
+    const cred = await signInWithEmailAndPassword(auth, email, password);
+    setUser(cred.user);
+    setIsRegisteredUser(true);
+  }
+
+  async function signInWithGoogle() {
+    const cred = await signInWithPopup(auth, googleProvider);
+    const u = cred.user;
+
+    // Check if user document already exists in Firestore
+    const userDocRef = doc(db, "users", u.uid);
+    const userDoc = await getDoc(userDocRef);
+
+    if (!userDoc.exists()) {
+      // Create profile with auto-unique username derived from displayName or email
+      const baseName = u.displayName || u.email?.split("@")[0] || "player";
+      const finalUsername = await createProfileForUser(u.uid, u.email, baseName, false);
+      await updateProfile(u, { displayName: finalUsername });
+    }
+
+    setUser(u);
+    setIsRegisteredUser(true);
+  }
+
+  async function linkGuestToRegistered(email: string, password: string, desiredUsername: string, type: "email" | "google") {
+    const currentUser = auth.currentUser;
+    if (!currentUser || !currentUser.isAnonymous) {
+      throw new Error("Nessun account ospite attivo da convertire.");
+    }
+
+    if (type === "email") {
+      if (!email.trim() || !password || !desiredUsername.trim()) {
+        throw new Error("Tutti i campi sono obbligatori per la registrazione.");
+      }
+
+      // Reserve username first to avoid linking if username is taken
+      const usernameToClaim = desiredUsername.trim();
+      const usernameDocRef = doc(db, "usernames", usernameToClaim.toLowerCase());
+      const usernameDoc = await getDoc(usernameDocRef);
+      if (usernameDoc.exists()) {
+        throw new Error("Questo nome utente è già stato registrato da un altro utente.");
+      }
+
+      const credential = EmailAuthProvider.credential(email, password);
+      await linkWithCredential(currentUser, credential);
+
+      // Now create the profile document
+      const finalUsername = await createProfileForUser(currentUser.uid, email, desiredUsername, true);
+      await updateProfile(currentUser, { displayName: finalUsername });
+      setUsername(finalUsername);
+    } else if (type === "google") {
+      await linkWithPopup(currentUser, googleProvider);
+      
+      // Check if user document exists
+      const userDocRef = doc(db, "users", currentUser.uid);
+      const userDoc = await getDoc(userDocRef);
+      if (!userDoc.exists()) {
+        const baseName = currentUser.displayName || currentUser.email?.split("@")[0] || "player";
+        const finalUsername = await createProfileForUser(currentUser.uid, currentUser.email, baseName, false);
+        await updateProfile(currentUser, { displayName: finalUsername });
+        setUsername(finalUsername);
+      }
+    }
+    
+    setIsRegisteredUser(true);
   }
 
   async function logout() {
     await signOut(auth);
     setUser(null);
+    setUsername(null);
+    setIsRegisteredUser(false);
   }
 
   const value: AuthContextValue = {
     user,
     loading,
+    isRegisteredUser,
+    username,
     login,
+    registerWithEmail,
+    loginWithEmail,
+    signInWithGoogle,
+    linkGuestToRegistered,
     logout
   };
 

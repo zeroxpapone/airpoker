@@ -139,50 +139,35 @@ export default function CreateTablePage() {
   }
 
   return (
-    <div
-      style={{
-        flex: 1,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "1rem 1rem 3rem 1rem"
-      }}
-    >
-      <div
-        className="glass-panel"
-        style={{
-          width: "100%",
-          maxWidth: "420px",
-          padding: "2rem 1.5rem",
-          display: "grid",
-          gap: "1.2rem"
-        }}
-      >
-        <h1 style={{ fontSize: "1.6rem", fontWeight: 800, fontFamily: "var(--font-display)" }}>
+    <div className="create-table-container" id="create-table-page-container">
+      <div className="glass-panel create-table-panel" id="create-table-panel-box">
+        <h1 style={{ fontSize: "1.6rem", fontWeight: 800, fontFamily: "var(--font-display)" }} id="create-table-title">
           {t("createTable.title")}
         </h1>
 
-        <form
-          onSubmit={handleSubmit}
-          style={{ display: "grid", gap: "1rem" }}
-        >
+        <form onSubmit={handleSubmit} className="form-group" id="form-create-table">
           <Field
             label={t("createTable.nameLabel")}
             description={t("createTable.nameDesc")}
+            id="field-table-name"
           >
             <input
+              id="input-table-name"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={t("createTable.namePlaceholder")}
+              autoComplete="off"
             />
           </Field>
 
           <Field
             label={t("createTable.stackLabel")}
             description={t("createTable.stackDesc")}
+            id="field-initial-stack"
           >
             <input
+              id="input-initial-stack"
               type="number"
               min={100}
               step={10}
@@ -194,64 +179,31 @@ export default function CreateTablePage() {
             />
           </Field>
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "0.4rem",
-              backgroundColor: "rgba(15, 23, 42, 0.5)",
-              border: "1px solid rgba(255, 255, 255, 0.08)",
-              padding: "0.25rem",
-              borderRadius: "0.75rem",
-              marginBottom: "0.2rem"
-            }}
-          >
+          {/* Mode Switcher */}
+          <div className="grid-selector-bar" id="game-mode-selector">
             <button
+              id="btn-select-cash"
               type="button"
               onClick={() => setMode('CASH')}
-              style={{
-                padding: "0.6rem",
-                borderRadius: "0.5rem",
-                border: "none",
-                backgroundColor: mode === 'CASH' ? "var(--color-primary)" : "transparent",
-                color: mode === 'CASH' ? "var(--text-main)" : "var(--text-muted)",
-                fontWeight: mode === 'CASH' ? 700 : 500,
-                fontSize: "0.9rem",
-                cursor: "pointer",
-                boxShadow: mode === 'CASH' ? "0 4px 10px rgba(59, 130, 246, 0.25)" : "none"
-              }}
+              className={`grid-selector-btn ${mode === 'CASH' ? 'active-cash' : ''}`}
             >
               {t("createTable.cashGame")}
             </button>
             <button
+              id="btn-select-tournament"
               type="button"
               onClick={() => setMode('TOURNAMENT')}
-              style={{
-                padding: "0.6rem",
-                borderRadius: "0.5rem",
-                border: "none",
-                backgroundColor: mode === 'TOURNAMENT' ? "var(--color-tournament)" : "transparent",
-                color: mode === 'TOURNAMENT' ? "var(--text-main)" : "var(--text-muted)",
-                fontWeight: mode === 'TOURNAMENT' ? 700 : 500,
-                fontSize: "0.9rem",
-                cursor: "pointer",
-                boxShadow: mode === 'TOURNAMENT' ? "0 4px 10px rgba(139, 92, 246, 0.25)" : "none"
-              }}
+              className={`grid-selector-btn ${mode === 'TOURNAMENT' ? 'active-tournament' : ''}`}
             >
               {t("createTable.tournament")}
             </button>
           </div>
 
           {mode === 'CASH' ? (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "0.85rem"
-              }}
-            >
-              <Field label={t("createTable.smallBlindLabel")}>
+            <div className="grid-selector-bar" id="cash-blinds-container" style={{ border: "none", backgroundColor: "transparent", padding: 0 }}>
+              <Field label={t("createTable.smallBlindLabel")} id="field-small-blind">
                 <input
+                  id="input-small-blind"
                   type="number"
                   min={5}
                   step={5}
@@ -259,8 +211,9 @@ export default function CreateTablePage() {
                   onChange={(e) => setSmallBlind(Number(e.target.value))}
                 />
               </Field>
-              <Field label={t("createTable.bigBlindLabel")}>
+              <Field label={t("createTable.bigBlindLabel")} id="field-big-blind">
                 <input
+                  id="input-big-blind"
                   type="number"
                   min={10}
                   step={5}
@@ -270,35 +223,30 @@ export default function CreateTablePage() {
               </Field>
             </div>
           ) : (
-            <div style={{
-              display: "grid",
-              gap: "0.9rem",
-              padding: "0.8rem",
-              backgroundColor: "rgba(139, 92, 246, 0.03)",
-              borderRadius: "0.75rem",
-              border: "1px solid rgba(139, 92, 246, 0.15)"
-            }}>
+            <div className="tournament-settings-panel" id="tournament-settings-box">
               <div style={{ display: "flex", justifyContent: "center", gap: "1.5rem", marginBottom: "0.3rem" }}>
                 <label style={{ fontSize: "0.85rem", color: "var(--text-main)", display: "flex", alignItems: "center", gap: "0.4rem", cursor: "pointer" }}>
-                  <input type="radio" checked={tournamentSettingMode === 'SIMPLE'} onChange={() => setTournamentSettingMode('SIMPLE')} style={{ cursor: "pointer" }} />
+                  <input id="radio-tournament-simple" type="radio" checked={tournamentSettingMode === 'SIMPLE'} onChange={() => setTournamentSettingMode('SIMPLE')} style={{ cursor: "pointer" }} />
                   {t("createTable.simpleMode")}
                 </label>
                 <label style={{ fontSize: "0.85rem", color: "var(--text-main)", display: "flex", alignItems: "center", gap: "0.4rem", cursor: "pointer" }}>
-                  <input type="radio" checked={tournamentSettingMode === 'EXPERT'} onChange={() => setTournamentSettingMode('EXPERT')} style={{ cursor: "pointer" }} />
+                  <input id="radio-tournament-expert" type="radio" checked={tournamentSettingMode === 'EXPERT'} onChange={() => setTournamentSettingMode('EXPERT')} style={{ cursor: "pointer" }} />
                   {t("createTable.expertMode")}
                 </label>
               </div>
 
-              <Field label={t("createTable.estimatedPlayers")}>
+              <Field label={t("createTable.estimatedPlayers")} id="field-estimated-players">
                  <input
+                   id="input-estimated-players"
                    type="range" min="2" max="20" step="1"
                    value={estimatedPlayers}
                    onChange={(e) => setEstimatedPlayers(Number(e.target.value))}
                  />
                  <div style={{ textAlign: "center", color: "var(--text-main)", fontSize: "0.9rem", fontWeight: 600 }}>{estimatedPlayers}</div>
               </Field>
-              <Field label={t("createTable.targetDuration")}>
+              <Field label={t("createTable.targetDuration")} id="field-target-duration">
                  <input
+                   id="input-target-duration"
                    type="range" min="1" max="8" step="0.5"
                    value={durationHours}
                    onChange={(e) => setDurationHours(Number(e.target.value))}
@@ -308,8 +256,9 @@ export default function CreateTablePage() {
               
               {tournamentSettingMode === 'EXPERT' && (
                 <>
-                  <Field label={t("createTable.levelDuration")}>
+                  <Field label={t("createTable.levelDuration")} id="field-level-duration">
                      <input
+                       id="input-level-duration"
                        type="range" min="5" max="60" step="5"
                        value={levelMins}
                        onChange={(e) => setLevelMins(Number(e.target.value))}
@@ -318,17 +267,8 @@ export default function CreateTablePage() {
                   </Field>
 
                   <div style={{ marginTop: "0.4rem" }}>
-                    <label style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-main)" }}>{t("createTable.blindSchedulePreview")}</label>
-                    <div style={{
-                      maxHeight: "120px",
-                      overflowY: "auto",
-                      border: "1px solid rgba(255, 255, 255, 0.06)",
-                      borderRadius: "0.75rem",
-                      padding: "0.6rem",
-                      marginTop: "0.25rem",
-                      fontSize: "0.8rem",
-                      backgroundColor: "rgba(15, 23, 42, 0.5)"
-                    }}>
+                    <label className="form-label-title">{t("createTable.blindSchedulePreview")}</label>
+                    <div className="blind-preview-box" id="blind-schedule-preview">
                       {blindSchedule.map((lvl, idx) => (
                         <div key={idx} style={{ display: "flex", justifyContent: "space-between", padding: "0.25rem 0", borderBottom: idx === blindSchedule.length - 1 ? "none" : "1px solid rgba(255, 255, 255, 0.04)", color: "var(--text-muted)" }}>
                            <span>Lvl {idx + 1}</span>
@@ -345,57 +285,22 @@ export default function CreateTablePage() {
           <Field
             label={t("createTable.virtualCardsLabel")}
             description={t("createTable.virtualCardsDesc")}
+            id="field-virtual-cards"
           >
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "0.4rem",
-                backgroundColor: "rgba(15, 23, 42, 0.5)",
-                border: "1px solid rgba(255, 255, 255, 0.08)",
-                padding: "0.25rem",
-                borderRadius: "0.75rem"
-              }}
-            >
+            <div className="grid-selector-bar" id="cards-type-selector">
               <button
+                id="btn-cards-physical"
                 type="button"
                 onClick={() => setIsVirtualCards(false)}
-                style={{
-                  padding: "0.6rem",
-                  borderRadius: "0.5rem",
-                  border: "none",
-                  backgroundColor: !isVirtualCards ? "var(--color-primary)" : "transparent",
-                  color: !isVirtualCards ? "var(--text-main)" : "var(--text-muted)",
-                  fontWeight: !isVirtualCards ? 700 : 500,
-                  fontSize: "0.85rem",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "0.4rem",
-                  boxShadow: !isVirtualCards ? "0 4px 10px rgba(59, 130, 246, 0.25)" : "none"
-                }}
+                className={`grid-selector-btn ${!isVirtualCards ? 'active-cash' : ''}`}
               >
                 🃏 {t("createTable.physicalCards")}
               </button>
               <button
+                id="btn-cards-virtual"
                 type="button"
                 onClick={() => setIsVirtualCards(true)}
-                style={{
-                  padding: "0.6rem",
-                  borderRadius: "0.5rem",
-                  border: "none",
-                  backgroundColor: isVirtualCards ? "var(--color-tournament)" : "transparent",
-                  color: isVirtualCards ? "var(--text-main)" : "var(--text-muted)",
-                  fontWeight: isVirtualCards ? 700 : 500,
-                  fontSize: "0.85rem",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "0.4rem",
-                  boxShadow: isVirtualCards ? "0 4px 10px rgba(139, 92, 246, 0.25)" : "none"
-                }}
+                className={`grid-selector-btn ${isVirtualCards ? 'active-tournament' : ''}`}
               >
                 💻 {t("createTable.virtualCards")}
               </button>
@@ -405,20 +310,24 @@ export default function CreateTablePage() {
           <Field
             label={t("createTable.passwordLabel")}
             description={t("createTable.passwordDesc")}
+            id="field-table-password"
           >
             <input
+              id="input-table-password"
               type="text"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder={t("createTable.passwordPlaceholder")}
+              autoComplete="off"
             />
           </Field>
 
           {errorMsg && (
-            <p style={{ fontSize: "0.8rem", color: "var(--color-danger)", margin: "0.2rem 0" }}>{errorMsg}</p>
+            <p style={{ fontSize: "0.8rem", color: "var(--color-danger)", margin: "0.2rem 0" }} id="create-table-error">{errorMsg}</p>
           )}
 
           <button
+            id="btn-submit-create-table"
             type="submit"
             disabled={loading}
             className="poker-btn-primary"
@@ -448,13 +357,12 @@ export default function CreateTablePage() {
 function Field(props: {
   label: string;
   description?: string;
+  id?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div style={{ display: "grid", gap: "0.3rem" }}>
-      <label
-        style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-main)", textTransform: "uppercase", letterSpacing: "0.02em" }}
-      >
+    <div className="form-field-group" id={props.id}>
+      <label className="form-label-title">
         {props.label}
       </label>
       {props.description && (

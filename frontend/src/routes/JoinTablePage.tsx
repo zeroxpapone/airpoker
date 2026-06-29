@@ -59,47 +59,22 @@ export default function JoinTablePage() {
   }
 
   return (
-    <div
-      style={{
-        flex: 1,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "1rem 1rem 3rem 1rem"
-      }}
-    >
-      <div
-        className="glass-panel"
-        style={{
-          width: "100%",
-          maxWidth: "420px",
-          padding: "2rem 1.5rem",
-          display: "grid",
-          gap: "1.2rem"
-        }}
-      >
-        <h1 style={{ fontSize: "1.6rem", fontWeight: 800, fontFamily: "var(--font-display)" }}>
+    <div className="create-table-container" id="join-table-page-container">
+      <div className="glass-panel create-table-panel" id="join-table-panel-box">
+        <h1 style={{ fontSize: "1.6rem", fontWeight: 800, fontFamily: "var(--font-display)" }} id="join-table-title">
           {t("joinTable.title")}
         </h1>
 
         {/* Avviso partita in corso */}
         {searchParams.get("tableId") && (
-          <div style={{
-            padding: "0.65rem 0.85rem",
-            borderRadius: "0.75rem",
-            backgroundColor: "rgba(251, 191, 36, 0.08)",
-            border: "1px solid rgba(251, 191, 36, 0.25)",
-            fontSize: "0.8rem",
-            color: "var(--color-warning)",
-            lineHeight: 1.45
-          }}>
+          <div className="warning-banner" id="game-in-progress-warning">
             {t("joinTable.gameInProgressWarning")}
           </div>
         )}
 
         {isScanning ? (
-          <div style={{ display: "grid", gap: "1rem" }}>
-            <div style={{ borderRadius: "1rem", overflow: "hidden", border: "1px solid var(--color-primary)", backgroundColor: "#000", boxShadow: "0 8px 25px rgba(59, 130, 246, 0.2)" }}>
+          <div className="form-field-group" id="qr-scanner-container">
+            <div className="qr-scanner-wrapper" id="qr-scanner-box">
               <Scanner
                 sound={false}
                 components={{ torch: false }}
@@ -138,6 +113,7 @@ export default function JoinTablePage() {
               />
             </div>
             <button
+              id="btn-cancel-scan"
               onClick={() => setIsScanning(false)}
               style={{
                 width: "100%", padding: "0.75rem", borderRadius: "999px",
@@ -150,11 +126,9 @@ export default function JoinTablePage() {
             </button>
           </div>
         ) : (
-          <form
-            onSubmit={handleSubmit}
-            style={{ display: "grid", gap: "1rem" }}
-          >
+          <form onSubmit={handleSubmit} className="form-field-group" id="form-join-table">
             <button
+              id="btn-start-scan"
               type="button"
               onClick={() => setIsScanning(true)}
               style={{
@@ -167,30 +141,35 @@ export default function JoinTablePage() {
               <Camera size={18} /> {t("joinTable.scanQrBtn")}
             </button>
 
-            <Field label={t("joinTable.tableIdLabel")}>
+            <Field label={t("joinTable.tableIdLabel")} id="field-table-id">
               <input
+                id="input-table-id"
                 type="text"
                 value={tableId}
                 onChange={(e) => setTableId(e.target.value.toLowerCase())}
                 placeholder={t("joinTable.tableIdPlaceholder")}
+                autoComplete="off"
                 required
               />
             </Field>
 
-            <Field label={t("joinTable.passwordLabel")}>
+            <Field label={t("joinTable.passwordLabel")} id="field-table-password">
               <input
+                id="input-table-password"
                 type="text"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder={t("joinTable.passwordPlaceholder")}
+                autoComplete="off"
               />
             </Field>
 
             {errorMsg && (
-              <p style={{ fontSize: "0.8rem", color: "var(--color-danger)", margin: "0.2rem 0" }}>{errorMsg}</p>
+              <p style={{ fontSize: "0.8rem", color: "var(--color-danger)", margin: "0.2rem 0" }} id="join-table-error">{errorMsg}</p>
             )}
 
             <button
+              id="btn-submit-join-table"
               type="submit"
               disabled={loading}
               className="poker-btn-primary"
@@ -221,6 +200,7 @@ export default function JoinTablePage() {
             margin: 0,
             lineHeight: 1.4
           }}
+          id="join-table-hint"
         >
           {t("joinTable.hint")}
         </p>
@@ -231,13 +211,12 @@ export default function JoinTablePage() {
 
 function Field(props: {
   label: string;
+  id?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div style={{ display: "grid", gap: "0.3rem" }}>
-      <label
-        style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-main)", textTransform: "uppercase", letterSpacing: "0.02em" }}
-      >
+    <div className="form-field-group" id={props.id}>
+      <label className="form-label-title">
         {props.label}
       </label>
       {props.children}

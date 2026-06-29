@@ -93,6 +93,73 @@ function splitPot(amount: number, numWinners: number): number[] {
 }
 
 /**
+ * Aggiorna le statistiche dei giocatori registrati al termine di una mano.
+ */
+async function updateUserStatsForHand(
+  hand: HandData,
+  players: { id: string; isFolded: boolean }[],
+  batch: ReturnType<typeof writeBatch>
+) {
+  const contributions = hand.handContributions || {};
+  const pots = hand.pots || [];
+  
+  const chipsWonMap: Record<string, number> = {};
+  pots.forEach(pot => {
+    if (pot.settled && pot.winners && pot.winners.length > 0) {
+      const shares = splitPot(pot.amount, pot.winners.length);
+      pot.winners.forEach((wId, idx) => {
+        chipsWonMap[wId] = (chipsWonMap[wId] || 0) + shares[idx];
+      });
+    }
+  });
+
+  for (const player of players) {
+    const userId = player.id;
+    const contribution = contributions[userId] || 0;
+    const chipsWon = chipsWonMap[userId] || 0;
+    const netProfit = chipsWon - contribution;
+
+    // Se non ha partecipato e non ha vinto/perso nulla, non aggiorniamo le sue stats
+    if (contribution === 0 && chipsWon === 0) {
+      continue;
+    }
+
+    const userDocRef = doc(db, "users", userId);
+    try {
+      const userSnap = await getDoc(userDocRef);
+      if (userSnap.exists()) {
+        const userData = userSnap.data();
+        const currentStats = userData.stats || {};
+        const wonHand = chipsWon > 0;
+
+        let bestHandRank = currentStats.bestHandRank || 999999;
+        let bestHandName = currentStats.bestHandName || "";
+
+        if (hand.isVirtualCards && hand.handResults && hand.handResults[userId]) {
+          const myResult = hand.handResults[userId];
+          if (myResult.rank < bestHandRank) {
+            bestHandRank = myResult.rank;
+            bestHandName = myResult.rankName;
+          }
+        }
+
+        batch.update(userDocRef, {
+          "stats.handsPlayed": (currentStats.handsPlayed || 0) + 1,
+          "stats.handsWon": (currentStats.handsWon || 0) + (wonHand ? 1 : 0),
+          "stats.totalChipsWon": (currentStats.totalChipsWon || 0) + chipsWon,
+          "stats.totalChipsLost": (currentStats.totalChipsLost || 0) + contribution,
+          "stats.netProfit": (currentStats.netProfit || 0) + netProfit,
+          "stats.bestHandRank": bestHandRank,
+          "stats.bestHandName": bestHandName
+        });
+      }
+    } catch (e) {
+      console.error("Errore nell'aggiornamento delle statistiche utente:", e);
+    }
+  }
+}
+
+/**
  * Auto-evaluates the showdown for virtual card hands.
  * Determines winners for each pot using poker hand evaluation,
  * distributes chips, and records hand results.
@@ -761,6 +828,13 @@ export async function forceFoldPlayer(
         stack: (players[winnerIdx].data.stack || 0) + totalPot 
       });
     }
+
+    // Aggiorna statistiche per i giocatori registrati
+    await updateUserStatsForHand(
+      { ...hand, pots, handContributions: hand.handContributions },
+      players.map(p => ({ id: p.id, isFolded: p.id === targetPlayerId ? true : !!p.data.isFolded })),
+      batch
+    );
   } else {
     // Find next active player
     let next = (targetIdx + 1) % players.length;
@@ -775,10 +849,61 @@ export async function forceFoldPlayer(
 
 export async function endGame(tableId: string) {
   const tableRef = doc(db, "tables", tableId);
-  await updateDoc(tableRef, {
+  const tableSnap = await getDoc(tableRef);
+  if (!tableSnap.exists()) throw new Error("Tavolo inesistente.");
+  const tableData = tableSnap.data() as any;
+
+  const playersSnap = await getDocs(collection(db, "tables", tableId, "players"));
+  const playersData = playersSnap.docs.map((d) => {
+    const p = d.data();
+    const finalStack = Number(p.stack) || 0;
+    const initialStack = Number(tableData.initialStack) || 0;
+    return {
+      userId: p.userId,
+      displayName: p.displayName,
+      startingStack: initialStack,
+      finalStack: finalStack,
+      netProfit: finalStack - initialStack
+    };
+  });
+
+  const playerIds = playersData.map((p) => p.userId);
+
+  const batch = writeBatch(db);
+
+  batch.update(tableRef, {
     state: "SUMMARY",
     endedAt: serverTimestamp()
   });
+
+  const historyRef = doc(db, "table_history", tableId);
+  batch.set(historyRef, {
+    tableId,
+    tableName: tableData.name || "Tavolo",
+    mode: tableData.mode || "CASH",
+    endedAt: serverTimestamp(),
+    playerIds,
+    players: playersData
+  });
+
+  // Aggiorna sessionsPlayed per ciascun utente registrato
+  for (const p of playersData) {
+    const userDocRef = doc(db, "users", p.userId);
+    try {
+      const userSnap = await getDoc(userDocRef);
+      if (userSnap.exists()) {
+        const userData = userSnap.data();
+        const currentStats = userData.stats || {};
+        batch.update(userDocRef, {
+          "stats.sessionsPlayed": (currentStats.sessionsPlayed || 0) + 1
+        });
+      }
+    } catch (e) {
+      console.error("Errore nell'aggiornamento della sessione utente:", e);
+    }
+  }
+
+  await batch.commit();
 }
 
 /**
@@ -1459,6 +1584,21 @@ export async function playerAction(
     }
   }
 
+  // Se la mano si conclude in questo momento, aggiorniamo le statistiche dei giocatori
+  if (handUpdate.confirmedAt) {
+    const finalPots = handUpdate.pots || handData.pots || [];
+    await updateUserStatsForHand(
+      {
+        ...handData,
+        pots: finalPots,
+        handContributions,
+        handResults: handUpdate.handResults || handData.handResults
+      },
+      players.map(p => ({ id: p.userId, isFolded: !!p.isFolded })),
+      batch
+    );
+  }
+
   batch.update(handRef, handUpdate);
 
   await batch.commit();
@@ -1598,6 +1738,13 @@ export async function advanceStage(tableId: string, user: User) {
       updateData.votingOpen = false;
       updateData.confirmedAt = serverTimestamp();
       
+      // Aggiorna statistiche
+      await updateUserStatsForHand(
+        { ...hand, pots: calcPots, handContributions: hand.handContributions },
+        plyrsData.map(p => ({ id: p.id, isFolded: p.isFolded })),
+        batch
+      );
+
       batch.update(handRef, updateData);
       await batch.commit();
     } else if (hand.isVirtualCards && hand.playerHands && hand.communityCards && hand.communityCards.length === 5) {
@@ -1611,6 +1758,14 @@ export async function advanceStage(tableId: string, user: User) {
         batch
       );
       Object.assign(updateData, evalResult);
+      
+      // Aggiorna statistiche
+      await updateUserStatsForHand(
+        { ...hand, pots: updateData.pots || calcPots, handContributions: hand.handContributions, handResults: updateData.handResults },
+        plyrsData.map(p => ({ id: p.id, isFolded: p.isFolded })),
+        batch
+      );
+
       batch.update(handRef, updateData);
       await batch.commit();
     } else {
@@ -1647,6 +1802,16 @@ export async function advanceStage(tableId: string, user: User) {
         updateData.votingOpen = true;
         updateData.winnerIds = [];
       }
+
+      // Se la mano si è conclusa (tutti i piatti settlati automatici)
+      if (updateData.confirmedAt) {
+        await updateUserStatsForHand(
+          { ...hand, pots: calcPots, handContributions: hand.handContributions },
+          plyrsData.map(p => ({ id: p.id, isFolded: p.isFolded })),
+          batch
+        );
+      }
+
       batch.update(handRef, updateData);
       await batch.commit();
     }
@@ -1808,6 +1973,21 @@ export async function confirmWinners(
       confirmedAt: serverTimestamp()
     };
     if (winnerIds.length === 1) handUpdate.winnerId = winnerIds[0];
+    
+    // Aggiorna statistiche
+    const simulatedPots: Pot[] = [{
+      id: "pot_legacy",
+      amount: pot,
+      eligible: players.map(p => p.id),
+      settled: true,
+      winners: winnerIds
+    }];
+    await updateUserStatsForHand(
+      { ...hand, pots: simulatedPots, handContributions: hand.handContributions },
+      players.map(p => ({ id: p.id, isFolded: p.data.isFolded })),
+      batch
+    );
+
     batch.update(handRef, handUpdate);
     await batch.commit();
     return;
@@ -1883,6 +2063,13 @@ export async function confirmWinners(
         batch.update(p.ref, { eliminatedAt: now });
       }
     });
+
+    // Aggiorna statistiche
+    await updateUserStatsForHand(
+      { ...hand, pots, handContributions: hand.handContributions },
+      players.map(p => ({ id: p.id, isFolded: p.data.isFolded })),
+      batch
+    );
   }
 
   batch.update(handRef, handUpdate);
