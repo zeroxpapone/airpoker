@@ -203,16 +203,64 @@ button:active {
   box-shadow: 0 6px 18px rgba(59, 130, 246, 0.3);
 }
 
+.poker-btn-danger {
+  background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
+  color: #ffffff;
+  font-weight: 700;
+  border: none;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+.poker-btn-danger:hover:not(:disabled) {
+  box-shadow: 0 6px 18px rgba(239, 68, 68, 0.5);
+  filter: brightness(1.1);
+}
+
+.poker-btn-warning {
+  background: linear-gradient(135deg, #f97316 0%, #c2410c 100%);
+  color: #ffffff;
+  font-weight: 700;
+  border: none;
+  box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3);
+}
+.poker-btn-warning:hover:not(:disabled) {
+  box-shadow: 0 6px 18px rgba(249, 115, 22, 0.5);
+  filter: brightness(1.1);
+}
+
+.poker-btn-info {
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  color: #ffffff;
+  font-weight: 700;
+  border: none;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+.poker-btn-info:hover:not(:disabled) {
+  box-shadow: 0 6px 18px rgba(59, 130, 246, 0.5);
+  filter: brightness(1.1);
+}
+
+.poker-btn-success {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: var(--text-inverse);
+  font-weight: 700;
+  border: none;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+.poker-btn-success:hover:not(:disabled) {
+  box-shadow: 0 6px 18px rgba(16, 185, 129, 0.5);
+  filter: brightness(1.1);
+}
+
 /* --- Poker Table felt and components --- */
 
 .poker-felt {
   position: relative;
-  /* Constrain width to 95vw on mobile, 520px max, and restrict height to 54vh of viewport.
-     Since aspect-ratio is 1.12/1, width = height * 1.12, so max width from height is 54vh * 1.12 = 60vh approx. */
-  width: min(95vw, 54vh, 520px);
+  /* Constrain width to 95vw on mobile, 58vh max, and restrict height to 58vh of viewport.
+     Since aspect-ratio is 1.04/1, width = height * 1.04, so max width from height is 58vh * 1.04 = 60vh approx. */
+  width: min(95vw, 58vh, 520px);
   height: auto;
-  aspect-ratio: 1.12 / 1;
-  border-radius: 42% / 50%;
+  aspect-ratio: 1.04 / 1;
+  border-radius: 50%;
   background: radial-gradient(circle at center, #065f46 0%, #022c22 80%, #020617 100%);
   border: 10px solid #18181b; /* Metal/wood rail bumper */
   box-shadow: 
@@ -232,13 +280,14 @@ button:active {
   content: "";
   position: absolute;
   top: -15px; left: -15px; right: -15px; bottom: -15px;
-  border-radius: 42% / 50%;
+  border-radius: 50%;
   border: 3px solid rgba(255, 255, 255, 0.04);
   pointer-events: none;
 }
 
 /* Player Pods */
 .player-pod {
+  position: relative;
   width: 100%;
   box-sizing: border-box;
   border-radius: 12px;
@@ -1269,13 +1318,15 @@ input[type="password"]:focus {
 }
 .game-header {
   display: grid;
-  gap: 0.25rem;
-  padding-top: 3rem;
+  gap: 0.15rem;
+  padding-top: 0.8rem;
 }
 .game-title {
   font-size: 1.4rem;
   font-weight: 800;
   font-family: var(--font-display);
+  padding-right: 120px;
+  box-sizing: border-box;
 }
 .pots-indicator-container {
   display: flex;
@@ -1300,7 +1351,7 @@ input[type="password"]:focus {
   border: 1px solid rgba(74,222,128,0.25);
 }
 .game-controls-bar {
-  margin-top: 0.4rem;
+  margin-top: 0.2rem;
   display: flex;
   justify-content: flex-end;
   align-items: center;

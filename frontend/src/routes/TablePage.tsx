@@ -96,6 +96,37 @@ const Card = ({ card, hidden }: { card?: string, hidden?: boolean }) => {
   );
 };
 
+const PokerChip = ({ size = 16, style }: { size?: number; style?: React.CSSProperties }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    style={{ display: "inline-block", verticalAlign: "middle", ...style }}
+  >
+    {/* Outer circle - Dark slate/black base with gold border */}
+    <circle cx="12" cy="12" r="11" fill="#0f172a" stroke="#fbbf24" strokeWidth="1.2" />
+    {/* Outer stripes - Luxury gold dashed pattern */}
+    <circle cx="12" cy="12" r="9.5" stroke="#fbbf24" strokeWidth="1.2" strokeDasharray="3 2.5" opacity="0.9" />
+    {/* Inner circle - Dark inlay with gold border */}
+    <circle cx="12" cy="12" r="6.8" fill="#1e293b" stroke="#fbbf24" strokeWidth="0.8" />
+    <circle cx="12" cy="12" r="5.5" fill="#0f172a" />
+    {/* Center text "AP" in gold */}
+    <text
+      x="12"
+      y="15.2"
+      fill="#fbbf24"
+      fontSize="8"
+      fontWeight="900"
+      fontFamily="sans-serif"
+      textAnchor="middle"
+      letterSpacing="-0.5"
+    >
+      AP
+    </text>
+  </svg>
+);
 
 interface ExtendedHandData extends HandData {
   votingOpen?: boolean;
@@ -146,6 +177,34 @@ export default function TablePage() {
     const handleResize = () => setWindowSize({ width: window.innerWidth, height: window.innerHeight });
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
+    const originalOverflow = document.body.style.overflow;
+    const originalHeight = document.body.style.height;
+    const originalPosition = document.body.style.position;
+    const originalWidth = document.body.style.width;
+
+    document.body.style.overflow = "hidden";
+    document.body.style.height = "100dvh";
+    document.body.style.position = "fixed";
+    document.body.style.width = "100%";
+
+    const html = document.documentElement;
+    const originalHtmlOverflow = html.style.overflow;
+    const originalHtmlHeight = html.style.height;
+    html.style.overflow = "hidden";
+    html.style.height = "100dvh";
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.body.style.height = originalHeight;
+      document.body.style.position = originalPosition;
+      document.body.style.width = originalWidth;
+
+      html.style.overflow = originalHtmlOverflow;
+      html.style.height = originalHtmlHeight;
+    };
   }, []);
 
   const [timeRemainingStr, setTimeRemainingStr] = useState<string>("");
@@ -851,7 +910,7 @@ async function confirmEndGameAction() {
     setShowBetPanel(false);
   }
 
-  function renderRoleBadges(index: number) {
+  function renderRoleBadgesAbsolute(index: number, isOnRightSide: boolean) {
     if (!currentHand) return null;
 
     const badges: { type: string; label: string; className: string }[] = [];
@@ -867,8 +926,22 @@ async function confirmEndGameAction() {
 
     if (badges.length === 0) return null;
 
+    const absoluteStyle: React.CSSProperties = {
+      position: "absolute",
+      top: "-9px",
+      display: "flex",
+      gap: "0.15rem",
+      zIndex: 15
+    };
+
+    if (isOnRightSide) {
+      absoluteStyle.left = "6px";
+    } else {
+      absoluteStyle.right = "6px";
+    }
+
     return (
-      <div style={{ display: "flex", gap: "0.2rem", flexShrink: 0, marginLeft: "0.3rem" }}>
+      <div style={absoluteStyle}>
         {badges.map((b) => (
           <span key={b.type} className={b.className} title={b.label}>
             {b.label}
@@ -983,15 +1056,12 @@ async function handleConfirmWinners(potId: string) {
             </h1>
             <button
               onClick={() => setShowShareModal(true)}
+              className="poker-btn-secondary"
               style={{
                 padding: "0.4rem 0.8rem",
                 borderRadius: "0.5rem",
-                border: "1px solid #3b82f6",
-                backgroundColor: "rgba(59, 130, 246, 0.1)",
-                color: "#60a5fa",
                 cursor: "pointer",
                 fontSize: "0.85rem",
-                fontWeight: 600,
                 display: "flex",
                 alignItems: "center",
                 gap: "0.4rem"
@@ -1016,12 +1086,10 @@ async function handleConfirmWinners(potId: string) {
   </span>
   <button
     onClick={handleLeaveTable}
+    className="poker-btn-danger"
     style={{
       padding: "0.3rem 0.7rem",
       borderRadius: "999px",
-      border: "1px solid #4b5563",
-      backgroundColor: "transparent",
-      color: "#e5e7eb",
       cursor: "pointer",
       fontSize: "0.8rem"
     }}
@@ -1060,14 +1128,11 @@ async function handleConfirmWinners(potId: string) {
               <button
                 onClick={handleStartGame}
                 disabled={!allReady}
+                className={allReady ? "poker-btn-success" : "poker-btn-secondary"}
                 style={{
                   padding: "0.3rem 0.75rem",
                   borderRadius: "0.5rem",
-                  border: "none",
-                  cursor: allReady ? "pointer" : "default",
-                  backgroundColor: allReady ? "#22c55e" : "#4b5563",
-                  color: "#020617",
-                  fontWeight: 600
+                  cursor: allReady ? "pointer" : "default"
                 }}
               >
                 {t("table.lobbyStartGame")}
@@ -1134,15 +1199,16 @@ async function handleConfirmWinners(potId: string) {
                     <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
                     {isMe && (
                         <button
-                        onClick={() => handleToggleReady(p)}
-                        style={{
-                            ...smallButtonStyle,
-                            backgroundColor: p.isReady ? "#f97316" : "#22c55e",
-                            color: "#020617",
-                            fontWeight: 600
-                        }}
+                          onClick={() => handleToggleReady(p)}
+                          className={p.isReady ? "poker-btn-warning" : "poker-btn-success"}
+                          style={{
+                            padding: "0.3rem 0.6rem",
+                            borderRadius: "0.5rem",
+                            cursor: "pointer",
+                            fontSize: "0.8rem"
+                          }}
                         >
-                        {p.isReady ? t("table.notReady") : t("table.ready")}
+                          {p.isReady ? t("table.notReady") : t("table.ready")}
                         </button>
                     )}
 
@@ -1199,7 +1265,7 @@ async function handleConfirmWinners(potId: string) {
           <h1 className="game-title" id="game-table-title-label">
             {table.name}
           </h1>
-          <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: 0 }} id="game-table-info-label">
+          <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: 0, paddingRight: "120px", boxSizing: "border-box" }} id="game-table-info-label">
             {t("table.hand")} #{currentHand?.handNumber ?? "-"} •{" "}
             {t("table.blinds")} {table.smallBlind}/{table.bigBlind}
             {table?.mode === "TOURNAMENT" && (
@@ -1210,23 +1276,6 @@ async function handleConfirmWinners(potId: string) {
               </>
             )}
           </p>
-          {/* Indicatore Side Pots — visibile solo quando esistono più pot */}
-          {currentHand?.pots && currentHand.pots.length > 1 && (
-            <div className="pots-indicator-container" id="side-pots-box">
-              {currentHand.pots.map((pot, i) => (
-                <span
-                  key={pot.id}
-                  className={`pot-badge ${pot.settled ? "settled" : "unsettled"}`}
-                >
-                  {i === 0 ? "Main" : `Side ${i}`}: {pot.amount}
-                  {!pot.settled && pot.eligible.length > 0 && (
-                    <span style={{ opacity: 0.7, fontWeight: 400 }}> ({pot.eligible.length}👤)</span>
-                  )}
-                  {pot.settled && " ✓"}
-                </span>
-              ))}
-            </div>
-          )}
           <div className="game-controls-bar" id="game-table-controls-bar">
             <div className="game-controls-flex" id="game-table-controls-buttons">
               {table?.mode !== "TOURNAMENT" && (
@@ -1234,15 +1283,12 @@ async function handleConfirmWinners(potId: string) {
                   id="btn-table-toggle-sit"
                   onClick={handleToggleSittingOut}
                   disabled={!!disableSitToggle}
+                  className={myPlayer?.isSittingOut ? "poker-btn-success" : "poker-btn-warning"}
                   style={{
                     padding: "0.35rem 0.75rem",
                     borderRadius: "999px",
-                    border: "1px solid var(--color-warning)",
-                    backgroundColor: "transparent",
-                    color: disableSitToggle ? "var(--text-muted)" : "var(--color-warning)",
                     cursor: disableSitToggle ? "default" : "pointer",
                     fontSize: "0.8rem",
-                    fontWeight: 600,
                     opacity: disableSitToggle ? 0.5 : 1
                   }}
                 >
@@ -1254,16 +1300,11 @@ async function handleConfirmWinners(potId: string) {
                 <button
                   id="btn-table-end-game"
                   onClick={handleEndGame}
-                  className="poker-btn-primary"
+                  className="poker-btn-danger"
                   style={{
                     padding: "0.35rem 0.75rem",
                     borderRadius: "999px",
-                    border: "none",
-                    backgroundColor: "var(--color-danger)",
-                    color: "#ffffff",
-                    cursor: "pointer",
-                    fontWeight: 700,
-                    boxShadow: "0 2px 8px rgba(239, 68, 68, 0.3)"
+                    cursor: "pointer"
                   }}
                 >
                   {t("table.endGame")}
@@ -1315,8 +1356,8 @@ async function handleConfirmWinners(potId: string) {
               <span style={{ fontSize: "0.7rem", color: "rgba(255, 255, 255, 0.6)", textTransform: "uppercase", letterSpacing: "0.06em", display: "block" }}>
                 {t("table.pot")}
               </span>
-              <span style={{ fontSize: "1.3rem", fontWeight: 800, color: "var(--color-warning)", textShadow: "0 2px 4px rgba(0,0,0,0.6)" }}>
-                🪙 {currentHand?.pot ?? 0}
+              <span style={{ fontSize: "1.3rem", fontWeight: 800, color: "var(--color-warning)", textShadow: "0 2px 4px rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <PokerChip size={20} style={{ marginRight: "0.3rem" }} />{currentHand?.pot ?? 0}
               </span>
             </div>
 
@@ -1438,14 +1479,17 @@ async function handleConfirmWinners(potId: string) {
                         cursor: hasVirtualCardsDealt ? "pointer" : undefined
                       }}
                     >
-                      <div className={`player-pod-inner ${isOnRightSide ? "right-side" : ""}`} id={`player-pod-inner-${p.userId}`}>
-                        <span
-                          className="player-pod-name"
+                      {renderRoleBadgesAbsolute(index, isOnRightSide)}
+                      <div className="player-pod-inner" id={`player-pod-inner-${p.userId}`}>
+                        <div
+                          className={`player-pod-name ${isOnRightSide ? "right-side" : "left-side"}`}
                           id={`player-pod-name-${p.userId}`}
                           style={{
                             color: p.isSittingOut ? "var(--text-muted)" : p.isFolded ? "#6b7280" : isMe ? "var(--color-success)" : "var(--text-main)",
                             textDecoration: p.isFolded && !p.isSittingOut ? "line-through" : "none",
-                            textAlign: isOnRightSide ? "right" : "left"
+                            textAlign: isOnRightSide ? "right" : "left",
+                            display: "block",
+                            width: "100%"
                           }}
                         >
                           {p.isSittingOut && table?.mode === "TOURNAMENT" && p.stack === 0 && (
@@ -1454,12 +1498,16 @@ async function handleConfirmWinners(potId: string) {
                             </span>
                           )}
                           {p.displayName}
-                        </span>
-                        {renderRoleBadges(index)}
+                        </div>
                       </div>
                       <div
                         className={`player-pod-stack ${isOnRightSide ? "right-side" : "left-side"}`}
                         id={`player-pod-stack-${p.userId}`}
+                        style={{
+                          textAlign: isOnRightSide ? "right" : "left",
+                          display: "block",
+                          width: "100%"
+                        }}
                       >
                         {p.stack}
                         {votingOpen && myVoteTargetId === p.userId && ` • ${t("table.yourChoice")}`}
@@ -1498,7 +1546,7 @@ async function handleConfirmWinners(potId: string) {
                           whiteSpace: "nowrap"
                         }}
                       >
-                        🪙 {roundBet}
+                        <PokerChip size={14} style={{ marginRight: "0.2rem" }} />{roundBet}
                       </div>
                     )}
 
@@ -1671,11 +1719,12 @@ async function handleConfirmWinners(potId: string) {
                     id="btn-action-fold"
                     disabled={!isMyTurn || actionLoading}
                     onClick={() => setShowFoldConfirm(true)}
+                    className={isMyTurn ? "poker-btn-danger" : ""}
                     style={{
                       ...pillActionButton,
-                      backgroundColor: isMyTurn ? "#ef4444" : "#ef444433",
-                      color: isMyTurn ? "#f8fafc" : "rgba(248, 250, 252, 0.4)",
-                      boxShadow: isMyTurn ? "0 4px 12px rgba(239, 68, 68, 0.25)" : "none",
+                      backgroundColor: isMyTurn ? undefined : "#ef444433",
+                      color: isMyTurn ? undefined : "rgba(248, 250, 252, 0.4)",
+                      boxShadow: isMyTurn ? undefined : "none",
                       cursor: isMyTurn && !actionLoading ? "pointer" : "default"
                     }}
                   >
@@ -1689,22 +1738,18 @@ async function handleConfirmWinners(potId: string) {
                     onClick={() =>
                       canCall ? doAction("CALL") : canCheck ? doAction("CHECK") : null
                     }
+                    className={isMyTurn && (canCheck || canCall) ? (canCall ? "poker-btn-warning" : "poker-btn-info") : ""}
                     style={{
                       flex: 1,
                       padding: "0.6rem 0.9rem",
                       borderRadius: "999px",
-                      border: "none",
+                      border: isMyTurn && (canCheck || canCall) ? undefined : "none",
                       cursor: isMyTurn && (canCheck || canCall) && !actionLoading ? "pointer" : "default",
-                      backgroundColor: isMyTurn && (canCheck || canCall)
-                        ? (canCall ? "#f59e0b" : "#3b82f6")
-                        : "#4b556333",
-                      color: isMyTurn && (canCheck || canCall) ? "#f8fafc" : "rgba(248, 250, 252, 0.4)",
-                      fontWeight: 600,
+                      backgroundColor: isMyTurn && (canCheck || canCall) ? undefined : "#4b556333",
+                      color: isMyTurn && (canCheck || canCall) ? undefined : "rgba(248, 250, 252, 0.4)",
                       fontSize: "0.9rem",
                       textAlign: "center",
-                      boxShadow: isMyTurn && (canCheck || canCall)
-                        ? (canCall ? "0 4px 12px rgba(245, 158, 11, 0.25)" : "0 4px 12px rgba(59, 130, 246, 0.25)")
-                        : "none",
+                      boxShadow: isMyTurn && (canCheck || canCall) ? undefined : "none",
                       transition: "all 0.2s"
                     }}
                   >
@@ -1724,11 +1769,12 @@ async function handleConfirmWinners(potId: string) {
                     id="btn-action-bet-raise"
                     disabled={!isMyTurn || actionLoading || !canBetOrRaise}
                     onClick={openBetPanel}
+                    className={isMyTurn && canBetOrRaise ? "poker-btn-success" : ""}
                     style={{
                       ...pillActionButton,
-                      backgroundColor: isMyTurn && canBetOrRaise ? "#22c55e" : "#22c55e33",
-                      color: isMyTurn && canBetOrRaise ? "#020617" : "rgba(248, 250, 252, 0.4)",
-                      boxShadow: isMyTurn && canBetOrRaise ? "0 4px 12px rgba(34, 197, 94, 0.25)" : "none",
+                      backgroundColor: isMyTurn && canBetOrRaise ? undefined : "#22c55e33",
+                      color: isMyTurn && canBetOrRaise ? undefined : "rgba(248, 250, 252, 0.4)",
+                      boxShadow: isMyTurn && canBetOrRaise ? undefined : "none",
                       cursor: isMyTurn && canBetOrRaise && !actionLoading ? "pointer" : "default"
                     }}
                   >
@@ -1749,7 +1795,7 @@ async function handleConfirmWinners(potId: string) {
               bottom: 0,
               left: 0,
               right: 0,
-              zIndex: 60,
+              zIndex: 120,
               padding: "1.5rem",
               paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))",
               borderTopLeftRadius: "1.5rem",
@@ -1837,15 +1883,12 @@ async function handleConfirmWinners(potId: string) {
             >
               <button
                 onClick={closeBetPanel}
+                className="poker-btn-secondary"
                 style={{
                   flex: 1,
                   padding: "0.8rem 1rem",
                   borderRadius: "999px",
-                  border: "1px solid #4b5563",
-                  backgroundColor: "transparent",
-                  color: "#e5e7eb",
                   fontSize: "1rem",
-                  fontWeight: 600,
                   cursor: "pointer"
                 }}
               >
@@ -1854,14 +1897,11 @@ async function handleConfirmWinners(potId: string) {
               <button
                 onClick={confirmBet}
                 disabled={actionLoading}
+                className="poker-btn-success"
                 style={{
                   flex: 1,
                   padding: "0.8rem 1rem",
                   borderRadius: "999px",
-                  border: "none",
-                  backgroundColor: "#22c55e",
-                  color: "#020617",
-                  fontWeight: 700,
                   fontSize: "1rem",
                   cursor: "pointer"
                 }}
@@ -2031,16 +2071,13 @@ async function handleConfirmWinners(potId: string) {
 
         <button
           onClick={() => navigate("/home")}
+          className="poker-btn-success"
           style={{
             marginTop: "0.5rem",
             width: "100%",
             padding: "0.7rem 1rem",
             borderRadius: "999px",
-            border: "none",
             cursor: "pointer",
-            backgroundColor: "#22c55e",
-            color: "#020617",
-            fontWeight: 700,
             fontSize: "0.95rem"
           }}
         >
@@ -2092,8 +2129,9 @@ async function handleConfirmWinners(potId: string) {
               alert(t("table.linkCopied"));
             }
           }}
+          className="poker-btn-info"
           style={{
-            background: "linear-gradient(135deg, #3b82f6, #2563eb)", color: "#ffffff", border: "none", padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontWeight: 700, fontSize: "0.95rem"
+            padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontSize: "0.95rem"
           }}
         >
           {typeof navigator.share === "function" ? t("table.shareLink") : t("table.copyLink")}
@@ -2129,16 +2167,18 @@ async function handleConfirmWinners(potId: string) {
               setShowFoldConfirm(false);
               doAction("FOLD");
             }}
+            className="poker-btn-danger"
             style={{
-              background: "#ef4444", color: "#ffffff", border: "none", padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontWeight: 700, fontSize: "0.95rem"
+              padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontSize: "0.95rem"
             }}
           >
             {t("table.foldYes")}
           </button>
           <button 
             onClick={() => setShowFoldConfirm(false)}
+            className="poker-btn-secondary"
             style={{
-              background: "transparent", color: "#9ca3af", border: "1px solid #374151", padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontWeight: 600, fontSize: "0.95rem"
+              padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontSize: "0.95rem"
             }}
           >
             {t("table.foldNo")}
@@ -2165,16 +2205,18 @@ async function handleConfirmWinners(potId: string) {
         <div style={{ display: "flex", flexDirection: "column", gap: "0.8rem", marginTop: "0.5rem" }}>
           <button 
             onClick={confirmEndGameAction}
+            className="poker-btn-danger"
             style={{
-              background: "#ef4444", color: "#ffffff", border: "none", padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontWeight: 700, fontSize: "0.95rem"
+              padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontSize: "0.95rem"
             }}
           >
             {t("table.endGameYes")}
           </button>
           <button 
             onClick={() => setShowEndGameConfirm(false)}
+            className="poker-btn-secondary"
             style={{
-              background: "transparent", color: "#9ca3af", border: "1px solid #374151", padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontWeight: 600, fontSize: "0.95rem"
+              padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontSize: "0.95rem"
             }}
           >
             {t("table.endGameNo")}
@@ -2214,16 +2256,18 @@ async function handleConfirmWinners(potId: string) {
                 console.error(e);
               }
             }}
+            className="poker-btn-warning"
             style={{
-              background: "#eab308", color: "#000000", border: "none", padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontWeight: 700, fontSize: "0.95rem"
+              padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontSize: "0.95rem"
             }}
           >
             {t("table.transferHost")}
           </button>
           <button 
             onClick={() => setTransferHostConfirmTarget(null)}
+            className="poker-btn-secondary"
             style={{
-              background: "transparent", color: "#9ca3af", border: "1px solid #374151", padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontWeight: 600, fontSize: "0.95rem"
+              padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontSize: "0.95rem"
             }}
           >
             {t("table.cancel") || "Annulla"}
@@ -2262,13 +2306,15 @@ async function handleConfirmWinners(potId: string) {
                 setForceFoldConfirmTarget(null);
               }
             }}
-            style={{ background: "#ef4444", color: "#fff", border: "none", padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontWeight: 700, fontSize: "0.95rem" }}
+            className="poker-btn-danger"
+            style={{ padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontSize: "0.95rem" }}
           >
             {t("table.forceFold")}
           </button>
           <button
             onClick={() => setForceFoldConfirmTarget(null)}
-            style={{ background: "transparent", color: "#9ca3af", border: "1px solid #374151", padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontWeight: 600, fontSize: "0.95rem" }}
+            className="poker-btn-secondary"
+            style={{ padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontSize: "0.95rem" }}
           >
             {t("table.cancel")}
           </button>
@@ -2378,14 +2424,19 @@ async function handleConfirmWinners(potId: string) {
       stageModalFooter = (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", marginTop: "0.5rem", paddingTop: "0.75rem", borderTop: "1px solid #1e293b" }}>
           {isHost && (
-            <button onClick={handleNextHand} style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem", backgroundColor: "#22c55e" }}>
+            <button
+              onClick={handleNextHand}
+              className="poker-btn-success"
+              style={{ width: "100%", padding: "0.8rem", fontSize: "1rem", borderRadius: "999px" }}
+            >
               {t("table.nextHand")}
             </button>
           )}
           {isHost && table?.mode !== "TOURNAMENT" && (
             <button
               onClick={handleEndGame}
-              style={{ width: "100%", padding: "0.65rem", borderRadius: "999px", border: "none", backgroundColor: "#ef4444", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.9rem" }}
+              className="poker-btn-danger"
+              style={{ width: "100%", padding: "0.65rem", borderRadius: "999px", cursor: "pointer", fontSize: "0.95rem" }}
             >
               {t("table.endGame")}
             </button>
@@ -2393,7 +2444,8 @@ async function handleConfirmWinners(potId: string) {
           {isHost && (
             <button
               onClick={() => setShowSettings(s => !s)}
-              style={{ width: "100%", padding: "0.65rem", borderRadius: "999px", border: "1px solid #4b5563", backgroundColor: "transparent", color: "#94a3b8", fontWeight: 600, cursor: "pointer", fontSize: "0.9rem" }}
+              className="poker-btn-secondary"
+              style={{ width: "100%", padding: "0.65rem", borderRadius: "999px", cursor: "pointer", fontSize: "0.95rem" }}
             >
               ⚙️ {t("table.hostSettings")}
             </button>
@@ -2403,7 +2455,8 @@ async function handleConfirmWinners(potId: string) {
             <button
               onClick={handleToggleSittingOut}
               disabled={!!disableSitToggle}
-              style={{ width: "100%", padding: "0.65rem", borderRadius: "999px", border: "1px solid #f59e0b", backgroundColor: "transparent", color: disableSitToggle ? "#6b7280" : "#fcd34d", fontWeight: 600, cursor: disableSitToggle ? "default" : "pointer", fontSize: "0.9rem", opacity: disableSitToggle ? 0.5 : 1 }}
+              className={myPlayer?.isSittingOut ? "poker-btn-success" : "poker-btn-warning"}
+              style={{ width: "100%", padding: "0.65rem", borderRadius: "999px", cursor: disableSitToggle ? "default" : "pointer", fontSize: "0.95rem", opacity: disableSitToggle ? 0.5 : 1 }}
             >
               {myPlayer?.isSittingOut ? t("table.sitDown") : t("table.standUp")}
             </button>
@@ -2453,7 +2506,8 @@ async function handleConfirmWinners(potId: string) {
           <button
             onClick={() => handleConfirmWinners(activePot?.id || "")}
             disabled={selectedWinners.length === 0 || actionLoading}
-            style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem", opacity: selectedWinners.length === 0 ? 0.5 : 1, backgroundColor: selectedWinners.length > 0 ? "#22c55e" : "#4b5563" }}
+            className={selectedWinners.length > 0 ? "poker-btn-success" : "poker-btn-secondary"}
+            style={{ width: "100%", padding: "0.8rem", fontSize: "1rem", opacity: selectedWinners.length === 0 ? 0.5 : 1, borderRadius: "999px" }}
           >
             {selectedWinners.length > 1 ? t("table.confirmWinners") : t("table.confirmWinner")} ({selectedWinners.length})
           </button>
@@ -2465,19 +2519,43 @@ async function handleConfirmWinners(potId: string) {
         stageModalTitle = "Flop";
         stageModalContent = <div style={{ color: "#facc15", fontWeight: 700, fontSize: "1.1rem" }}>{currentHand.isVirtualCards ? t("table.virtualFlop") : t("table.dealFlop")}</div>;
         if (isHost) {
-          stageModalAction = <button onClick={handleAdvanceStage} style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem" }}>{t("table.continueFlop")}</button>;
+          stageModalAction = (
+            <button
+              onClick={handleAdvanceStage}
+              className="poker-btn-info"
+              style={{ width: "100%", padding: "0.8rem", fontSize: "1rem", borderRadius: "999px" }}
+            >
+              {t("table.continueFlop")}
+            </button>
+          );
         }
       } else if (currentHand.stage === "FLOP") {
         stageModalTitle = "Turn";
         stageModalContent = <div style={{ color: "#facc15", fontWeight: 700, fontSize: "1.1rem" }}>{currentHand.isVirtualCards ? t("table.virtualTurn") : t("table.dealTurn")}</div>;
         if (isHost) {
-          stageModalAction = <button onClick={handleAdvanceStage} style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem" }}>{t("table.continueTurn")}</button>;
+          stageModalAction = (
+            <button
+              onClick={handleAdvanceStage}
+              className="poker-btn-info"
+              style={{ width: "100%", padding: "0.8rem", fontSize: "1rem", borderRadius: "999px" }}
+            >
+              {t("table.continueTurn")}
+            </button>
+          );
         }
       } else if (currentHand.stage === "TURN") {
         stageModalTitle = "River";
         stageModalContent = <div style={{ color: "#facc15", fontWeight: 700, fontSize: "1.1rem" }}>{currentHand.isVirtualCards ? t("table.virtualRiver") : t("table.dealRiver")}</div>;
         if (isHost) {
-          stageModalAction = <button onClick={handleAdvanceStage} style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem" }}>{t("table.continueRiver")}</button>;
+          stageModalAction = (
+            <button
+              onClick={handleAdvanceStage}
+              className="poker-btn-info"
+              style={{ width: "100%", padding: "0.8rem", fontSize: "1rem", borderRadius: "999px" }}
+            >
+              {t("table.continueRiver")}
+            </button>
+          );
         }
       }
     } else if (blindsPopupVisible && currentHand.stage === "PREFLOP") {
@@ -2494,7 +2572,15 @@ async function handleConfirmWinners(potId: string) {
         </div>
       );
       if (isHost) {
-        stageModalAction = <button onClick={handleCloseBlindsPopup} style={{ ...pillActionButton, width: "100%", padding: "0.8rem", fontSize: "1rem" }}>{t("table.startNow")}</button>;
+        stageModalAction = (
+          <button
+            onClick={handleCloseBlindsPopup}
+            className="poker-btn-success"
+            style={{ width: "100%", padding: "0.8rem", fontSize: "1rem", borderRadius: "999px" }}
+          >
+            {t("table.startNow")}
+          </button>
+        );
       }
     }
   }

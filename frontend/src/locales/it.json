@@ -276,6 +276,7 @@
     "btnCreateTable": "Crea Nuovo Tavolo",
     "inputJoinPlaceholder": "Codice tavolo (es. 74yme)",
     "btnJoinTable": "Entra",
+    "btnScanQr": "Scannerizza QR",
     "myStats": "Le Mie Statistiche",
     "handsPlayed": "Mani Giocate",
     "winRate": "Win Rate",

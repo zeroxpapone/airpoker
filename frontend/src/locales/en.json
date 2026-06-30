@@ -277,6 +277,7 @@
     "btnCreateTable": "Create New Table",
     "inputJoinPlaceholder": "Table code (ex. 74yme)",
     "btnJoinTable": "Join",
+    "btnScanQr": "Scan QR",
     "myStats": "My Statistics",
     "handsPlayed": "Hands Played",
     "winRate": "Win Rate",

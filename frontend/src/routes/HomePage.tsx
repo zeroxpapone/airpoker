@@ -18,7 +18,8 @@ import {
   Sparkles, 
   User as UserIcon,
   Crown,
-  KeyRound
+  KeyRound,
+  Camera
 } from "lucide-react";
 import { 
   collection, 
@@ -422,32 +423,54 @@ export default function HomePage() {
               {t("dashboard.btnCreateTable")}
             </button>
 
-            <form onSubmit={handleJoinTable} style={{ display: "flex", gap: "0.5rem" }}>
-              <input
-                id="input-join-code"
-                type="text"
-                placeholder={t("dashboard.inputJoinPlaceholder") || "Codice tavolo..."}
-                value={joinCode}
-                onChange={(e) => setJoinCode(e.target.value)}
-                style={{ flex: 1, borderRadius: "0.75rem", padding: "0.75rem 0.9rem", fontSize: "0.9rem" }}
-              />
+            <form onSubmit={handleJoinTable} style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <input
+                  id="input-join-code"
+                  type="text"
+                  placeholder={t("dashboard.inputJoinPlaceholder") || "Codice tavolo..."}
+                  value={joinCode}
+                  onChange={(e) => setJoinCode(e.target.value)}
+                  style={{ flex: 1, borderRadius: "0.75rem", padding: "0.75rem 0.9rem", fontSize: "0.9rem" }}
+                />
+                <button
+                  id="btn-submit-join-code"
+                  type="submit"
+                  className="poker-btn-secondary"
+                  disabled={!joinCode.trim()}
+                  style={{
+                    padding: "0.75rem 1.2rem",
+                    borderRadius: "0.75rem",
+                    fontWeight: 700,
+                    fontSize: "0.9rem",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.3rem"
+                  }}
+                >
+                  <Users size={18} />
+                  {t("dashboard.btnJoinTable")}
+                </button>
+              </div>
               <button
-                id="btn-submit-join-code"
-                type="submit"
+                type="button"
+                id="btn-scan-qr"
+                onClick={() => navigate("/join")}
                 className="poker-btn-secondary"
-                disabled={!joinCode.trim()}
                 style={{
-                  padding: "0.75rem 1.2rem",
+                  width: "100%",
+                  padding: "0.75rem",
                   borderRadius: "0.75rem",
                   fontWeight: 700,
                   fontSize: "0.9rem",
                   display: "flex",
                   alignItems: "center",
-                  gap: "0.3rem"
+                  justifyContent: "center",
+                  gap: "0.5rem"
                 }}
               >
-                <Users size={18} />
-                {t("dashboard.btnJoinTable")}
+                <Camera size={18} />
+                {t("dashboard.btnScanQr")}
               </button>
             </form>
           </div>
