@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "target": "airpoker",
     "public": "frontend/dist",
     "ignore": [
       "firebase.json",

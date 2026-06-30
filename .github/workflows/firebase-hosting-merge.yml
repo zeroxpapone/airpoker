@@ -34,3 +34,4 @@ jobs:
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_AIRPOKER_84425 }}
           channelId: live
           projectId: airpoker-84425
+          target: airpoker

@@ -1,5 +1,14 @@
 {
   "projects": {
     "default": "airpoker-84425"
+  },
+  "targets": {
+    "airpoker-84425": {
+      "hosting": {
+        "airpoker": [
+          "airpoker-84425"
+        ]
+      }
+    }
   }
 }
