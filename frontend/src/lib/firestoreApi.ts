@@ -9,7 +9,8 @@ import {
   orderBy,
   updateDoc,
   writeBatch,
-  where
+  where,
+  increment
 } from "firebase/firestore";
 import type { User } from "firebase/auth";
 import { db } from "./firebase";
@@ -443,16 +444,43 @@ export async function setPlayerReady(
 }
 
 export async function leaveTable(tableId: string, user: User) {
+  const tableRef = doc(db, "tables", tableId);
+  const tableSnap = await getDoc(tableRef);
+
   const playersRef = collection(db, "tables", tableId, "players");
   const q = query(playersRef, where("userId", "==", user.uid));
   const snap = await getDocs(q);
 
   const batch = writeBatch(db);
+  let totalTimeToAdd = 0;
+
   snap.forEach((docSnap) => {
+    const p = docSnap.data();
+    if (tableSnap.exists() && tableSnap.data().state === "IN_GAME") {
+      const now = Date.now();
+      const elapsed = p.satAt ? Math.floor((now - p.satAt) / 1000) : 0;
+      totalTimeToAdd = (p.accumulatedTime || 0) + elapsed;
+    }
     batch.delete(docSnap.ref);
   });
 
   await batch.commit();
+
+  if (totalTimeToAdd > 0) {
+    try {
+      const userDocRef = doc(db, "users", user.uid);
+      const userSnap = await getDoc(userDocRef);
+      if (userSnap.exists()) {
+        const stats = userSnap.data().stats || {};
+        const prevSeconds = stats.timePlayedSeconds || 0;
+        await updateDoc(userDocRef, {
+          "stats.timePlayedSeconds": prevSeconds + totalTimeToAdd
+        });
+      }
+    } catch (e) {
+      console.error("Error updating user timePlayedSeconds on leaveTable:", e);
+    }
+  }
 }
 
 /**
@@ -685,7 +713,8 @@ export async function startGame(tableId: string) {
 
   const tableUpdate: any = {
     state: "IN_GAME",
-    currentHandId: handRef.id
+    currentHandId: handRef.id,
+    gameStartedAt: serverTimestamp()
   };
 
   if (tableData.mode === "TOURNAMENT") {
@@ -710,7 +739,9 @@ export async function startGame(tableId: string) {
       isFolded: !!p.isSittingOut || newStack === 0,
       isSittingOut: p.isSittingOut,
       stack: newStack,
-      isReady: false
+      isReady: false,
+      satAt: p.isSittingOut ? null : Date.now(),
+      accumulatedTime: 0
     });
   });
 
@@ -743,8 +774,32 @@ export async function setSittingOut(
   user: User,
   isSittingOut: boolean
 ) {
+  const tableRef = doc(db, "tables", tableId);
+  const tableSnap = await getDoc(tableRef);
+  if (!tableSnap.exists()) throw new Error("Tavolo inesistente.");
+  const tableData = tableSnap.data() as any;
+
   const playerRef = doc(db, "tables", tableId, "players", user.uid);
-  await setDoc(playerRef, { isSittingOut }, { merge: true });
+  const playerSnap = await getDoc(playerRef);
+  if (!playerSnap.exists()) throw new Error("Giocatore non trovato.");
+  const playerData = playerSnap.data() as any;
+
+  const updates: any = { isSittingOut };
+
+  if (tableData.state === "IN_GAME") {
+    const now = Date.now();
+    if (isSittingOut) {
+      if (playerData.satAt) {
+        const elapsed = Math.floor((now - playerData.satAt) / 1000);
+        updates.accumulatedTime = (playerData.accumulatedTime || 0) + elapsed;
+        updates.satAt = null;
+      }
+    } else {
+      updates.satAt = now;
+    }
+  }
+
+  await updateDoc(playerRef, updates);
 }
 
 /**
@@ -854,18 +909,42 @@ export async function endGame(tableId: string) {
   const tableData = tableSnap.data() as any;
 
   const playersSnap = await getDocs(collection(db, "tables", tableId, "players"));
-  const playersData = playersSnap.docs.map((d) => {
+  const userSnaps: Record<string, any> = {};
+
+  const playersData = await Promise.all(playersSnap.docs.map(async (d) => {
     const p = d.data();
     const finalStack = Number(p.stack) || 0;
     const initialStack = Number(tableData.initialStack) || 0;
+    const totalBuyIn = Number(p.totalBuyIn) || initialStack;
+
+    // Check if player is registered in users collection
+    const userDocRef = doc(db, "users", p.userId);
+    const userSnap = await getDoc(userDocRef);
+    const isRegistered = userSnap.exists() && userSnap.data().isRegistered === true;
+    const usernameVal = userSnap.exists() ? userSnap.data().username : null;
+
+    if (userSnap.exists()) {
+      userSnaps[p.userId] = userSnap.data();
+    }
+
+    // Calculate sitting time for this game session
+    let elapsedSeconds = 0;
+    if (tableData.state === "IN_GAME" && p.satAt) {
+      elapsedSeconds = Math.floor((Date.now() - p.satAt) / 1000);
+    }
+    const sessionTimeSeated = (p.accumulatedTime || 0) + elapsedSeconds;
+
     return {
       userId: p.userId,
       displayName: p.displayName,
+      username: usernameVal,
+      isRegistered: isRegistered,
       startingStack: initialStack,
       finalStack: finalStack,
-      netProfit: finalStack - initialStack
+      netProfit: finalStack - totalBuyIn,
+      sessionTimeSeated
     };
-  });
+  }));
 
   const playerIds = playersData.map((p) => p.userId);
 
@@ -886,22 +965,26 @@ export async function endGame(tableId: string) {
     players: playersData
   });
 
-  // Aggiorna sessionsPlayed per ciascun utente registrato
+  // Aggiorna sessionsPlayed e timePlayedSeconds per ciascun utente registrato
   for (const p of playersData) {
-    const userDocRef = doc(db, "users", p.userId);
-    try {
-      const userSnap = await getDoc(userDocRef);
-      if (userSnap.exists()) {
-        const userData = userSnap.data();
-        const currentStats = userData.stats || {};
-        batch.update(userDocRef, {
-          "stats.sessionsPlayed": (currentStats.sessionsPlayed || 0) + 1
-        });
-      }
-    } catch (e) {
-      console.error("Errore nell'aggiornamento della sessione utente:", e);
+    if (userSnaps[p.userId]) {
+      const userDocRef = doc(db, "users", p.userId);
+      const currentStats = userSnaps[p.userId].stats || {};
+      const prevSeconds = currentStats.timePlayedSeconds || 0;
+      batch.update(userDocRef, {
+        "stats.sessionsPlayed": (currentStats.sessionsPlayed || 0) + 1,
+        "stats.timePlayedSeconds": prevSeconds + (p.sessionTimeSeated || 0)
+      });
     }
   }
+
+  // Resetta i contatori temporanei sui player document del tavolo
+  playersSnap.docs.forEach((docSnap) => {
+    batch.update(docSnap.ref, {
+      satAt: null,
+      accumulatedTime: 0
+    });
+  });
 
   await batch.commit();
 }
@@ -1597,6 +1680,53 @@ export async function playerAction(
       players.map(p => ({ id: p.userId, isFolded: !!p.isFolded })),
       batch
     );
+  }
+
+  // Aggiorna le statistiche delle azioni dell'utente registrato
+  const userDocRef = doc(db, "users", user.uid);
+  const userDocSnap = await getDoc(userDocRef);
+  if (userDocSnap.exists()) {
+    const isAggressive = action === "BET";
+    const stage = handData.stage || "PREFLOP";
+    
+    const updates: Record<string, any> = {};
+    updates["stats.totalActions"] = increment(1);
+    if (isAggressive) {
+      updates["stats.aggressiveActions"] = increment(1);
+    }
+    
+    if (stage === "PREFLOP") {
+      updates["stats.stagePreflopCount"] = increment(1);
+      
+      const sbSize = Number(tableData.smallBlind) || 0;
+      const bbSize = Number(tableData.bigBlind) || 0;
+      const currentContrib = handData.handContributions?.[user.uid] || 0;
+      const isSB = currentPlayer.seatIndex === handData.smallBlindIndex;
+      const isBB = currentPlayer.seatIndex === handData.bigBlindIndex;
+      
+      let isVpipAction = false;
+      if (action === "CALL" || action === "BET") {
+        if (!isSB && !isBB && currentContrib === 0) {
+          isVpipAction = true;
+        } else if (isSB && currentContrib <= sbSize) {
+          isVpipAction = true;
+        } else if (isBB && currentContrib <= bbSize) {
+          isVpipAction = true;
+        }
+      }
+      
+      if (isVpipAction) {
+        updates["stats.vpipCount"] = increment(1);
+      }
+    } else if (stage === "FLOP") {
+      updates["stats.stageFlopCount"] = increment(1);
+    } else if (stage === "TURN") {
+      updates["stats.stageTurnCount"] = increment(1);
+    } else if (stage === "RIVER") {
+      updates["stats.stageRiverCount"] = increment(1);
+    }
+    
+    batch.update(userDocRef, updates);
   }
 
   batch.update(handRef, handUpdate);

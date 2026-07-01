@@ -8,7 +8,8 @@ import {
   onSnapshot,
   orderBy,
   query,
-  updateDoc
+  updateDoc,
+  serverTimestamp
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../hooks/useAuth";
@@ -47,6 +48,7 @@ interface TableData {
   currentLevelIndex?: number;
   levelStartedAt?: any;
   isVirtualCards?: boolean;
+  gameStartedAt?: any;
 }
 
 
@@ -149,6 +151,33 @@ export default function TablePage() {
   const tableId = rawTableId?.toLowerCase();
   const { user } = useAuth();
 
+  // Presence heartbeat inside TablePage
+  useEffect(() => {
+    if (!user || !tableId) return;
+
+    const updatePresence = () => {
+      updateDoc(doc(db, "users", user.uid), {
+        "presence.status": "ONLINE",
+        "presence.location": "TABLE",
+        "presence.tableId": tableId,
+        "presence.lastActive": serverTimestamp()
+      }).catch(() => {
+        // Safe to ignore if user document doesn't exist (e.g. guest user)
+      });
+    };
+
+    updatePresence();
+    const interval = setInterval(updatePresence, 30000);
+
+    return () => {
+      clearInterval(interval);
+      updateDoc(doc(db, "users", user.uid), {
+        "presence.location": null,
+        "presence.tableId": null
+      }).catch(() => {});
+    };
+  }, [user, tableId]);
+
   const [selectedWinners, setSelectedWinners] = useState<string[]>([]);
   const [table, setTable] = useState<TableData | null>(null);
   const [players, setPlayers] = useState<PlayerData[]>([]);
@@ -178,6 +207,32 @@ export default function TablePage() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  // Session timer: derives elapsed time from server-side gameStartedAt timestamp
+  const [sessionElapsed, setSessionElapsed] = useState<string>("");
+  useEffect(() => {
+    if (!table || table.state !== "IN_GAME") {
+      setSessionElapsed("");
+      return;
+    }
+    // Use gameStartedAt if available, otherwise fall back to createdAt
+    const tsField = table.gameStartedAt || table.createdAt;
+    if (!tsField) {
+      setSessionElapsed("");
+      return;
+    }
+    // Firestore Timestamp → epoch ms
+    const startMs = tsField.toDate ? tsField.toDate().getTime() : tsField;
+    const tick = () => {
+      const diff = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
+      const m = String(Math.floor(diff / 60)).padStart(2, "0");
+      const s = String(diff % 60).padStart(2, "0");
+      setSessionElapsed(`${m}:${s}`);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [table?.state, table?.gameStartedAt, table?.createdAt]);
 
   useEffect(() => {
     const originalOverflow = document.body.style.overflow;
@@ -294,7 +349,8 @@ export default function TablePage() {
             tournamentConfig: data.tournamentConfig ?? undefined,
             levelStartedAt: data.levelStartedAt ?? undefined,
             currentLevelIndex: data.currentLevelIndex ?? 0,
-            isVirtualCards: !!data.isVirtualCards
+            isVirtualCards: !!data.isVirtualCards,
+            gameStartedAt: data.gameStartedAt ?? null
         });
 
         setLoading(false);
@@ -1268,6 +1324,12 @@ async function handleConfirmWinners(potId: string) {
           <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: 0, paddingRight: "120px", boxSizing: "border-box" }} id="game-table-info-label">
             {t("table.hand")} #{currentHand?.handNumber ?? "-"} •{" "}
             {t("table.blinds")} {table.smallBlind}/{table.bigBlind}
+            {sessionElapsed && (
+              <>
+                {" • "}
+                <span style={{ fontVariantNumeric: "tabular-nums" }}>⏱ {sessionElapsed}</span>
+              </>
+            )}
             {table?.mode === "TOURNAMENT" && (
               <>
                 {" • "}

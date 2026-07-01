@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useRef } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useTranslation } from "react-i18next";
 import { 
@@ -11,14 +11,17 @@ import {
    Check, 
    AlertCircle,
    TrendingUp,
-   Award
+   Award,
+   Upload
 } from "lucide-react";
-import { doc, getDoc, runTransaction } from "firebase/firestore";
+import { doc, getDoc, runTransaction, updateDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
+import AdvancedStats from "../components/AdvancedStats";
 
 export default function ProfilePage() {
-  const { user, username, isRegisteredUser } = useAuth();
+  const { user, username, isRegisteredUser, photoURL, updatePhotoURL } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { t } = useTranslation();
 
   const [stats, setStats] = useState({
@@ -28,7 +31,15 @@ export default function ProfilePage() {
     totalChipsLost: 0,
     netProfit: 0,
     sessionsPlayed: 0,
+    timePlayedSeconds: 0,
     bestHandName: "",
+    vpipCount: 0,
+    totalActions: 0,
+    aggressiveActions: 0,
+    stagePreflopCount: 0,
+    stageFlopCount: 0,
+    stageTurnCount: 0,
+    stageRiverCount: 0,
     createdAt: null as any
   });
 
@@ -36,6 +47,31 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const [photoInput, setPhotoInput] = useState("");
+  const [loadingPhoto, setLoadingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [photoSuccess, setPhotoSuccess] = useState<string | null>(null);
+
+  const [loadingReset, setLoadingReset] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetSuccess, setResetSuccess] = useState<string | null>(null);
+
+  const advancedStatsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (photoURL) {
+      setPhotoInput(photoURL);
+    }
+  }, [photoURL]);
+
+  useEffect(() => {
+    if (searchParams.get("tab") === "stats") {
+      setTimeout(() => {
+        advancedStatsRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 300);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (!isRegisteredUser) {
@@ -61,7 +97,15 @@ export default function ProfilePage() {
               totalChipsLost: data.stats.totalChipsLost || 0,
               netProfit: data.stats.netProfit || 0,
               sessionsPlayed: data.stats.sessionsPlayed || 0,
+              timePlayedSeconds: data.stats.timePlayedSeconds || 0,
               bestHandName: data.stats.bestHandName || "Nessuna",
+              vpipCount: data.stats.vpipCount || 0,
+              totalActions: data.stats.totalActions || 0,
+              aggressiveActions: data.stats.aggressiveActions || 0,
+              stagePreflopCount: data.stats.stagePreflopCount || 0,
+              stageFlopCount: data.stats.stageFlopCount || 0,
+              stageTurnCount: data.stats.stageTurnCount || 0,
+              stageRiverCount: data.stats.stageRiverCount || 0,
               createdAt: data.createdAt
             });
           }
@@ -133,6 +177,131 @@ export default function ProfilePage() {
     }
   }
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setPhotoError(t("profile.errNotAnImage") || "Il file selezionato non è un'immagine.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX_WIDTH = 128;
+        const MAX_HEIGHT = 128;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+        setPhotoInput(dataUrl);
+        setPhotoError(null);
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  async function handleUpdatePhoto(e: React.FormEvent) {
+    e.preventDefault();
+    setPhotoError(null);
+    setPhotoSuccess(null);
+
+    const cleanUrl = photoInput.trim();
+    if (!cleanUrl) {
+      setPhotoError(t("profile.errPhotoEmpty"));
+      return;
+    }
+
+    try {
+      setLoadingPhoto(true);
+      await updatePhotoURL(cleanUrl);
+      setPhotoSuccess(t("profile.successPhotoUpdate"));
+    } catch (err: any) {
+      console.error(err);
+      setPhotoError(err?.message || t("profile.errPhotoUpdateGeneric"));
+    } finally {
+      setLoadingPhoto(false);
+    }
+  }
+
+  async function handleResetStats() {
+    if (!user) return;
+    const confirmReset = window.confirm(
+      t("profile.confirmResetStats") || "Sei sicuro di voler resettare tutte le tue statistiche? Questa azione manterrà solo il tempo di gioco."
+    );
+    if (!confirmReset) return;
+
+    setLoadingReset(true);
+    setResetError(null);
+    setResetSuccess(null);
+
+    try {
+      const userDocRef = doc(db, "users", user.uid);
+      const resetData = {
+        "stats.handsPlayed": 0,
+        "stats.handsWon": 0,
+        "stats.totalChipsWon": 0,
+        "stats.totalChipsLost": 0,
+        "stats.netProfit": 0,
+        "stats.bestHandName": "",
+        "stats.vpipCount": 0,
+        "stats.totalActions": 0,
+        "stats.aggressiveActions": 0,
+        "stats.stagePreflopCount": 0,
+        "stats.stageFlopCount": 0,
+        "stats.stageTurnCount": 0,
+        "stats.stageRiverCount": 0
+      };
+
+      await updateDoc(userDocRef, resetData);
+
+      setStats((prev) => ({
+        ...prev,
+        handsPlayed: 0,
+        handsWon: 0,
+        totalChipsWon: 0,
+        totalChipsLost: 0,
+        netProfit: 0,
+        bestHandName: "",
+        vpipCount: 0,
+        totalActions: 0,
+        aggressiveActions: 0,
+        stagePreflopCount: 0,
+        stageFlopCount: 0,
+        stageTurnCount: 0,
+        stageRiverCount: 0
+      }));
+
+      setResetSuccess(t("profile.successResetStats") || "Statistiche resettate con successo!");
+    } catch (err: any) {
+      console.error(err);
+      setResetError(err?.message || "Errore durante il reset delle statistiche.");
+    } finally {
+      setLoadingReset(false);
+    }
+  }
+
   const winRate = stats.handsPlayed > 0 ? Math.round((stats.handsWon / stats.handsPlayed) * 100) : 0;
 
   return (
@@ -155,7 +324,11 @@ export default function ProfilePage() {
       {/* Profile Card Header */}
       <div className="glass-panel" style={{ padding: "1.5rem", display: "flex", flexDirection: "column", alignItems: "center", gap: "1rem", textAlign: "center" }} id="profile-card-header">
         <div className="profile-avatar-large registered-yellow" id="profile-avatar-icon">
-          <Crown size={40} />
+          {photoURL ? (
+            <img src={photoURL} alt="Avatar" />
+          ) : (
+            <Crown size={40} />
+          )}
         </div>
 
         <div>
@@ -277,6 +450,147 @@ export default function ProfilePage() {
             {loading ? t("profile.btnSaving") : t("profile.btnSave")}
           </button>
         </form>
+      </div>
+
+      {/* Edit Profile Photo Form */}
+      <div className="glass-panel" style={{ padding: "1.5rem" }} id="card-edit-photo">
+        <h3 style={{ fontSize: "1.1rem", fontWeight: 800, fontFamily: "var(--font-display)", marginBottom: "0.8rem" }}>
+          {t("profile.editPhotoTitle") || "Modifica Foto Profilo"}
+        </h3>
+        
+        <form onSubmit={handleUpdatePhoto} className="form-field-group" id="form-edit-photo">
+          <div className="form-field-group">
+            <label className="form-label-title" style={{ marginBottom: "0.5rem", display: "block" }}>
+              {t("profile.labelUploadPhoto") || "Carica Foto Profilo"}
+            </label>
+            <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+              {photoInput ? (
+                <img 
+                  src={photoInput} 
+                  alt="Preview" 
+                  style={{ width: "64px", height: "64px", borderRadius: "50%", objectFit: "cover", border: "2px solid var(--color-primary)" }} 
+                />
+              ) : (
+                <div style={{ width: "64px", height: "64px", borderRadius: "50%", backgroundColor: "rgba(255,255,255,0.03)", border: "1px dashed rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <Upload size={20} color="var(--text-muted)" />
+                </div>
+              )}
+              
+              <label 
+                className="poker-btn-secondary" 
+                style={{ 
+                  padding: "0.6rem 1rem", 
+                  borderRadius: "8px", 
+                  cursor: "pointer", 
+                  fontSize: "0.85rem", 
+                  fontWeight: 600, 
+                  display: "flex", 
+                  alignItems: "center", 
+                  gap: "0.4rem" 
+                }}
+              >
+                <Upload size={16} />
+                {t("profile.btnSelectFile") || "Scegli Immagine"}
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  onChange={handleFileChange} 
+                  style={{ display: "none" }} 
+                />
+              </label>
+            </div>
+          </div>
+
+          {photoError && (
+            <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", color: "var(--color-danger)", fontSize: "0.8rem" }} id="edit-photo-error">
+              <AlertCircle size={14} />
+              <span>{photoError}</span>
+            </div>
+          )}
+
+          {photoSuccess && (
+            <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", color: "var(--color-success)", fontSize: "0.8rem" }} id="edit-photo-success">
+              <Check size={14} />
+              <span>{photoSuccess}</span>
+            </div>
+          )}
+
+          <button
+            id="btn-save-photo"
+            type="submit"
+            disabled={loadingPhoto || !photoInput.trim() || photoInput === photoURL}
+            className={loadingPhoto || !photoInput.trim() || photoInput === photoURL ? "" : "poker-btn-primary"}
+            style={{
+              padding: "0.7rem",
+              borderRadius: "99px",
+              border: "none",
+              cursor: loadingPhoto || !photoInput.trim() || photoInput === photoURL ? "not-allowed" : "pointer",
+              backgroundColor: loadingPhoto || !photoInput.trim() || photoInput === photoURL ? "rgba(75, 85, 99, 0.4)" : undefined,
+              color: loadingPhoto || !photoInput.trim() || photoInput === photoURL ? "var(--text-muted)" : "var(--text-inverse)",
+              fontWeight: 800,
+              fontSize: "0.9rem"
+            }}
+          >
+            {loadingPhoto ? t("profile.btnSaving") : t("profile.btnSave")}
+          </button>
+        </form>
+      </div>
+
+      {/* Advanced Statistics Section */}
+      <div ref={advancedStatsRef} style={{ width: "100%" }}>
+        <h3 style={{ fontSize: "1.2rem", fontWeight: 800, fontFamily: "var(--font-display)", marginTop: "1.5rem", marginBottom: "0.5rem" }}>
+          {t("stats.title") || "Statistiche Dettagliate"}
+        </h3>
+        <AdvancedStats stats={stats} />
+      </div>
+
+      {/* Reset Stats Section */}
+      <div style={{ marginTop: "2rem", width: "100%", display: "flex", flexDirection: "column", gap: "0.8rem", alignItems: "center" }} id="reset-stats-container">
+        {resetSuccess && (
+          <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", color: "var(--color-success)", fontSize: "0.8rem" }} id="reset-stats-success">
+            <Check size={14} />
+            <span>{resetSuccess}</span>
+          </div>
+        )}
+        {resetError && (
+          <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", color: "var(--color-danger)", fontSize: "0.8rem" }} id="reset-stats-error">
+            <AlertCircle size={14} />
+            <span>{resetError}</span>
+          </div>
+        )}
+        <button
+          id="btn-reset-stats"
+          type="button"
+          onClick={handleResetStats}
+          disabled={loadingReset}
+          style={{
+            padding: "0.75rem 1.5rem",
+            borderRadius: "99px",
+            border: "1px solid rgba(239, 68, 68, 0.4)",
+            cursor: loadingReset ? "not-allowed" : "pointer",
+            backgroundColor: "rgba(239, 68, 68, 0.08)",
+            color: "#ef4444",
+            fontWeight: 800,
+            fontSize: "0.85rem",
+            width: "100%",
+            maxWidth: "280px",
+            transition: "all 0.2s ease"
+          }}
+          onMouseEnter={(e) => {
+            if (!loadingReset) {
+              e.currentTarget.style.backgroundColor = "rgba(239, 68, 68, 0.15)";
+              e.currentTarget.style.borderColor = "#ef4444";
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!loadingReset) {
+              e.currentTarget.style.backgroundColor = "rgba(239, 68, 68, 0.08)";
+              e.currentTarget.style.borderColor = "rgba(239, 68, 68, 0.4)";
+            }
+          }}
+        >
+          {loadingReset ? t("profile.btnResetting") || "Reset in corso..." : t("profile.btnResetStats") || "Resetta tutte le statistiche"}
+        </button>
       </div>
 
     </div>

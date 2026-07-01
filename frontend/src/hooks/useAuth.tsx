@@ -13,26 +13,29 @@ import {
   EmailAuthProvider,
   type User
 } from "firebase/auth";
-import { doc, getDoc, runTransaction, serverTimestamp } from "firebase/firestore";
-import { auth, db, googleProvider } from "../lib/firebase";
+import { doc, getDoc, runTransaction, serverTimestamp, updateDoc } from "firebase/firestore";
+import { auth, db, googleProvider, appleProvider } from "../lib/firebase";
 
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
   isRegisteredUser: boolean;
   username: string | null;
+  photoURL: string | null;
   login: (displayName: string) => Promise<void>;
   registerWithEmail: (email: string, password: string, username: string) => Promise<void>;
   loginWithEmail: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
-  linkGuestToRegistered: (email: string, password: string, username: string, type: "email" | "google") => Promise<void>;
+  signInWithApple: () => Promise<void>;
+  linkGuestToRegistered: (email: string, password: string, username: string, type: "email" | "google" | "apple") => Promise<void>;
   logout: () => Promise<void>;
+  updatePhotoURL: (url: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 // Helper to create user profile and enforce unique username in Firestore
-async function createProfileForUser(uid: string, email: string | null, preferredUsername: string, forceUnique = false) {
+async function createProfileForUser(uid: string, email: string | null, preferredUsername: string, forceUnique = false, photoURL?: string) {
   const cleanUsername = preferredUsername.trim();
   if (!cleanUsername || cleanUsername.length < 3) {
     throw new Error("Il nome utente deve essere di almeno 3 caratteri.");
@@ -44,6 +47,7 @@ async function createProfileForUser(uid: string, email: string | null, preferred
   let usernameToClaim = cleanUsername;
 
   await runTransaction(db, async (transaction) => {
+    // Check if username unique
     let usernameDocRef = doc(db, "usernames", usernameToClaim.toLowerCase());
     let usernameDoc = await transaction.get(usernameDocRef);
 
@@ -75,6 +79,7 @@ async function createProfileForUser(uid: string, email: string | null, preferred
       email: email,
       isRegistered: true,
       createdAt: serverTimestamp(),
+      photoURL: photoURL || null,
       stats: {
         handsPlayed: 0,
         handsWon: 0,
@@ -82,7 +87,13 @@ async function createProfileForUser(uid: string, email: string | null, preferred
         totalChipsLost: 0,
         netProfit: 0,
         sessionsPlayed: 0,
-        bestHandName: ""
+        bestHandName: "",
+        aggressiveActions: 0,
+        totalActions: 0,
+        stagePreflopCount: 0,
+        stageFlopCount: 0,
+        stageTurnCount: 0,
+        stageRiverCount: 0
       }
     });
   });
@@ -93,6 +104,7 @@ async function createProfileForUser(uid: string, email: string | null, preferred
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [username, setUsername] = useState<string | null>(null);
+  const [photoURL, setPhotoURL] = useState<string | null>(null);
   const [isRegisteredUser, setIsRegisteredUser] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -102,27 +114,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(firebaseUser);
         if (!firebaseUser.isAnonymous) {
           setIsRegisteredUser(true);
-          // Fetch username from Firestore
+          // Fetch username & photoURL from Firestore
           try {
             const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
             if (userDoc.exists()) {
-              setUsername(userDoc.data().username || firebaseUser.displayName || "Giocatore");
+              const uData = userDoc.data();
+              setUsername(uData.username || firebaseUser.displayName || "Giocatore");
+              setPhotoURL(uData.photoURL || firebaseUser.photoURL || null);
             } else {
               // Fallback if doc doesn't exist yet (e.g., interrupted OAuth flow)
               setUsername(firebaseUser.displayName || "Giocatore");
+              setPhotoURL(firebaseUser.photoURL || null);
             }
           } catch (e) {
             console.error("Errore nel recupero dello username:", e);
             setUsername(firebaseUser.displayName || "Giocatore");
+            setPhotoURL(firebaseUser.photoURL || null);
           }
         } else {
           setIsRegisteredUser(false);
           setUsername(firebaseUser.displayName);
+          setPhotoURL(null);
         }
       } else {
         setUser(null);
         setIsRegisteredUser(false);
         setUsername(null);
+        setPhotoURL(null);
       }
       setLoading(false);
     });
@@ -168,6 +186,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await updateProfile(u, { displayName: finalUsername });
       setUser(u);
       setUsername(finalUsername);
+      setPhotoURL(null);
       setIsRegisteredUser(true);
     } catch (err) {
       // Rollback auth user if firestore registration fails
@@ -196,15 +215,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!userDoc.exists()) {
       // Create profile with auto-unique username derived from displayName or email
       const baseName = u.displayName || u.email?.split("@")[0] || "player";
-      const finalUsername = await createProfileForUser(u.uid, u.email, baseName, false);
-      await updateProfile(u, { displayName: finalUsername });
+      const finalUsername = await createProfileForUser(u.uid, u.email, baseName, false, u.photoURL || undefined);
+      await updateProfile(u, { displayName: finalUsername, photoURL: u.photoURL || undefined });
+      setUsername(finalUsername);
+      setPhotoURL(u.photoURL || null);
+    } else {
+      const uData = userDoc.data();
+      setUsername(uData.username || u.displayName || "Giocatore");
+      setPhotoURL(uData.photoURL || u.photoURL || null);
     }
 
     setUser(u);
     setIsRegisteredUser(true);
   }
 
-  async function linkGuestToRegistered(email: string, password: string, desiredUsername: string, type: "email" | "google") {
+  async function signInWithApple() {
+    const cred = await signInWithPopup(auth, appleProvider);
+    const u = cred.user;
+
+    // Check if user document already exists in Firestore
+    const userDocRef = doc(db, "users", u.uid);
+    const userDoc = await getDoc(userDocRef);
+
+    if (!userDoc.exists()) {
+      // Create profile with auto-unique username derived from displayName or email
+      const baseName = u.displayName || u.email?.split("@")[0] || "player";
+      const finalUsername = await createProfileForUser(u.uid, u.email, baseName, false, u.photoURL || undefined);
+      await updateProfile(u, { displayName: finalUsername, photoURL: u.photoURL || undefined });
+      setUsername(finalUsername);
+      setPhotoURL(u.photoURL || null);
+    } else {
+      const uData = userDoc.data();
+      setUsername(uData.username || u.displayName || "Giocatore");
+      setPhotoURL(uData.photoURL || u.photoURL || null);
+    }
+
+    setUser(u);
+    setIsRegisteredUser(true);
+  }
+
+  async function linkGuestToRegistered(email: string, password: string, desiredUsername: string, type: "email" | "google" | "apple") {
     const currentUser = auth.currentUser;
     if (!currentUser || !currentUser.isAnonymous) {
       throw new Error("Nessun account ospite attivo da convertire.");
@@ -230,27 +280,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const finalUsername = await createProfileForUser(currentUser.uid, email, desiredUsername, true);
       await updateProfile(currentUser, { displayName: finalUsername });
       setUsername(finalUsername);
-    } else if (type === "google") {
-      await linkWithPopup(currentUser, googleProvider);
+    } else if (type === "google" || type === "apple") {
+      const provider = type === "google" ? googleProvider : appleProvider;
+      await linkWithPopup(currentUser, provider);
       
       // Check if user document exists
       const userDocRef = doc(db, "users", currentUser.uid);
       const userDoc = await getDoc(userDocRef);
       if (!userDoc.exists()) {
         const baseName = currentUser.displayName || currentUser.email?.split("@")[0] || "player";
-        const finalUsername = await createProfileForUser(currentUser.uid, currentUser.email, baseName, false);
-        await updateProfile(currentUser, { displayName: finalUsername });
+        const finalUsername = await createProfileForUser(currentUser.uid, currentUser.email, baseName, false, currentUser.photoURL || undefined);
+        await updateProfile(currentUser, { displayName: finalUsername, photoURL: currentUser.photoURL || undefined });
         setUsername(finalUsername);
+        setPhotoURL(currentUser.photoURL || null);
+      } else {
+        const uData = userDoc.data();
+        setUsername(uData.username || currentUser.displayName || "Giocatore");
+        setPhotoURL(uData.photoURL || currentUser.photoURL || null);
       }
     }
     
     setIsRegisteredUser(true);
   }
 
+  async function updatePhotoURL(url: string) {
+    if (!auth.currentUser) throw new Error("Utente non loggato");
+    const userDocRef = doc(db, "users", auth.currentUser.uid);
+    await updateDoc(userDocRef, { photoURL: url });
+    await updateProfile(auth.currentUser, { photoURL: url });
+    setPhotoURL(url);
+  }
+
   async function logout() {
     await signOut(auth);
     setUser(null);
     setUsername(null);
+    setPhotoURL(null);
     setIsRegisteredUser(false);
   }
 
@@ -259,12 +324,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading,
     isRegisteredUser,
     username,
+    photoURL,
     login,
     registerWithEmail,
     loginWithEmail,
     signInWithGoogle,
+    signInWithApple,
     linkGuestToRegistered,
-    logout
+    logout,
+    updatePhotoURL
   };
 
   return (

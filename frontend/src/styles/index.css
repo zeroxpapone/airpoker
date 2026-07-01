@@ -795,6 +795,8 @@ input[type="password"]:focus {
   flex-direction: column;
   flex: 1;
   min-height: 380px;
+  padding: 0 !important;
+  overflow: hidden;
 }
 .dashboard-tabs-bar {
   display: flex;
@@ -803,13 +805,13 @@ input[type="password"]:focus {
 }
 .dashboard-tab-btn {
   flex: 1;
-  padding: 1rem;
+  padding: 1rem 0.5rem;
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
   color: var(--text-muted);
   font-weight: 700;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1392,4 +1394,149 @@ input[type="password"]:focus {
 .player-pod-stack.left-side {
   text-align: left;
 }
+
+/* Avatar image styles */
+.profile-avatar-large img,
+.profile-avatar-circle img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+/* Clickable list row styling */
+.list-item-row.clickable {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.list-item-row.clickable:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px);
+}
+
+/* Stats Page Styling */
+.stats-page-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1rem;
+  max-width: 600px;
+  margin: 0 auto;
+  width: 100%;
+}
+.stats-back-btn {
+  background: none;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #fff;
+  transition: all 0.2s ease;
+}
+.stats-back-btn:hover {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.15);
+}
+.radar-chart-card {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+.radar-chart-title {
+  font-size: 1.1rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+  text-align: center;
+}
+.radar-chart-subtitle {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+.radar-chart-svg-container {
+  width: 220px;
+  height: 220px;
+  position: relative;
+}
+.radar-badge {
+  position: absolute;
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  background-color: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.05);
+  color: var(--text-muted);
+}
+.radar-badge.active {
+  background-color: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.4);
+  color: var(--color-success);
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
+}
+.radar-badge.tag { top: 0; left: 0; }
+.radar-badge.lag { top: 0; right: 0; }
+.radar-badge.rock { bottom: 0; left: 0; }
+.radar-badge.fish { bottom: 0; right: 0; }
+
+.stats-detailed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+.stats-detailed-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1rem;
+}
+.stats-detailed-label-group {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+.stats-detailed-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.stats-detailed-value {
+  font-size: 1rem;
+  font-weight: 800;
+}
+.stats-sub-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.4rem;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+.stats-sub-box {
+  background-color: rgba(255,255,255,0.01);
+  border: 1px solid rgba(255,255,255,0.03);
+  border-radius: 0.4rem;
+  padding: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.stats-sub-label {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.stats-sub-value {
+  font-size: 0.85rem;
+  font-weight: 800;
+  margin-top: 0.1rem;
+}
+
 

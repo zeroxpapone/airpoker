@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from "react";
-import { Routes, Route, Navigate, useParams } from "react-router-dom";
+import { Routes, Route, Navigate, useParams, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "./hooks/useAuth";
 
@@ -35,6 +35,16 @@ function ProtectedJoinRoute() {
   return <JoinTablePage />;
 }
 
+function ScrollToTop() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+
+  return null;
+}
+
 function App() {
   const { user, loading } = useAuth();
   const { i18n } = useTranslation();
@@ -54,6 +64,7 @@ function App() {
 
   return (
     <Suspense fallback={<div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh", color: "#9ca3af" }}>Caricamento applicazione...</div>}>
+      <ScrollToTop />
       <Layout>
         <Routes>
           <Route

@@ -4,6 +4,7 @@ import {
   signInAnonymously,
   updateProfile,
   GoogleAuthProvider,
+  OAuthProvider,
   type User
 } from "firebase/auth";
 import { initializeFirestore } from "firebase/firestore";
@@ -21,6 +22,7 @@ const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+export const appleProvider = new OAuthProvider("apple.com");
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true
 });

@@ -13,7 +13,8 @@ import {
   Clock, 
   AlertCircle,
   TrendingUp,
-  Award
+  Award,
+  Calendar
 } from "lucide-react";
 import { 
   collection, 
@@ -28,16 +29,14 @@ import {
   onSnapshot
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
+import AdvancedStats, { type AdvancedStatsData } from "../components/AdvancedStats";
 
 interface TargetUser {
   uid: string;
   username: string;
-  stats: {
-    handsPlayed: number;
-    handsWon: number;
-    netProfit: number;
-    bestHandName: string;
-  };
+  photoURL?: string;
+  createdAt?: any;
+  stats: AdvancedStatsData;
 }
 
 export default function PlayerProfilePage() {
@@ -73,11 +72,24 @@ export default function PlayerProfilePage() {
         setTargetUser({
           uid: userDoc.id,
           username: data.username || targetUsername || "Player",
+          photoURL: data.photoURL || undefined,
+          createdAt: data.createdAt,
           stats: {
             handsPlayed: data.stats?.handsPlayed || 0,
             handsWon: data.stats?.handsWon || 0,
+            totalChipsWon: data.stats?.totalChipsWon || 0,
+            totalChipsLost: data.stats?.totalChipsLost || 0,
             netProfit: data.stats?.netProfit || 0,
-            bestHandName: data.stats?.bestHandName || "Nessuna"
+            sessionsPlayed: data.stats?.sessionsPlayed || 0,
+            timePlayedSeconds: data.stats?.timePlayedSeconds || 0,
+            bestHandName: data.stats?.bestHandName || "Nessuna",
+            vpipCount: data.stats?.vpipCount || 0,
+            totalActions: data.stats?.totalActions || 0,
+            aggressiveActions: data.stats?.aggressiveActions || 0,
+            stagePreflopCount: data.stats?.stagePreflopCount || 0,
+            stageFlopCount: data.stats?.stageFlopCount || 0,
+            stageTurnCount: data.stats?.stageTurnCount || 0,
+            stageRiverCount: data.stats?.stageRiverCount || 0
           }
         });
 
@@ -200,7 +212,11 @@ export default function PlayerProfilePage() {
       {/* Profile Card Header */}
       <div className="glass-panel" style={{ padding: "1.5rem", display: "flex", flexDirection: "column", alignItems: "center", gap: "1.2rem", textAlign: "center" }} id="player-profile-card-header">
         <div className="profile-avatar-large registered-green" id="player-profile-avatar-icon">
-          <User size={40} />
+          {targetUser.photoURL ? (
+            <img src={targetUser.photoURL} alt="Avatar" className="profile-avatar-large-img" />
+          ) : (
+            <User size={40} />
+          )}
         </div>
 
         <div>
@@ -208,6 +224,14 @@ export default function PlayerProfilePage() {
           <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "0.2rem" }} id="player-profile-status-label">
             {t("profile.statusRegistered")}
           </p>
+          {targetUser.createdAt && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.3rem", fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.5rem" }} id="player-profile-membership-date">
+              <Calendar size={13} />
+              <span>
+                {t("profile.memberSince", { date: new Date(targetUser.createdAt.seconds * 1000).toLocaleDateString() })}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Social / Friendship Buttons */}
@@ -326,6 +350,14 @@ export default function PlayerProfilePage() {
           </div>
         </div>
 
+      </div>
+
+      {/* Advanced Statistics Section */}
+      <div style={{ width: "100%", marginTop: "1rem" }} id="player-profile-advanced-stats">
+        <h3 style={{ fontSize: "1.2rem", fontWeight: 800, fontFamily: "var(--font-display)", marginTop: "1.5rem", marginBottom: "0.5rem" }}>
+          {t("stats.title") || "Statistiche Dettagliate"}
+        </h3>
+        <AdvancedStats stats={targetUser.stats} />
       </div>
 
     </div>

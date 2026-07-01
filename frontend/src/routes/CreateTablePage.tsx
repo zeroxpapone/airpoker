@@ -3,6 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../hooks/useAuth";
 import { createTable } from "../lib/firestoreApi";
+import { collection, query, where, doc, writeBatch, serverTimestamp, onSnapshot } from "firebase/firestore";
+import { db } from "../lib/firebase";
+import { Check, Users, ShieldAlert } from "lucide-react";
 
 const RANDOM_TABLE_NAMES = [
   "no doccia",
@@ -17,9 +20,80 @@ const RANDOM_TABLE_NAMES = [
 ];
 
 export default function CreateTablePage() {
-  const { user } = useAuth();
+  const { user, username } = useAuth();
   const navigate = useNavigate();
   const { t } = useTranslation();
+
+  const [onlineFriends, setOnlineFriends] = useState<{ uid: string; username: string }[]>([]);
+  const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
+
+  // Listen to friends status in real-time
+  useEffect(() => {
+    if (!user) return;
+
+    const qFriends = query(
+      collection(db, "users", user.uid, "friends"),
+      where("status", "==", "ACCEPTED")
+    );
+
+    let unsubFriendDocs: (() => void)[] = [];
+
+    const unsubFriends = onSnapshot(qFriends, (snap) => {
+      unsubFriendDocs.forEach(unsub => unsub());
+      unsubFriendDocs = [];
+
+      const friendsList: { friendUid: string; username: string }[] = [];
+      snap.forEach((d) => {
+        const fData = d.data();
+        friendsList.push({
+          friendUid: d.id,
+          username: fData.username || "Friend"
+        });
+      });
+
+      if (friendsList.length === 0) {
+        setOnlineFriends([]);
+        return;
+      }
+
+      const activeFriendStates: Record<string, any> = {};
+
+      friendsList.forEach((friend) => {
+        const friendDocRef = doc(db, "users", friend.friendUid);
+        const unsubDoc = onSnapshot(friendDocRef, (friendSnap) => {
+          if (friendSnap.exists()) {
+            const fDocData = friendSnap.data();
+            const presence = fDocData.presence;
+            
+            const isOnlineAndHome = presence?.status === "ONLINE" &&
+                                    presence?.location === "HOME" &&
+                                    presence?.lastActive &&
+                                    (Date.now() - presence.lastActive.toMillis() < 5 * 60 * 1000);
+
+            if (isOnlineAndHome) {
+              activeFriendStates[friend.friendUid] = {
+                uid: friend.friendUid,
+                username: fDocData.username || friend.username
+              };
+            } else {
+              delete activeFriendStates[friend.friendUid];
+            }
+          } else {
+            delete activeFriendStates[friend.friendUid];
+          }
+
+          setOnlineFriends(Object.values(activeFriendStates));
+        });
+
+        unsubFriendDocs.push(unsubDoc);
+      });
+    });
+
+    return () => {
+      unsubFriends();
+      unsubFriendDocs.forEach(unsub => unsub());
+    };
+  }, [user]);
 
   const [name, setName] = useState("");
   const [initialStack, setInitialStack] = useState(200);
@@ -129,6 +203,23 @@ export default function CreateTablePage() {
         },
         user
       );
+
+      // Send invitations to all selected friends
+      if (selectedFriends.length > 0) {
+        const batch = writeBatch(db);
+        selectedFriends.forEach((friendUid) => {
+          const inviteRef = doc(db, "users", friendUid, "invitations", id);
+          batch.set(inviteRef, {
+            senderUid: user!.uid,
+            senderUsername: username || user!.displayName || "Player",
+            tableId: id,
+            tableName: name.trim() || `${t("createTable.randomPrefix")} ${randomName}`,
+            createdAt: serverTimestamp()
+          });
+        });
+        await batch.commit();
+      }
+
       navigate(`/table/${id}`);
     } catch (err: any) {
       console.error(err);
@@ -321,6 +412,69 @@ export default function CreateTablePage() {
               autoComplete="off"
             />
           </Field>
+
+          {/* Invite Friends Checklist */}
+          <div className="form-field-group" id="field-invite-friends" style={{ marginTop: "1rem" }}>
+            <label className="form-label-title" style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+              <Users size={16} />
+              {t("dashboard.inviteFriendsTitle") || "Invita Amici"}
+            </label>
+            <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: "0 0 0.5rem 0", lineHeight: 1.3 }}>
+              {t("createTable.inviteFriendsDesc") || "Seleziona gli amici online nella HomePage da invitare al tuo tavolo."}
+            </p>
+            
+            {onlineFriends.length === 0 ? (
+              <div style={{ padding: "0.85rem", borderRadius: "0.6rem", border: "1px solid rgba(255,255,255,0.04)", backgroundColor: "rgba(255,255,255,0.01)", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <ShieldAlert size={16} style={{ color: "var(--text-muted)" }} />
+                <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                  {t("dashboard.noFriendsOnline") || "Nessun amico online nella Home al momento."}
+                </span>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", maxHeight: "150px", overflowY: "auto", padding: "0.4rem 0" }}>
+                {onlineFriends.map((friend) => {
+                  const isChecked = selectedFriends.includes(friend.uid);
+                  return (
+                    <div 
+                      key={friend.uid} 
+                      onClick={() => {
+                        if (isChecked) {
+                          setSelectedFriends(selectedFriends.filter(id => id !== friend.uid));
+                        } else {
+                          setSelectedFriends([...selectedFriends, friend.uid]);
+                        }
+                      }}
+                      style={{ 
+                        display: "flex", 
+                        alignItems: "center", 
+                        justifyContent: "space-between", 
+                        padding: "0.55rem 0.75rem", 
+                        borderRadius: "0.5rem", 
+                        backgroundColor: isChecked ? "rgba(16, 185, 129, 0.08)" : "rgba(255,255,255,0.01)",
+                        border: isChecked ? "1px solid rgba(16, 185, 129, 0.3)" : "1px solid rgba(255,255,255,0.04)",
+                        cursor: "pointer",
+                        transition: "all 0.15s ease"
+                      }}
+                    >
+                      <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>@{friend.username}</span>
+                      <div style={{ 
+                        width: "18px", 
+                        height: "18px", 
+                        borderRadius: "4px", 
+                        border: isChecked ? "none" : "1px solid rgba(255,255,255,0.2)", 
+                        backgroundColor: isChecked ? "var(--color-success)" : "transparent",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center"
+                      }}>
+                        {isChecked && <Check size={12} color="#fff" strokeWidth={3} />}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
           {errorMsg && (
             <p style={{ fontSize: "0.8rem", color: "var(--color-danger)", margin: "0.2rem 0" }} id="create-table-error">{errorMsg}</p>
