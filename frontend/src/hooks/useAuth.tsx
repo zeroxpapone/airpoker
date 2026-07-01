@@ -14,7 +14,7 @@ import {
   type User
 } from "firebase/auth";
 import { doc, getDoc, runTransaction, serverTimestamp, updateDoc } from "firebase/firestore";
-import { auth, db, googleProvider, appleProvider } from "../lib/firebase";
+import { auth, db, googleProvider } from "../lib/firebase";
 
 interface AuthContextValue {
   user: User | null;
@@ -26,8 +26,7 @@ interface AuthContextValue {
   registerWithEmail: (email: string, password: string, username: string) => Promise<void>;
   loginWithEmail: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
-  signInWithApple: () => Promise<void>;
-  linkGuestToRegistered: (email: string, password: string, username: string, type: "email" | "google" | "apple") => Promise<void>;
+  linkGuestToRegistered: (email: string, password: string, username: string, type: "email" | "google") => Promise<void>;
   logout: () => Promise<void>;
   updatePhotoURL: (url: string) => Promise<void>;
 }
@@ -229,32 +228,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsRegisteredUser(true);
   }
 
-  async function signInWithApple() {
-    const cred = await signInWithPopup(auth, appleProvider);
-    const u = cred.user;
 
-    // Check if user document already exists in Firestore
-    const userDocRef = doc(db, "users", u.uid);
-    const userDoc = await getDoc(userDocRef);
 
-    if (!userDoc.exists()) {
-      // Create profile with auto-unique username derived from displayName or email
-      const baseName = u.displayName || u.email?.split("@")[0] || "player";
-      const finalUsername = await createProfileForUser(u.uid, u.email, baseName, false, u.photoURL || undefined);
-      await updateProfile(u, { displayName: finalUsername, photoURL: u.photoURL || undefined });
-      setUsername(finalUsername);
-      setPhotoURL(u.photoURL || null);
-    } else {
-      const uData = userDoc.data();
-      setUsername(uData.username || u.displayName || "Giocatore");
-      setPhotoURL(uData.photoURL || u.photoURL || null);
-    }
-
-    setUser(u);
-    setIsRegisteredUser(true);
-  }
-
-  async function linkGuestToRegistered(email: string, password: string, desiredUsername: string, type: "email" | "google" | "apple") {
+  async function linkGuestToRegistered(email: string, password: string, desiredUsername: string, type: "email" | "google") {
     const currentUser = auth.currentUser;
     if (!currentUser || !currentUser.isAnonymous) {
       throw new Error("Nessun account ospite attivo da convertire.");
@@ -280,8 +256,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const finalUsername = await createProfileForUser(currentUser.uid, email, desiredUsername, true);
       await updateProfile(currentUser, { displayName: finalUsername });
       setUsername(finalUsername);
-    } else if (type === "google" || type === "apple") {
-      const provider = type === "google" ? googleProvider : appleProvider;
+    } else if (type === "google") {
+      const provider = googleProvider;
       await linkWithPopup(currentUser, provider);
       
       // Check if user document exists
@@ -329,7 +305,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     registerWithEmail,
     loginWithEmail,
     signInWithGoogle,
-    signInWithApple,
     linkGuestToRegistered,
     logout,
     updatePhotoURL

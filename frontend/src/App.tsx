@@ -10,7 +10,6 @@ import TermsPage from "./routes/TermsPage";
 import AboutPage from "./routes/AboutPage";
 
 const CreateTablePage = lazy(() => import("./routes/CreateTablePage"));
-const JoinTablePage = lazy(() => import("./routes/JoinTablePage"));
 const TablePage = lazy(() => import("./routes/TablePage"));
 const ProfilePage = lazy(() => import("./routes/ProfilePage"));
 const PlayerProfilePage = lazy(() => import("./routes/PlayerProfilePage"));
@@ -23,16 +22,6 @@ function ProtectedTableRoute() {
     return <Navigate to={`/?redirect=/table/${tableId}`} replace />;
   }
   return <TablePage />;
-}
-
-function ProtectedJoinRoute() {
-  const { user } = useAuth();
-  
-  if (!user) {
-    const redirectPath = `/join${window.location.search}`;
-    return <Navigate to={`/?redirect=${encodeURIComponent(redirectPath)}`} replace />;
-  }
-  return <JoinTablePage />;
 }
 
 function ScrollToTop() {
@@ -78,10 +67,6 @@ function App() {
           <Route
             path="/create"
             element={user ? <CreateTablePage /> : <Navigate to="/" replace />}
-          />
-          <Route
-            path="/join"
-            element={<ProtectedJoinRoute />}
           />
           <Route
             path="/table/:tableId"

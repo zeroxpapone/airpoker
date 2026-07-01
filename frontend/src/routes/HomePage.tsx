@@ -21,6 +21,8 @@ import {
   KeyRound,
   Camera
 } from "lucide-react";
+import { Scanner } from '@yudiel/react-qr-scanner';
+import { joinTable } from "../lib/firestoreApi";
 import { 
   collection, 
   query, 
@@ -101,6 +103,11 @@ export default function HomePage() {
   // Invitations State
   const [invitations, setInvitations] = useState<any[]>([]);
 
+  // QR Scanner Modal State
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrError, setQrError] = useState<string | null>(null);
+
   // Heartbeat presence inside HomePage
   useEffect(() => {
     if (!user) return;
@@ -170,12 +177,15 @@ export default function HomePage() {
       const list: LeaderboardUser[] = [];
       snap.forEach((d) => {
         const data = d.data();
-        list.push({
-          uid: d.id,
-          username: data.username || "Player",
-          netProfit: data.stats?.netProfit || 0,
-          handsWon: data.stats?.handsWon || 0
-        });
+        // Only include registered users (those with a username)
+        if (data.username) {
+          list.push({
+            uid: d.id,
+            username: data.username || "Player",
+            netProfit: data.stats?.netProfit || 0,
+            handsWon: data.stats?.handsWon || 0
+          });
+        }
       });
       setLeaderboard(list);
     }, (err) => {
@@ -278,6 +288,13 @@ export default function HomePage() {
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
+    
+    // Only registered users can add friends
+    if (!isRegisteredUser) {
+      setErrorMsg(t("dashboard.errGuestCannotAddFriend") || "Solo gli utenti registrati possono aggiungere amici.");
+      return;
+    }
+    
     const friendName = friendInput.trim().replace("@", "");
     if (!friendName) return;
 
@@ -396,20 +413,23 @@ export default function HomePage() {
     }
   }
 
-  async function handleUpgradeWithApple() {
-    setUpgradeError(null);
+  async function handleQrScanned(tableId: string, password?: string) {
+    if (!tableId || !user) return;
+    setQrError(null);
+    setQrLoading(true);
     try {
-      setLoadingAction(true);
-      await linkGuestToRegistered("", "", "", "apple");
-      setShowUpgradeModal(false);
-      setSuccessMsg("Account registrato con successo tramite Apple!");
+      await joinTable(tableId.trim(), user, password?.trim() || undefined);
+      setShowQrModal(false);
+      navigate(`/table/${tableId.trim()}`);
     } catch (err: any) {
       console.error(err);
-      setUpgradeError(err?.message || "Errore durante la registrazione con Apple.");
+      setQrError(err.message || t("joinTable.errorGeneric"));
     } finally {
-      setLoadingAction(false);
+      setQrLoading(false);
     }
   }
+
+
 
   return (
     <div className="dashboard-layout" id="dashboard-page-container">
@@ -547,7 +567,7 @@ export default function HomePage() {
               <button
                 type="button"
                 id="btn-scan-qr"
-                onClick={() => navigate("/join")}
+                onClick={() => setShowQrModal(true)}
                 className="poker-btn-secondary"
                 style={{
                   width: "100%",
@@ -624,7 +644,8 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Main Tabbed Area (Leaderboard, History, Friends) */}
+      {/* Main Tabbed Area (Leaderboard, History, Friends) - Only for registered users */}
+      {isRegisteredUser && (
       <div className="glass-panel dashboard-tabs-panel" id="dashboard-tab-panel">
         
         {/* Tab Buttons */}
@@ -871,6 +892,7 @@ export default function HomePage() {
           )}
         </div>
       </div>
+      )}
 
       {/* Footer info links */}
       <div style={{ display: "flex", justifyContent: "space-between", padding: "0.5rem" }} id="dashboard-footer-links">
@@ -981,19 +1003,6 @@ export default function HomePage() {
                 </svg>
                 Google
               </button>
-
-              <button
-                id="btn-upgrade-with-apple"
-                onClick={handleUpgradeWithApple}
-                disabled={loadingAction}
-                className="poker-btn-secondary"
-                style={{ flex: 1, padding: "0.7rem", borderRadius: "99px", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 4.17c.66-.81 1.11-1.93.99-3.06-1 .04-2.2.67-2.92 1.49-.62.71-1.16 1.85-1.01 2.96 1.12.09 2.26-.57 2.94-1.39z"/>
-                </svg>
-                Apple
-              </button>
             </div>
 
             <button 
@@ -1087,6 +1096,73 @@ export default function HomePage() {
       )}
 
       {/* 3. TABLE INVITATIONS MODAL POPUP */}
+      {/* QR SCANNER MODAL */}
+      {showQrModal && (
+        <div className="modal-overlay" id="modal-qr-scanner" style={{ zIndex: 1200 }}>
+          <div className="glass-panel modal-panel-box" style={{ maxWidth: "340px", padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+            <h3 style={{ fontSize: "1.2rem", fontWeight: 800, fontFamily: "var(--font-display)", textAlign: "center" }}>
+              {t("joinTable.scanQrBtn") || "Scansiona QR"}
+            </h3>
+            
+            <div className="qr-scanner-wrapper" id="qr-scanner-modal-box" style={{ borderRadius: "0.75rem", overflow: "hidden" }}>
+              <Scanner
+                sound={false}
+                components={{ torch: false }}
+                onScan={(detectedCodes) => {
+                  if (detectedCodes && detectedCodes.length > 0) {
+                    const val = detectedCodes[0].rawValue;
+                    if (val) {
+                      let tId = "";
+                      let pwd = "";
+                      try {
+                        const url = new URL(val);
+                        tId = url.searchParams.get("tableId") || "";
+                        pwd = url.searchParams.get("pwd") || "";
+                        if (!tId && val.includes("/table/")) {
+                          tId = url.pathname.split("/table/")[1].replace(/\//g, "");
+                        }
+                      } catch (e) {
+                        tId = val;
+                      }
+                      
+                      if (tId) {
+                        handleQrScanned(tId, pwd);
+                      }
+                    }
+                  }
+                }}
+                onError={(error: unknown) => {
+                  console.error("Camera error:", error);
+                  const msg = error instanceof Error ? error.message : String(error);
+                  setQrError(msg || "Impossibile accedere alla fotocamera: assicurati di usare HTTPS o di aver concesso i permessi al browser.");
+                }}
+              />
+            </div>
+
+            {qrError && (
+              <p style={{ fontSize: "0.8rem", color: "var(--color-danger)", margin: "0.2rem 0" }}>{qrError}</p>
+            )}
+
+            <button
+              id="btn-close-qr-modal"
+              onClick={() => setShowQrModal(false)}
+              disabled={qrLoading}
+              className="poker-btn-secondary"
+              style={{
+                width: "100%",
+                padding: "0.75rem",
+                borderRadius: "99px",
+                fontWeight: 700,
+                cursor: qrLoading ? "default" : "pointer",
+                opacity: qrLoading ? 0.7 : 1
+              }}
+            >
+              <X size={16} style={{ marginRight: "0.4rem" }} /> {t("dashboard.btnCancel")}
+            </button>
+          </div>
+        </div>
+      )}
+
       {invitations.length > 0 && (
         <div className="modal-overlay" id="modal-table-invitation" style={{ zIndex: 1100 }}>
           <div className="glass-panel modal-panel-box" style={{ maxWidth: "340px", padding: "1.5rem", textAlign: "center", display: "flex", flexDirection: "column", gap: "1rem" }}>

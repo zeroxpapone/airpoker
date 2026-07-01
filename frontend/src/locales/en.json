@@ -199,7 +199,9 @@
     "virtualDealCards": "Dealing cards...",
     "virtualFlop": "Dealing the Flop...",
     "virtualTurn": "Dealing the Turn...",
-    "virtualRiver": "Dealing the River..."
+    "virtualRiver": "Dealing the River...",
+    "joinTableTitle": "Join Table",
+    "joinBtn": "Join"
   },
   "error": {
     "minPlayers": "At least 2 active players are required for a new hand.",
@@ -298,6 +300,7 @@
     "btnSendRequest": "Send",
     "errFriendSelf": "You cannot add yourself as a friend.",
     "errFriendExists": "You already have an active or pending friendship with this user.",
+    "errGuestCannotAddFriend": "Only registered users can add friends. Register your profile to use this feature.",
     "successFriendRequest": "Request sent to @{{name}}!",
     "errFriendGeneric": "Unable to send request.",
     "errFriendNotFound": "User @{{name}} not found.",

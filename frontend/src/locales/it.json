@@ -198,7 +198,9 @@
     "virtualDealCards": "Distribuzione carte in corso...",
     "virtualFlop": "Girando il Flop...",
     "virtualTurn": "Girando il Turn...",
-    "virtualRiver": "Girando il River..."
+    "virtualRiver": "Girando il River...",
+    "joinTableTitle": "Unisciti al Tavolo",
+    "joinBtn": "Unisciti"
   },
   "error": {
     "minPlayers": "Servono almeno 2 giocatori attivi per una nuova mano.",
@@ -297,6 +299,7 @@
     "btnSendRequest": "Invia",
     "errFriendSelf": "Non puoi aggiungere te stesso come amico.",
     "errFriendExists": "Hai già una relazione d'amicizia attiva o in attesa con questo utente.",
+    "errGuestCannotAddFriend": "Solo gli utenti registrati possono aggiungere amici. Registra il tuo profilo per usare questa funzione.",
     "successFriendRequest": "Richiesta inviata a @{{name}}!",
     "errFriendGeneric": "Impossibile inviare la richiesta.",
     "errFriendNotFound": "Utente @{{name}} non trovato.",

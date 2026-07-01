@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
 import { useTranslation } from "react-i18next";
 import {
@@ -29,8 +29,10 @@ import {
   addChips,
   swapPlayerSeats,
   transferHost,
-  forceFoldPlayer
+  forceFoldPlayer,
+  joinTable
 } from "../lib/firestoreApi";
+import { Users } from "lucide-react";
 
 interface TableData {
   name: string;
@@ -186,6 +188,11 @@ export default function TablePage() {
   const [currentHand, setCurrentHand] = useState<ExtendedHandData | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+
+  // Join modal state (when not seated)
+  const [showJoinModal, setShowJoinModal] = useState(false);
+  const [joinLoading, setJoinLoading] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
 
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -397,12 +404,35 @@ export default function TablePage() {
     };
   }, [tableId, refreshKey]);
 
-  // Redirezione automatica per gli spettatori
+  // Auto-join with password or show join modal for spectators
+  const [searchParams] = useSearchParams();
   useEffect(() => {
-    if (playersLoaded && user?.uid && !players.find((p) => p.userId === user.uid) && table?.state !== "SUMMARY") {
-      navigate(`/join?tableId=${tableId}`);
+    if (!playersLoaded || !user?.uid || !tableId || !table) return;
+
+    const isSeated = players.some((p) => p.userId === user.uid);
+    
+    // If already seated or game is summary, nothing to do
+    if (isSeated || table.state === "SUMMARY") return;
+
+    // Check if there's a password in query params (auto-join scenario)
+    const pwd = searchParams.get("pwd");
+    if (pwd) {
+      // Auto-join with password
+      (async () => {
+        try {
+          await joinTable(tableId, user, pwd);
+          // Auto-join successful, no need to show join modal
+        } catch (err: any) {
+          console.error("Auto-join failed:", err);
+          setJoinError(err.message || "Errore durante il join automatico");
+          setShowJoinModal(true);
+        }
+      })();
+    } else {
+      // No password in params, show join modal so user can join manually
+      setShowJoinModal(true);
     }
-  }, [playersLoaded, user?.uid, players, navigate, tableId, table?.state]);
+  }, [playersLoaded, user?.uid, players, tableId, table, searchParams]);
 
   // Listener sulla mano corrente
   useEffect(() => {
@@ -1023,7 +1053,22 @@ async function confirmEndGameAction() {
     };
   }
 
-
+  // Manual join to table
+  async function handleJoinTable() {
+    if (!tableId || !user) return;
+    setJoinError(null);
+    setJoinLoading(true);
+    try {
+      const pwd = searchParams.get("pwd");
+      await joinTable(tableId, user, pwd || undefined);
+      setShowJoinModal(false);
+    } catch (err: any) {
+      console.error(err);
+      setJoinError(err.message || t("joinTable.errorGeneric"));
+    } finally {
+      setJoinLoading(false);
+    }
+  }
 
   // Toglie/aggiunge un giocatore dalla lista dei vincitori selezionati
 function toggleWinnerSelection(userId: string) {
@@ -2153,7 +2198,7 @@ async function handleConfirmWinners(potId: string) {
   
   // ---------- RENDER ROOT ----------
 
-  const inviteLink = `${window.location.origin}/join?tableId=${tableId}${table?.password ? `&pwd=${table.password}` : ""}`;
+  const inviteLink = `${window.location.origin}/table/${tableId}${table?.password ? `?pwd=${table.password}` : ""}`;
 
   const modalUI = showShareModal && (
     <div style={{
@@ -2209,6 +2254,62 @@ async function handleConfirmWinners(potId: string) {
       </div>
     </div>
   );
+
+  const joinModalUI = showJoinModal && table && (
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+      background: "rgba(2, 6, 23, 0.8)", backdropFilter: "blur(8px)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999
+    }}>
+      <div style={{
+        background: "rgba(15,23,42,0.95)", border: "1px solid #1e293b",
+        borderRadius: "1.5rem", padding: "2rem", display: "grid", gap: "1.5rem",
+        textAlign: "center", maxWidth: "340px", width: "90%",
+        boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.7)"
+      }}>
+        <div style={{ display: "flex", justifyContent: "center", color: "var(--color-primary)" }}>
+          <Users size={40} />
+        </div>
+        <div>
+          <h2 style={{ fontSize: "1.4rem", margin: 0, color: "#e2e8f0", fontFamily: "var(--font-display)" }}>
+            {t("table.joinTableTitle") || "Unisciti al Tavolo"}
+          </h2>
+          <p style={{ fontSize: "0.9rem", color: "#9ca3af", marginTop: "0.5rem", lineHeight: 1.4 }}>
+            {table.name}
+          </p>
+        </div>
+        
+        {joinError && (
+          <p style={{ fontSize: "0.85rem", color: "var(--color-danger)", margin: "0.5rem 0" }}>{joinError}</p>
+        )}
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.8rem", marginTop: "0.5rem" }}>
+          <button
+            onClick={handleJoinTable}
+            disabled={joinLoading}
+            className="poker-btn-primary"
+            style={{
+              padding: "0.8rem", borderRadius: "999px", cursor: joinLoading ? "default" : "pointer",
+              fontSize: "0.95rem", opacity: joinLoading ? 0.7 : 1, color: "var(--text-inverse)", fontWeight: 700
+            }}
+          >
+            {joinLoading ? t("dashboard.loading") : t("table.joinBtn") || "Unisciti"}
+          </button>
+          <button 
+            onClick={() => navigate("/home")}
+            disabled={joinLoading}
+            style={{
+              background: "transparent", color: "#9ca3af", border: "none", padding: "0.8rem", cursor: joinLoading ? "default" : "pointer",
+              fontWeight: 600, fontSize: "0.9rem", opacity: joinLoading ? 0.7 : 1
+            }}
+          >
+            {t("dashboard.btnCancel")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   const foldConfirmModalUI = showFoldConfirm && (
     <div style={{
       position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
@@ -2764,6 +2865,7 @@ async function handleConfirmWinners(potId: string) {
       {inLobby && renderLobby()}
       {inGame && renderGame()}
       {inSummary && renderSummary()}
+      {joinModalUI}
       {modalUI}
       {foldConfirmModalUI}
       {endGameConfirmModalUI}

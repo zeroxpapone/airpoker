@@ -41,7 +41,7 @@ interface TargetUser {
 
 export default function PlayerProfilePage() {
   const { username: targetUsername } = useParams();
-  const { user, username: myUsername } = useAuth();
+  const { user, username: myUsername, isRegisteredUser } = useAuth();
   const navigate = useNavigate();
   const { t } = useTranslation();
 
@@ -126,6 +126,13 @@ export default function PlayerProfilePage() {
 
   async function handleAddFriend() {
     if (!user || !targetUser) return;
+    
+    // Only registered users can add friends
+    if (!isRegisteredUser) {
+      alert(t("dashboard.errGuestCannotAddFriend") || "Solo gli utenti registrati possono aggiungere amici.");
+      return;
+    }
+    
     try {
       // Me -> Target (PENDING_SENT)
       await setDoc(doc(db, "users", user.uid, "friends", targetUser.uid), {
