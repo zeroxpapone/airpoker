@@ -4,7 +4,6 @@ import {
   signInAnonymously,
   updateProfile,
   GoogleAuthProvider,
-  OAuthProvider,
   type User
 } from "firebase/auth";
 import { initializeFirestore } from "firebase/firestore";
