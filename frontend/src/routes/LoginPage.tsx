@@ -17,6 +17,7 @@ export default function LoginPage() {
 
   // Form Fields
   const [nickname, setNickname] = useState("");
+  const [loginIdentifier, setLoginIdentifier] = useState("");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -59,14 +60,14 @@ export default function LoginPage() {
   async function handleEmailLogin(e: React.FormEvent) {
     e.preventDefault();
     setErrorMsg(null);
-    if (!email.trim() || !password) {
+    if (!loginIdentifier.trim() || !password) {
       setErrorMsg(t("login.errorEmailPassRequired"));
       return;
     }
 
     try {
       setSubmitting(true);
-      await loginWithEmail(email, password);
+      await loginWithEmail(loginIdentifier, password);
       handleNavigation();
     } catch (err: any) {
       console.error(err);
@@ -210,17 +211,18 @@ export default function LoginPage() {
         {activeTab === "login" && (
           <form onSubmit={handleEmailLogin} className="form-group" id="form-email-login">
             <div className="form-group">
-              <label className="form-label-title" htmlFor="input-login-email">
-                {t("login.labelEmail")}
+              <label className="form-label-title" htmlFor="input-login-identifier">
+                {t("login.labelLoginIdentifier")}
               </label>
               <div className="input-with-icon">
                 <Mail size={16} className="input-icon-left" />
                 <input
-                  id="input-login-email"
-                  type="email"
-                  placeholder={t("login.labelEmail")}
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  id="input-login-identifier"
+                  type="text"
+                  placeholder={t("login.labelLoginIdentifier")}
+                  value={loginIdentifier}
+                  onChange={(e) => setLoginIdentifier(e.target.value)}
+                  autoComplete="username"
                   required
                 />
               </div>
@@ -253,17 +255,17 @@ export default function LoginPage() {
             <button
               id="btn-submit-login"
               type="submit"
-              disabled={disabled || !email.trim() || !password}
-              className={disabled || !email.trim() || !password ? "" : "poker-btn-primary"}
+              disabled={disabled || !loginIdentifier.trim() || !password}
+              className={disabled || !loginIdentifier.trim() || !password ? "" : "poker-btn-primary"}
               style={{
                 marginTop: "0.4rem",
                 width: "100%",
                 padding: "0.75rem 1rem",
                 borderRadius: "999px",
                 border: "none",
-                cursor: disabled || !email.trim() || !password ? "not-allowed" : "pointer",
-                backgroundColor: disabled || !email.trim() || !password ? "rgba(75, 85, 99, 0.4)" : undefined,
-                color: disabled || !email.trim() || !password ? "var(--text-muted)" : "var(--text-inverse)",
+                cursor: disabled || !loginIdentifier.trim() || !password ? "not-allowed" : "pointer",
+                backgroundColor: disabled || !loginIdentifier.trim() || !password ? "rgba(75, 85, 99, 0.4)" : undefined,
+                color: disabled || !loginIdentifier.trim() || !password ? "var(--text-muted)" : "var(--text-inverse)",
                 fontWeight: 800,
                 fontSize: "0.95rem",
                 display: "flex",

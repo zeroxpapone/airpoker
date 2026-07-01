@@ -29,6 +29,7 @@
     "tabRegister": "Registrati",
     "btnPlayGuest": "Gioca come Ospite",
     "labelEmail": "Email",
+    "labelLoginIdentifier": "Email o username",
     "labelPassword": "Password",
     "labelPasswordMin": "Password (min. 6 caratteri)",
     "btnLoggingIn": "Accesso in corso...",
@@ -38,8 +39,8 @@
     "usernameHint": "Solo lettere, numeri e underscore. Minimo 3 caratteri.",
     "btnRegistering": "Registrazione...",
     "btnRegister": "Registrati",
-    "errorEmailPassRequired": "Inserisci email e password.",
-    "errorInvalidCredentials": "Email o password non valide.",
+    "errorEmailPassRequired": "Inserisci email o username e password.",
+    "errorInvalidCredentials": "Email, username o password non validi.",
     "errorAllFieldsRequired": "Tutti i campi sono obbligatori.",
     "errorRegisterGeneric": "Errore durante la registrazione. Nome utente occupato?",
     "errorGoogleAuth": "Errore durante l'accesso con Google."

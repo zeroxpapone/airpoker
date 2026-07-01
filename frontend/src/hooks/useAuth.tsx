@@ -13,7 +13,7 @@ import {
   EmailAuthProvider,
   type User
 } from "firebase/auth";
-import { doc, getDoc, runTransaction, serverTimestamp, updateDoc } from "firebase/firestore";
+import { collection, doc, getDoc, runTransaction, serverTimestamp, updateDoc, query, where, limit, getDocs } from "firebase/firestore";
 import { auth, db, googleProvider } from "../lib/firebase";
 
 interface AuthContextValue {
@@ -24,7 +24,7 @@ interface AuthContextValue {
   photoURL: string | null;
   login: (displayName: string) => Promise<void>;
   registerWithEmail: (email: string, password: string, username: string) => Promise<void>;
-  loginWithEmail: (email: string, password: string) => Promise<void>;
+  loginWithEmail: (emailOrUsername: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   linkGuestToRegistered: (email: string, password: string, username: string, type: "email" | "google") => Promise<void>;
   logout: () => Promise<void>;
@@ -194,11 +194,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function loginWithEmail(email: string, password: string) {
-    if (!email.trim() || !password) {
-      throw new Error("Email e password sono obbligatorie.");
+  async function resolveLoginEmail(identifier: string) {
+    const trimmed = identifier.trim();
+    if (!trimmed) {
+      throw new Error("Email o username sono obbligatori.");
     }
-    const cred = await signInWithEmailAndPassword(auth, email, password);
+
+    if (trimmed.includes("@")) {
+      return trimmed;
+    }
+
+    const usernameKey = trimmed.toLowerCase();
+    const usernameDoc = await getDoc(doc(db, "usernames", usernameKey));
+    if (usernameDoc.exists()) {
+      const userUid = usernameDoc.data().uid as string | undefined;
+      if (userUid) {
+        const userDoc = await getDoc(doc(db, "users", userUid));
+        const userEmail = userDoc.exists() ? (userDoc.data().email as string | undefined) : undefined;
+        if (userEmail) {
+          return userEmail;
+        }
+      }
+    }
+
+    const usersQuery = query(collection(db, "users"), where("username", "==", trimmed), limit(1));
+    const usersSnap = await getDocs(usersQuery);
+    if (!usersSnap.empty) {
+      const userEmail = usersSnap.docs[0].data().email as string | undefined;
+      if (userEmail) {
+        return userEmail;
+      }
+    }
+
+    throw new Error("Username non trovato.");
+  }
+
+  async function loginWithEmail(emailOrUsername: string, password: string) {
+    if (!emailOrUsername.trim() || !password) {
+      throw new Error("Email, username e password sono obbligatori.");
+    }
+
+    const loginEmail = await resolveLoginEmail(emailOrUsername);
+    const cred = await signInWithEmailAndPassword(auth, loginEmail, password);
     setUser(cred.user);
     setIsRegisteredUser(true);
   }
