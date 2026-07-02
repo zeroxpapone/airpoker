@@ -152,14 +152,12 @@ export default function PlayerProfilePage() {
       // Me -> Target (PENDING_SENT)
       await setDoc(doc(db, "users", user.uid, "friends", targetUser.uid), {
         friendUid: targetUser.uid,
-        username: targetUser.username,
         status: "PENDING_SENT"
       });
 
       // Target -> Me (PENDING_RECEIVED)
       await setDoc(doc(db, "users", targetUser.uid, "friends", user.uid), {
         friendUid: user.uid,
-        username: myUsername,
         status: "PENDING_RECEIVED"
       });
     } catch (e) {
@@ -321,20 +319,21 @@ export default function PlayerProfilePage() {
           </div>
         )}
 
-        {/* Join Active Table Button */}
-        {targetUserPresence?.status === "ONLINE" &&
+        {/* Join Active Table Button - Only if target is an ACCEPTED friend */}
+        {friendStatus === "ACCEPTED" &&
+         targetUserPresence?.status === "ONLINE" &&
          targetUserPresence?.location === "TABLE" &&
          targetUserPresence?.tableId && (
-          <button
-            id="btn-player-profile-join-table"
-            onClick={() => navigate(`/table/${targetUserPresence.tableId}`)}
-            className="poker-btn-success"
-            style={{ width: "100%", maxWidth: "240px", padding: "0.65rem", borderRadius: "99px", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.4rem", fontSize: "0.9rem", marginTop: "0.5rem" }}
-          >
-            <Play size={16} fill="currentColor" />
-            Unisciti al Tavolo
-          </button>
-        )}
+           <button
+             id="btn-player-profile-join-table"
+             onClick={() => navigate(`/table/${targetUserPresence.tableId}`)}
+             className="poker-btn-success"
+             style={{ width: "100%", maxWidth: "240px", padding: "0.65rem", borderRadius: "999px", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.4rem", fontSize: "0.9rem", marginTop: "0.5rem" }}
+           >
+             <Play size={16} fill="currentColor" />
+             Unisciti al Tavolo
+           </button>
+         )}
       </div>
 
       {/* Grid of Stats */}

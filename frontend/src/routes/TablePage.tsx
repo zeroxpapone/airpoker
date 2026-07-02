@@ -61,7 +61,6 @@ interface TableData {
 
 interface PlayerData {
   id: string;
-  displayName: string | null;
   stack: number;
   seatIndex: number;
   isReady: boolean;
@@ -160,7 +159,7 @@ export default function TablePage() {
 
   const { tableId: rawTableId } = useParams();
   const tableId = rawTableId?.toLowerCase();
-  const { user, username } = useAuth();
+  const { user, username, isRegisteredUser } = useAuth();
 
   // Presence heartbeat inside TablePage
   useEffect(() => {
@@ -474,7 +473,6 @@ export default function TablePage() {
           const d = docSnap.data() as any;
           list.push({
             id: docSnap.id,
-            displayName: d.displayName ?? "Giocatore",
             stack: d.stack,
             seatIndex: d.seatIndex,
             isReady: d.isReady,
@@ -506,7 +504,7 @@ export default function TablePage() {
                 setUserProfiles((prev) => ({
                   ...prev,
                   [uid]: { 
-                    username: uData.username || "Giocatore",
+                    username: uData.username || uData.displayName || "Giocatore",
                     photoURL: uData.photoURL || undefined
                   }
                 }));
@@ -1640,13 +1638,13 @@ async function handleConfirmWinners(potId: string) {
                         />
                       ) : (
                         <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: "rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", fontWeight: 700 }}>
-                          {(userProfiles[p.userId]?.username || p.displayName || "G").charAt(0).toUpperCase()}
+                          {(userProfiles[p.userId]?.username || "G").charAt(0).toUpperCase()}
                         </div>
                       )}
                       <div>
                         <span style={{ fontWeight: 500, color: p.isSittingOut ? "#9ca3af" : "#e5e7eb" }}>
                             {p.isSittingOut && <span style={{ color: "#facc15" }}>{t("table.pauseBadge")}</span>}
-                            {userProfiles[p.userId]?.username || p.displayName || "Giocatore"}
+                            {userProfiles[p.userId]?.username || "Giocatore"}
                         </span>
                       </div>
                     </div>
@@ -1849,8 +1847,8 @@ async function handleConfirmWinners(potId: string) {
                     : `${t("table.winnerSingle")} `
                 } {
                   currentHand.winnerIds && currentHand.winnerIds.length > 1
-                    ? currentHand.winnerIds.map(wId => userProfiles[wId]?.username || players.find(p => p.userId === wId)?.displayName || t("table.unknown")).join(", ")
-                    : userProfiles[currentHand.winnerId || ""]?.username || players.find(p => p.userId === currentHand.winnerId)?.displayName || t("table.unknown")
+                    ? currentHand.winnerIds.map(wId => userProfiles[wId]?.username || t("table.unknown")).join(", ")
+                    : userProfiles[currentHand.winnerId || ""]?.username || t("table.unknown")
                 } 🏆
               </div>
               {currentHand.handResults && currentHand.winnerIds?.[0] && currentHand.handResults[currentHand.winnerIds[0]] && (
@@ -1916,7 +1914,7 @@ async function handleConfirmWinners(potId: string) {
                     currentHand.currentTurnIndex != null &&
                     currentHand.currentTurnIndex >= 0 &&
                     players[currentHand.currentTurnIndex]
-                  ? t("table.turnOf", { name: players[currentHand.currentTurnIndex].displayName })
+                  ? t("table.turnOf", { name: userProfiles[players[currentHand.currentTurnIndex].userId]?.username || "Giocatore" })
                   : t("table.waitingTurn")}
               </div>
             </div>
@@ -2035,7 +2033,7 @@ async function handleConfirmWinners(potId: string) {
                               style={{ width: "16px", height: "16px", borderRadius: "50%", objectFit: "cover" }} 
                             />
                           )}
-                          <span>{userProfiles[p.userId]?.username || p.displayName || "Giocatore"}</span>
+                          <span>{userProfiles[p.userId]?.username || "Giocatore"}</span>
                         </div>
                       </div>
                     </div>
@@ -2574,7 +2572,7 @@ async function handleConfirmWinners(potId: string) {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <span style={{ fontWeight: 600, color: "#f8fafc" }}>
                       {isTournament && <span style={{ marginRight: "0.5rem", color: "#fbbf24" }}>#{idx + 1}</span>}
-                      {userProfiles[p.userId]?.username || p.displayName || "Giocatore"}
+                      {userProfiles[p.userId]?.username || "Giocatore"}
                     </span>
                     {!isTournament && (
                       <span style={{ fontSize: "1rem", color: diffColor, fontWeight: 700 }}>
@@ -2662,48 +2660,54 @@ async function handleConfirmWinners(potId: string) {
         </button>
 
         {/* Invito Diretto Amici Online */}
-        <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: "1.2rem", textAlign: "left" }}>
-          <label style={{ fontSize: "0.85rem", fontWeight: 700, color: "#e2e8f0", display: "flex", alignItems: "center", gap: "0.35rem", marginBottom: "0.5rem" }}>
-            <Users size={14} /> Invito Diretto Amici Online
-          </label>
-          {onlineFriends.length === 0 ? (
-            <p style={{ fontSize: "0.8rem", color: "#9ca3af", margin: 0 }}>Nessun amico online a casa.</p>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", maxHeight: "120px", overflowY: "auto", overflowX: "visible", padding: "0 4px" }}>
-              {onlineFriends.map((friend) => {
-                const invited = invitedFriends[friend.uid];
-                return (
-                  <div key={friend.uid} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.4rem 2px" }}>
-                    <span style={{ fontSize: "0.85rem" }}>@{friend.username}</span>
-                    <button
-                      disabled={invited}
-                      onClick={async () => {
-                        try {
-                          if (!tableId || !table) return;
-                          const inviteRef = doc(db, "users", friend.uid, "invitations", tableId);
-                          await setDoc(inviteRef, {
-                            tableId,
-                            tableName: table.name,
-                            senderUsername: username || user?.displayName || "AirPoker Player",
-                            senderUid: user?.uid,
-                            createdAt: serverTimestamp()
-                          });
-                          setInvitedFriends(prev => ({ ...prev, [friend.uid]: true }));
-                        } catch (err) {
-                          console.error(err);
-                        }
-                      }}
-                      className="poker-btn-success"
-                      style={{ padding: "0.2rem 0.5rem", fontSize: "0.75rem", borderRadius: "999px" }}
-                    >
-                      {invited ? "Invitato" : "Invita"}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        {isRegisteredUser && (
+          <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: "1.2rem", textAlign: "left" }}>
+            <label style={{ fontSize: "0.85rem", fontWeight: 700, color: "#e2e8f0", display: "flex", alignItems: "center", gap: "0.35rem", marginBottom: "0.5rem" }}>
+              <Users size={14} /> Invito Diretto Amici Online
+            </label>
+            {onlineFriends.length === 0 ? (
+              <p style={{ fontSize: "0.8rem", color: "#9ca3af", margin: 0 }}>Nessun amico online a casa.</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", maxHeight: "120px", overflowY: "auto", overflowX: "visible", padding: "0 4px" }}>
+                {onlineFriends.map((friend) => {
+                  const invited = invitedFriends[friend.uid];
+                  return (
+                    <div key={friend.uid} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.4rem 2px" }}>
+                      <span style={{ fontSize: "0.85rem" }}>@{friend.username}</span>
+                      <button
+                        disabled={invited}
+                        onClick={async () => {
+                          try {
+                            if (!tableId || !table) return;
+                            const inviteRef = doc(db, "users", friend.uid, "invitations", tableId);
+                            await setDoc(inviteRef, {
+                              tableId,
+                              tableName: table.name,
+                              senderUsername: username || user?.displayName || "AirPoker Player",
+                              senderUid: user?.uid,
+                              createdAt: serverTimestamp()
+                            });
+                            setInvitedFriends(prev => ({ ...prev, [friend.uid]: true }));
+                            // Automatically reset invite state after 10 seconds to allow re-invite
+                            setTimeout(() => {
+                              setInvitedFriends(prev => ({ ...prev, [friend.uid]: false }));
+                            }, 10000);
+                          } catch (err) {
+                            console.error(err);
+                          }
+                        }}
+                        className="poker-btn-success"
+                        style={{ padding: "0.2rem 0.5rem", fontSize: "0.75rem", borderRadius: "999px" }}
+                      >
+                        {invited ? "Invitato" : "Invita"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         <button 
           onClick={() => setShowShareModal(false)}
@@ -2977,8 +2981,8 @@ async function handleConfirmWinners(potId: string) {
       stageModalTitle = t("table.handOver");
 
       const winnerNames = currentHand.winnerIds && currentHand.winnerIds.length > 1
-        ? currentHand.winnerIds.map(wId => players.find(p => p.userId === wId)?.displayName || t("table.unknown")).join(", ")
-        : players.find(p => p.userId === currentHand.winnerId)?.displayName || t("table.unknown");
+        ? currentHand.winnerIds.map(wId => userProfiles[wId]?.username || t("table.unknown")).join(", ")
+        : userProfiles[currentHand.winnerId || ""]?.username || t("table.unknown");
 
       // Check if this was a fold-out win (only 1 active player, no handResults)
       const isFoldOutWin = !currentHand.handResults || Object.keys(currentHand.handResults).length === 0;
@@ -3042,7 +3046,7 @@ async function handleConfirmWinners(potId: string) {
                       {/* Player info */}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div className={`winner-player-name-title ${isWinner ? "winner" : "loser"}`}>
-                          {isWinner && "🏆 "}{p.displayName}
+                          {isWinner && "🏆 "}{userProfiles[p.userId]?.username || "Giocatore"}
                         </div>
                         {result && (
                           <div style={{ fontSize: "0.75rem", color: isWinner ? "#86efac" : "#9ca3af", display: "flex", gap: "0.4rem", alignItems: "center", flexWrap: "wrap" }}>
@@ -3135,7 +3139,7 @@ async function handleConfirmWinners(potId: string) {
                       fontSize: "0.9rem"
                     }}
                   >
-                    {p.displayName}
+                    {userProfiles[p.userId]?.username || "Giocatore"}
                   </button>
                 ))}
               </div>
@@ -3203,8 +3207,8 @@ async function handleConfirmWinners(potId: string) {
     } else if (blindsPopupVisible && currentHand.stage === "PREFLOP") {
       stageModalVisible = true;
       stageModalTitle = t("table.newHand");
-      const sb = players[currentHand.smallBlindIndex]?.displayName;
-      const bb = players[currentHand.bigBlindIndex]?.displayName;
+      const sb = players[currentHand.smallBlindIndex]?.userId ? userProfiles[players[currentHand.smallBlindIndex].userId]?.username : undefined;
+      const bb = players[currentHand.bigBlindIndex]?.userId ? userProfiles[players[currentHand.bigBlindIndex].userId]?.username : undefined;
 
       stageModalContent = (
         <div style={{ display: "grid", gap: "0.5rem", color: "#e2e8f0", fontSize: "0.95rem" }}>
@@ -3303,7 +3307,7 @@ async function handleConfirmWinners(potId: string) {
                 {!isMe && inGame && currentHand && currentHand.currentTurnIndex === idx && (
                   <button onClick={() => setForceFoldConfirmTarget(p.userId)} style={{ padding: "0 0.4rem", fontSize: "0.85rem", cursor: "pointer", background: "transparent", border: "1px solid #ef4444", borderRadius: "4px", color: "#f87171" }} title={t("table.forceFold")}>🃏</button>
                 )}
-                <span style={{ flex: 1, fontSize: "0.85rem", color: "#f8fafc", minWidth: "100px", fontWeight: 500 }}>{p.displayName} <span style={{ color: "#94a3b8", fontWeight: 400 }}>({p.stack})</span></span>
+                <span style={{ flex: 1, fontSize: "0.85rem", color: "#f8fafc", minWidth: "100px", fontWeight: 500 }}>{userProfiles[p.userId]?.username || "Giocatore"} <span style={{ color: "#94a3b8", fontWeight: 400 }}>({p.stack})</span></span>
                 {canRebuy ? (
                   <>
                     <input type="number" min={5} step={5} placeholder={isTournament ? "Add-on" : "Rebuy"} disabled={disableEndGame} value={rebuyAmounts[p.userId] ?? ""} onChange={e => setRebuyAmounts(prev => ({ ...prev, [p.userId]: Number(e.target.value) }))} style={{ width: "75px", padding: "0.35rem 0.5rem", borderRadius: "0.4rem", border: "1px solid #475569", backgroundColor: "#0f172a", color: "#f8fafc", fontSize: "0.85rem", opacity: disableEndGame ? 0.5 : 1 }} />

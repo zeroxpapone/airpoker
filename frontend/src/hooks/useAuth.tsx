@@ -13,7 +13,8 @@ import {
   EmailAuthProvider,
   type User
 } from "firebase/auth";
-import { collection, doc, getDoc, runTransaction, serverTimestamp, updateDoc, query, where, limit, getDocs } from "firebase/firestore";
+import { collection, doc, getDoc, runTransaction, serverTimestamp, updateDoc, query, where, limit, getDocs, setDoc } from "firebase/firestore";
+
 import { auth, db, googleProvider } from "../lib/firebase";
 
 interface AuthContextValue {
@@ -177,6 +178,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       setUser(auth.currentUser);
       setUsername(trimmed);
+      // Also keep guest doc's displayName in sync
+      if (auth.currentUser.isAnonymous) {
+        try {
+          await setDoc(doc(db, "users", auth.currentUser.uid), { displayName: trimmed }, { merge: true });
+        } catch (e) {
+          console.warn("Could not update guest displayName in Firestore:", e);
+        }
+      }
       return;
     }
 
@@ -185,6 +194,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await updateProfile(cred.user, { displayName: trimmed });
       setUser({ ...cred.user, displayName: trimmed } as User);
       setUsername(trimmed);
+      // Create a minimal Firestore doc for the guest so userProfiles
+      // resolution works for all players in TablePage
+      try {
+        await setDoc(doc(db, "users", cred.user.uid), {
+          uid: cred.user.uid,
+          displayName: trimmed,
+          isRegistered: false,
+          createdAt: serverTimestamp(),
+          photoURL: null,
+          stats: {
+            handsPlayed: 0,
+            handsWon: 0,
+            totalChipsWon: 0,
+            totalChipsLost: 0,
+            netProfit: 0,
+            sessionsPlayed: 0,
+            timePlayedSeconds: 0,
+            bestHandName: "",
+            bestHandRank: 999999
+          }
+        }, { merge: true });
+      } catch (e) {
+        console.warn("Could not create guest Firestore doc:", e);
+      }
     }
   }
 

@@ -341,7 +341,6 @@ export async function createTable(data: CreateTableInput, user: User | null) {
   // Aggiunge subito l'host come giocatore seduto al tavolo (seatIndex 0)
   await setDoc(doc(db, "tables", tableId, "players", user.uid), {
     userId: user.uid,
-    displayName: user.displayName || "Admin",
     stack: data.initialStack,
     seatIndex: 0,
     isSittingOut: false,
@@ -410,7 +409,6 @@ export async function joinTable(tableId: string, user: User | null, password?: s
 
   await setDoc(playerRef, {
     userId: user.uid,
-    displayName: user.displayName,
     stack: initialStack,
     totalBuyIn: initialStack,
     seatIndex,
@@ -919,11 +917,9 @@ export async function endGame(tableId: string) {
     const initialStack = Number(tableData.initialStack) || 0;
     const totalBuyIn = Number(p.totalBuyIn) || initialStack;
 
-    // Check if player is registered in users collection
+    // Check if player is registered in users collection (still needed for stats update)
     const userDocRef = doc(db, "users", p.userId);
     const userSnap = await getDoc(userDocRef);
-    const isRegistered = userSnap.exists() && userSnap.data().isRegistered === true;
-    const usernameVal = userSnap.exists() ? userSnap.data().username : null;
 
     if (userSnap.exists()) {
       userSnaps[p.userId] = userSnap.data();
@@ -938,9 +934,6 @@ export async function endGame(tableId: string) {
 
     return {
       userId: p.userId,
-      displayName: p.displayName,
-      username: usernameVal,
-      isRegistered: isRegistered,
       startingStack: initialStack,
       finalStack: finalStack,
       netProfit: finalStack - totalBuyIn,
@@ -952,16 +945,9 @@ export async function endGame(tableId: string) {
 
   const batch = writeBatch(db);
 
+  // Write summary data directly on the table document — no separate table_history collection
   batch.update(tableRef, {
     state: "SUMMARY",
-    endedAt: serverTimestamp()
-  });
-
-  const historyRef = doc(db, "table_history", tableId);
-  batch.set(historyRef, {
-    tableId,
-    tableName: tableData.name || "Tavolo",
-    mode: tableData.mode || "CASH",
     endedAt: serverTimestamp(),
     playerIds,
     players: playersData
@@ -1292,7 +1278,6 @@ export async function playerAction(
       id: d.id,
       ref: d.ref,
       userId: data.userId,
-      displayName: data.displayName,
       stack,
       seatIndex: data.seatIndex,
       isFolded: !!data.isFolded,

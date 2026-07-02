@@ -127,6 +127,8 @@ export default function HomePage() {
 
   // Selected History Table for Details Modal
   const [selectedTable, setSelectedTable] = useState<TableHistoryEntry | null>(null);
+  // Live user profiles for the history detail modal (uid -> { username, isRegistered })
+  const [historyPlayerProfiles, setHistoryPlayerProfiles] = useState<Record<string, { username: string; isRegistered: boolean }>>({});
 
   // Invitations State
   const [invitations, setInvitations] = useState<any[]>([]);
@@ -172,6 +174,37 @@ export default function HomePage() {
     });
     return () => unsub();
   }, [user]);
+
+  // Fetch live user profiles when a history table detail modal is opened
+  useEffect(() => {
+    if (!selectedTable || !selectedTable.players?.length) {
+      setHistoryPlayerProfiles({});
+      return;
+    }
+    let cancelled = false;
+    const profiles: Record<string, { username: string; isRegistered: boolean }> = {};
+    Promise.all(
+      selectedTable.players.map(async (p: any) => {
+        try {
+          const snap = await getDoc(doc(db, "users", p.userId));
+          if (snap.exists()) {
+            const d = snap.data();
+            profiles[p.userId] = {
+              username: d.username || d.displayName || "",
+              isRegistered: !!d.isRegistered
+            };
+          } else {
+            profiles[p.userId] = { username: "", isRegistered: false };
+          }
+        } catch {
+          profiles[p.userId] = { username: "", isRegistered: false };
+        }
+      })
+    ).then(() => {
+      if (!cancelled) setHistoryPlayerProfiles(profiles);
+    });
+    return () => { cancelled = true; };
+  }, [selectedTable]);
 
   // Fetch aggregate stats if registered
   useEffect(() => {
@@ -223,11 +256,12 @@ export default function HomePage() {
     return () => unsub();
   }, []);
 
-  // Fetch Match History
+  // Fetch Match History from the tables collection (state === SUMMARY)
   useEffect(() => {
     if (!user) return;
     const q = query(
-      collection(db, "table_history"),
+      collection(db, "tables"),
+      where("state", "==", "SUMMARY"),
       where("playerIds", "array-contains", user.uid),
       limit(20)
     );
@@ -239,7 +273,7 @@ export default function HomePage() {
         const myData = data.players?.find((p: any) => p.userId === user.uid);
         list.push({
           tableId: d.id,
-          tableName: data.tableName || "Tavolo",
+          tableName: data.name || "Tavolo",
           mode: data.mode || "CASH",
           endedAt: data.endedAt,
           netProfit: myData ? myData.netProfit : 0,
@@ -272,14 +306,13 @@ export default function HomePage() {
       unsubUserDocs = [];
 
       const tempFriends: Record<string, Friend> = {};
-      const friendsList: { friendUid: string; status: any; fallbackUsername: string }[] = [];
+      const friendsList: { friendUid: string; status: any }[] = [];
 
       snap.forEach((d) => {
         const data = d.data();
         friendsList.push({
           friendUid: d.id,
-          status: data.status,
-          fallbackUsername: data.username || "Friend"
+          status: data.status
         });
       });
 
@@ -291,9 +324,9 @@ export default function HomePage() {
       friendsList.forEach((friend) => {
         const friendUserRef = doc(db, "users", friend.friendUid);
         const unsubUserDoc = onSnapshot(friendUserRef, (userSnap) => {
-          let liveUsername = friend.fallbackUsername;
+          let liveUsername = "Friend";
           if (userSnap.exists()) {
-            liveUsername = userSnap.data().username || friend.fallbackUsername;
+            liveUsername = userSnap.data().username || userSnap.data().displayName || "Friend";
           }
           tempFriends[friend.friendUid] = {
             friendUid: friend.friendUid,
@@ -378,6 +411,12 @@ export default function HomePage() {
       const friendUid = friendDoc.id;
       const actualFriendUsername = friendDoc.data().username || friendName;
 
+      // Block friend requests to guest (unregistered) users
+      if (!friendDoc.data().isRegistered) {
+        setErrorMsg(t("dashboard.errFriendIsGuest"));
+        return;
+      }
+
       // Check if already friends/pending
       const checkFriendRef = doc(db, "users", user!.uid, "friends", friendUid);
       const checkFriendSnap = await getDoc(checkFriendRef);
@@ -390,14 +429,12 @@ export default function HomePage() {
       // Me -> Friend (PENDING_SENT)
       await setDoc(doc(db, "users", user!.uid, "friends", friendUid), {
         friendUid,
-        username: actualFriendUsername,
         status: "PENDING_SENT"
       });
 
       // Friend -> Me (PENDING_RECEIVED)
       await setDoc(doc(db, "users", friendUid, "friends", user!.uid), {
         friendUid: user!.uid,
-        username: username,
         status: "PENDING_RECEIVED"
       });
 
@@ -1137,7 +1174,10 @@ export default function HomePage() {
 
               {selectedTable.players?.map((p: any) => {
                 const isSelf = p.userId === user?.uid;
-                const canClick = isSelf || (p.isRegistered && p.username);
+                const profile = historyPlayerProfiles[p.userId];
+                const liveUsername = profile?.username || "";
+                const isRegistered = profile?.isRegistered ?? false;
+                const canClick = isSelf || (isRegistered && liveUsername);
                 return (
                   <div 
                     key={p.userId} 
@@ -1148,7 +1188,7 @@ export default function HomePage() {
                       if (isSelf) {
                         navigate("/profile");
                       } else {
-                        navigate(`/user/${p.username}`);
+                        navigate(`/user/${liveUsername}`);
                       }
                     }}
                     style={{ 
@@ -1162,7 +1202,7 @@ export default function HomePage() {
                     }}
                   >
                     <span style={{ fontSize: "0.9rem", fontWeight: isSelf ? 700 : 500 }}>
-                      {p.username ? `@${p.username}` : p.displayName} {isSelf && ` (${t("dashboard.textYou")})`}
+                      {liveUsername ? `@${liveUsername}` : `${t("dashboard.guest") || "Guest"}`} {isSelf && ` (${t("dashboard.textYou")})`}
                     </span>
                     <span style={{ 
                       fontSize: "0.9rem", 
