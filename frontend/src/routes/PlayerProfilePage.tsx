@@ -41,7 +41,7 @@ interface TargetUser {
 
 export default function PlayerProfilePage() {
   const { username: targetUsername } = useParams();
-  const { user, username: myUsername, isRegisteredUser } = useAuth();
+  const { user, isRegisteredUser } = useAuth();
   const navigate = useNavigate();
   const { t } = useTranslation();
 
