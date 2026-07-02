@@ -12,7 +12,7 @@ export default function Layout({ children }: Props) {
   const { i18n, t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, isRegisteredUser, claimUsername, logout } = useAuth();
+  const { user, isRegisteredUser, claimUsername, logout, isRegistering } = useAuth();
 
   const [newUsername, setNewUsername] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -43,7 +43,7 @@ export default function Layout({ children }: Props) {
   }
 
   const showHomeBtn = location.pathname !== "/home" && location.pathname !== "/";
-  const showUsernameModal = user && !user.isAnonymous && !isRegisteredUser;
+  const showUsernameModal = user && !user.isAnonymous && !isRegisteredUser && !isRegistering;
 
   return (
     <div className="app-layout" id="app-layout-root">

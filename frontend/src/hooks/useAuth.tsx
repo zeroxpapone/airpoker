@@ -30,6 +30,7 @@ interface AuthContextValue {
   logout: () => Promise<void>;
   updatePhotoURL: (url: string) => Promise<void>;
   claimUsername: (username: string) => Promise<void>;
+  isRegistering: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -111,6 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [photoURL, setPhotoURL] = useState<string | null>(null);
   const [isRegisteredUser, setIsRegisteredUser] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isRegistering, setIsRegistering] = useState(false);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -131,15 +133,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               }
               setPhotoURL(uData.photoURL || firebaseUser.photoURL || null);
             } else {
+              // If the user registration flow is currently active,
+              // don't reset states to false since we are writing Firestore now
+              if (!isRegistering) {
+                setUsername(null);
+                setPhotoURL(firebaseUser.photoURL || null);
+                setIsRegisteredUser(false);
+              }
+            }
+          } catch (e) {
+            console.error("Errore nel recupero dello username:", e);
+            if (!isRegistering) {
               setUsername(null);
               setPhotoURL(firebaseUser.photoURL || null);
               setIsRegisteredUser(false);
             }
-          } catch (e) {
-            console.error("Errore nel recupero dello username:", e);
-            setUsername(null);
-            setPhotoURL(firebaseUser.photoURL || null);
-            setIsRegisteredUser(false);
           }
         } else {
           setIsRegisteredUser(false);
@@ -185,23 +193,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error("Tutti i campi sono obbligatori.");
     }
 
-    // 1. Create firebase auth user
-    const cred = await createUserWithEmailAndPassword(auth, email, password);
-    const u = cred.user;
-
     try {
+      setIsRegistering(true);
+      // 1. Create firebase auth user
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      const u = cred.user;
+
       // 2. Create firestore profile and reserve username
       const finalUsername = await createProfileForUser(u.uid, email, desiredUsername, true);
       // 3. Update auth profile displayName
       await updateProfile(u, { displayName: finalUsername });
-      setUser(u);
+      
       setUsername(finalUsername);
-      setPhotoURL(null);
       setIsRegisteredUser(true);
+      setPhotoURL(null);
+      setUser(u);
     } catch (err) {
-      // Rollback auth user if firestore registration fails
-      await u.delete();
+      setIsRegistering(false);
       throw err;
+    } finally {
+      // Small timeout to allow auth states to fully settle in components
+      setTimeout(() => {
+        setIsRegistering(false);
+      }, 800);
     }
   }
 
@@ -365,9 +379,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function claimUsername(desiredUsername: string) {
     if (!auth.currentUser) throw new Error("Utente non autenticato.");
-    const finalUsername = await createProfileForUser(auth.currentUser.uid, auth.currentUser.email, desiredUsername, true, auth.currentUser.photoURL || undefined);
-    await updateProfile(auth.currentUser, { displayName: finalUsername });
+    const pUrl = auth.currentUser.photoURL || undefined;
+    const finalUsername = await createProfileForUser(auth.currentUser.uid, auth.currentUser.email, desiredUsername, true, pUrl);
+    await updateProfile(auth.currentUser, { displayName: finalUsername, photoURL: pUrl });
     setUsername(finalUsername);
+    setPhotoURL(pUrl || null);
     setIsRegisteredUser(true);
   }
 
@@ -384,7 +400,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     linkGuestToRegistered,
     logout,
     updatePhotoURL,
-    claimUsername
+    claimUsername,
+    isRegistering
   };
 
   return (

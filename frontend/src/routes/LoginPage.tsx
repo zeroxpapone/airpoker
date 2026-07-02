@@ -2,7 +2,9 @@ import { useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { useTranslation, Trans } from "react-i18next";
-import { Mail, Lock, User, LogIn, UserPlus, ShieldAlert } from "lucide-react";
+import { Mail, Lock, User, LogIn, UserPlus, ShieldAlert, Eye, EyeOff } from "lucide-react";
+import { sendPasswordResetEmail } from "firebase/auth";
+import { auth } from "../lib/firebase";
 
 type TabType = "guest" | "login" | "register";
 
@@ -25,6 +27,17 @@ export default function LoginPage() {
   // UI States
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Show/Hide Password States
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
+
+  // Password Recovery States
+  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
+  const [recoverEmail, setRecoverEmail] = useState("");
+  const [recoverLoading, setRecoverLoading] = useState(false);
+  const [recoverError, setRecoverError] = useState<string | null>(null);
+  const [recoverSuccess, setRecoverSuccess] = useState<string | null>(null);
 
   const redirect = searchParams.get("redirect");
 
@@ -108,6 +121,32 @@ export default function LoginPage() {
       setErrorMsg(err?.message || t("login.errorGoogleAuth"));
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handlePasswordRecovery(e: React.FormEvent) {
+    e.preventDefault();
+    setRecoverError(null);
+    setRecoverSuccess(null);
+    const targetEmail = recoverEmail.trim();
+    if (!targetEmail) {
+      setRecoverError(t("login.errorEmptyEmail") || "Inserisci un indirizzo email.");
+      return;
+    }
+
+    try {
+      setRecoverLoading(true);
+      await sendPasswordResetEmail(auth, targetEmail);
+      setRecoverSuccess(t("login.successPasswordResetSent") || "Email di ripristino inviata con successo!");
+    } catch (err: any) {
+      console.error(err);
+      if (err.code === "auth/user-not-found") {
+        setRecoverError(t("login.errorUserNotFound") || "Nessun utente trovato con questo indirizzo email.");
+      } else {
+        setRecoverError(err.message || t("login.errorResetGeneric") || "Errore durante l'invio dell'email.");
+      }
+    } finally {
+      setRecoverLoading(false);
     }
   }
 
@@ -232,16 +271,58 @@ export default function LoginPage() {
               <label className="form-label-title" htmlFor="input-login-password">
                 {t("login.labelPassword")}
               </label>
-              <div className="input-with-icon">
+              <div className="input-with-icon" style={{ position: "relative" }}>
                 <Lock size={16} className="input-icon-left" />
                 <input
                   id="input-login-password"
-                  type="password"
+                  type={showLoginPassword ? "text" : "password"}
                   placeholder={t("login.labelPassword")}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  style={{ paddingRight: "2.5rem" }}
                   required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowLoginPassword((p) => !p)}
+                  style={{
+                    position: "absolute",
+                    right: "0.8rem",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    color: "var(--text-muted)",
+                    padding: 0,
+                    display: "flex",
+                    alignItems: "center"
+                  }}
+                >
+                  {showLoginPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+              <div style={{ textAlign: "right", marginTop: "0.15rem" }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowForgotPasswordModal(true);
+                    setRecoverError(null);
+                    setRecoverSuccess(null);
+                    setRecoverEmail("");
+                  }}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    fontSize: "0.75rem",
+                    color: "var(--color-primary)",
+                    fontWeight: 600,
+                    padding: 0
+                  }}
+                >
+                  Password dimenticata?
+                </button>
               </div>
             </div>
 
@@ -327,7 +408,7 @@ export default function LoginPage() {
                 <input
                   id="input-register-username"
                   type="text"
-                  placeholder="es. ale_poker"
+                  placeholder="username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, ""))}
                   autoComplete="off"
@@ -360,17 +441,37 @@ export default function LoginPage() {
               <label className="form-label-title" htmlFor="input-register-password">
                 {t("login.labelPassword")}
               </label>
-              <div className="input-with-icon">
+              <div className="input-with-icon" style={{ position: "relative" }}>
                 <Lock size={16} className="input-icon-left" />
                 <input
                   id="input-register-password"
-                  type="password"
+                  type={showRegisterPassword ? "text" : "password"}
                   placeholder={t("login.labelPasswordMin")}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  style={{ paddingRight: "2.5rem" }}
                   minLength={6}
                   required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowRegisterPassword((p) => !p)}
+                  style={{
+                    position: "absolute",
+                    right: "0.8rem",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    color: "var(--text-muted)",
+                    padding: 0,
+                    display: "flex",
+                    alignItems: "center"
+                  }}
+                >
+                  {showRegisterPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
               </div>
             </div>
 
@@ -460,6 +561,97 @@ export default function LoginPage() {
           />
         </p>
       </div>
+
+      {/* ---- Password Recovery Modal ---- */}
+      {showForgotPasswordModal && (
+        <div
+          className="modal-overlay"
+          id="modal-forgot-password"
+          style={{ zIndex: 3000 }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowForgotPasswordModal(false); }}
+        >
+          <div className="glass-panel modal-panel-box" style={{
+            maxWidth: "360px",
+            padding: "2rem",
+            textAlign: "center",
+            display: "flex",
+            flexDirection: "column",
+            gap: "1.2rem"
+          }}>
+            <div style={{ color: "var(--color-primary)", display: "flex", justifyContent: "center" }}>
+              <Lock size={44} />
+            </div>
+            <div>
+              <h3 style={{ fontSize: "1.2rem", fontWeight: 800, margin: 0 }}>Recupera Password</h3>
+              <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "0.6rem", lineHeight: 1.5 }}>
+                Inserisci l'indirizzo email associato al tuo account. Ti invieremo un link per impostare una nuova password.
+              </p>
+            </div>
+            
+            <form onSubmit={handlePasswordRecovery} style={{ display: "grid", gap: "1rem" }}>
+              <div className="form-group" style={{ textAlign: "left" }}>
+                <label className="form-label-title" htmlFor="input-recover-email">Email</label>
+                <div className="input-with-icon">
+                  <Mail size={16} className="input-icon-left" />
+                  <input
+                    id="input-recover-email"
+                    type="email"
+                    placeholder="email@esempio.com"
+                    value={recoverEmail}
+                    onChange={(e) => setRecoverEmail(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              {recoverError && (
+                <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", color: "var(--color-danger)", fontSize: "0.8rem", justifyContent: "center" }}>
+                  <ShieldAlert size={14} />
+                  <span>{recoverError}</span>
+                </div>
+              )}
+
+              {recoverSuccess && (
+                <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", color: "var(--color-success)", fontSize: "0.85rem", justifyContent: "center" }}>
+                  <span>{recoverSuccess}</span>
+                </div>
+              )}
+
+              <div style={{ display: "flex", gap: "0.8rem", marginTop: "0.5rem" }}>
+                <button
+                  type="button"
+                  id="btn-cancel-recover-password"
+                  onClick={() => setShowForgotPasswordModal(false)}
+                  disabled={recoverLoading}
+                  className="poker-btn-secondary"
+                  style={{ flex: 1, padding: "0.7rem", borderRadius: "99px", fontWeight: 700 }}
+                >
+                  Annulla
+                </button>
+                <button
+                  type="submit"
+                  id="btn-confirm-recover-password"
+                  disabled={recoverLoading}
+                  className={recoverLoading ? "" : "poker-btn-primary"}
+                  style={{
+                    flex: 1,
+                    padding: "0.7rem",
+                    borderRadius: "99px",
+                    border: "none",
+                    backgroundColor: recoverLoading ? "rgba(75, 85, 99, 0.4)" : undefined,
+                    color: recoverLoading ? "var(--text-muted)" : "var(--text-inverse)",
+                    fontWeight: 800,
+                    fontSize: "0.9rem",
+                    cursor: recoverLoading ? "not-allowed" : "pointer"
+                  }}
+                >
+                  {recoverLoading ? "Invio..." : "Invia"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

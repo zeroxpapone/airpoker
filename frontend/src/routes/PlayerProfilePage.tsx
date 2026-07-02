@@ -61,7 +61,8 @@ export default function PlayerProfilePage() {
 
     async function fetchTargetUser() {
       try {
-        const q = query(collection(db, "users"), where("username", "==", targetUsername), limit(1));
+        if (!targetUsername) return;
+        const q = query(collection(db, "users"), where("usernameLowercase", "==", targetUsername.toLowerCase()), limit(1));
         const snap = await getDocs(q);
         if (snap.empty) {
           setErrorMsg(t("profile.errPlayerNotFound"));

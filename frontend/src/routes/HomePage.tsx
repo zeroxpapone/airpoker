@@ -30,6 +30,7 @@ import {
   orderBy, 
   limit, 
   getDoc,
+  getDocs,
   doc, 
   setDoc, 
   updateDoc, 
@@ -73,9 +74,28 @@ export default function HomePage() {
 
   useEffect(() => {
     const cachedId = localStorage.getItem("activeTableId");
-    if (cachedId) {
-      setActiveTableId(cachedId);
-    }
+    if (!cachedId) return;
+
+    // Verify the table is still in a joinable state before showing the banner
+    import("../lib/firebase").then(({ db }) => {
+      import("firebase/firestore").then(({ doc, getDoc }) => {
+        getDoc(doc(db, "tables", cachedId)).then((snap) => {
+          if (!snap.exists()) {
+            localStorage.removeItem("activeTableId");
+            return;
+          }
+          const state = snap.data()?.state;
+          if (state === "SUMMARY" || state === "ENDED") {
+            localStorage.removeItem("activeTableId");
+          } else {
+            setActiveTableId(cachedId);
+          }
+        }).catch(() => {
+          // On network issue or error, still show the banner
+          setActiveTableId(cachedId);
+        });
+      });
+    });
   }, []);
 
   // Main Dashboard Data States
@@ -244,19 +264,52 @@ export default function HomePage() {
   useEffect(() => {
     if (!user) return;
     const q = collection(db, "users", user.uid, "friends");
-    const unsub = onSnapshot(q, (snap) => {
-      const list: Friend[] = [];
+    let unsubUserDocs: (() => void)[] = [];
+
+    const unsubFriends = onSnapshot(q, (snap) => {
+      // Clean up previous listeners
+      unsubUserDocs.forEach((unsub) => unsub());
+      unsubUserDocs = [];
+
+      const tempFriends: Record<string, Friend> = {};
+      const friendsList: { friendUid: string; status: any; fallbackUsername: string }[] = [];
+
       snap.forEach((d) => {
         const data = d.data();
-        list.push({
+        friendsList.push({
           friendUid: d.id,
-          username: data.username || "Friend",
-          status: data.status
+          status: data.status,
+          fallbackUsername: data.username || "Friend"
         });
       });
-      setFriends(list);
+
+      if (friendsList.length === 0) {
+        setFriends([]);
+        return;
+      }
+
+      friendsList.forEach((friend) => {
+        const friendUserRef = doc(db, "users", friend.friendUid);
+        const unsubUserDoc = onSnapshot(friendUserRef, (userSnap) => {
+          let liveUsername = friend.fallbackUsername;
+          if (userSnap.exists()) {
+            liveUsername = userSnap.data().username || friend.fallbackUsername;
+          }
+          tempFriends[friend.friendUid] = {
+            friendUid: friend.friendUid,
+            status: friend.status,
+            username: liveUsername
+          };
+          setFriends(Object.values(tempFriends));
+        });
+        unsubUserDocs.push(unsubUserDoc);
+      });
     });
-    return () => unsub();
+
+    return () => {
+      unsubFriends();
+      unsubUserDocs.forEach((unsub) => unsub());
+    };
   }, [user]);
 
   async function handleLogout() {
@@ -514,6 +567,36 @@ export default function HomePage() {
           </button>
         </div>
       </div>
+
+      {activeTableId && (
+        <div 
+          className="glass-panel" 
+          style={{ 
+            padding: "1rem", 
+            marginBottom: "1rem", 
+            display: "flex", 
+            justifyContent: "space-between", 
+            alignItems: "center", 
+            borderColor: "rgba(250, 204, 21, 0.4)", 
+            background: "rgba(250, 204, 21, 0.05)" 
+          }}
+          id="banner-active-table"
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <span style={{ fontSize: "1.2rem" }}>🔔</span>
+            <span style={{ fontSize: "0.9rem", color: "#e2e8f0" }}>
+              Hai una partita attiva in corso (ID: <strong style={{ color: "#facc15" }}>{activeTableId}</strong>)
+            </span>
+          </div>
+          <button
+            onClick={() => navigate(`/table/${activeTableId}`)}
+            className="poker-btn-success"
+            style={{ padding: "0.4rem 1rem", borderRadius: "999px", fontSize: "0.85rem", fontWeight: 700 }}
+          >
+            Rientra
+          </button>
+        </div>
+      )}
 
       {/* Grid of Actions and Quick Join */}
       <div className="dashboard-actions-grid">
@@ -1079,7 +1162,7 @@ export default function HomePage() {
                     }}
                   >
                     <span style={{ fontSize: "0.9rem", fontWeight: isSelf ? 700 : 500 }}>
-                      {p.displayName} {isSelf && ` (${t("dashboard.textYou")})`}
+                      {p.username ? `@${p.username}` : p.displayName} {isSelf && ` (${t("dashboard.textYou")})`}
                     </span>
                     <span style={{ 
                       fontSize: "0.9rem", 

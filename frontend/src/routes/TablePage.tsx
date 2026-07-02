@@ -11,8 +11,6 @@ import {
   updateDoc,
   serverTimestamp,
   where,
-  getDoc,
-  writeBatch,
   setDoc
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
@@ -36,7 +34,7 @@ import {
   forceFoldPlayer,
   joinTable
 } from "../lib/firestoreApi";
-import { Users } from "lucide-react";
+import { Users, ShieldAlert } from "lucide-react";
 
 interface TableData {
   name: string;
@@ -162,7 +160,7 @@ export default function TablePage() {
 
   const { tableId: rawTableId } = useParams();
   const tableId = rawTableId?.toLowerCase();
-  const { user } = useAuth();
+  const { user, username } = useAuth();
 
   // Presence heartbeat inside TablePage
   useEffect(() => {
@@ -227,6 +225,9 @@ export default function TablePage() {
   const [onlineFriends, setOnlineFriends] = useState<{ uid: string; username: string }[]>([]);
   const [invitedFriends, setInvitedFriends] = useState<Record<string, boolean>>({});
   const [enteredPassword, setEnteredPassword] = useState("");
+
+  // Map to store real-time user profiles (UID -> { username, photoURL })
+  const [userProfiles, setUserProfiles] = useState<Record<string, { username: string; photoURL?: string }>>({});
 
   useEffect(() => {
     const handleResize = () => setWindowSize({ width: window.innerWidth, height: window.innerHeight });
@@ -451,9 +452,15 @@ export default function TablePage() {
       },
       (err) => {
         console.error("Errore nel listener del tavolo:", err);
+        if (err.code === "permission-denied") {
+          setNotFound(true);
+        }
         setLoading(false);
       }
     );
+
+    // Keep track of active users listeners to clean them up
+    let unsubUserDocs: Record<string, () => void> = {};
 
     const playersRef = collection(db, "tables", tableId, "players");
     const q = query(playersRef, orderBy("seatIndex", "asc"));
@@ -461,6 +468,8 @@ export default function TablePage() {
       q,
       (snap) => {
         const list: PlayerData[] = [];
+        const activeUids: string[] = [];
+
         snap.forEach((docSnap) => {
           const d = docSnap.data() as any;
           list.push({
@@ -476,6 +485,41 @@ export default function TablePage() {
             totalBuyIn: d.totalBuyIn,
             eliminatedAt: d.eliminatedAt
           });
+          activeUids.push(d.userId);
+        });
+
+        // 1. Clean up user listeners for users who left
+        Object.keys(unsubUserDocs).forEach((uid) => {
+          if (!activeUids.includes(uid)) {
+            unsubUserDocs[uid]();
+            delete unsubUserDocs[uid];
+          }
+        });
+
+        // 2. Set up real-time listener for each new player's user document
+        activeUids.forEach((uid) => {
+          if (!unsubUserDocs[uid]) {
+            const userRef = doc(db, "users", uid);
+            unsubUserDocs[uid] = onSnapshot(userRef, (userSnap) => {
+              if (userSnap.exists()) {
+                const uData = userSnap.data();
+                setUserProfiles((prev) => ({
+                  ...prev,
+                  [uid]: { 
+                    username: uData.username || "Giocatore",
+                    photoURL: uData.photoURL || undefined
+                  }
+                }));
+              } else {
+                setUserProfiles((prev) => ({
+                  ...prev,
+                  [uid]: { username: "Guest" }
+                }));
+              }
+            }, (err) => {
+              console.error("Error listening to user profile:", uid, err);
+            });
+          }
         });
         
         if (user && list.some(p => p.userId === user.uid)) {
@@ -491,12 +535,17 @@ export default function TablePage() {
       },
       (err) => {
         console.error("Errore nel listener dei giocatori:", err);
+        if (err.code === "permission-denied") {
+          setNotFound(true);
+        }
       }
     );
 
     return () => {
       unsubTable();
       unsubPlayers();
+      // Clean up all active user profile listeners
+      Object.values(unsubUserDocs).forEach((unsub) => unsub());
     };
   }, [tableId, refreshKey]);
 
@@ -599,6 +648,9 @@ export default function TablePage() {
       },
       (err) => {
         console.error("Errore nel listener della mano:", err);
+        if (err.code === "permission-denied") {
+          setNotFound(true);
+        }
       }
     );
 
@@ -788,16 +840,119 @@ export default function TablePage() {
   }, [currentHand, lastStage, lastHandNumber]);
 
 
+  // Styles for Loading & Error Screens
+  const fullScreenContainerStyle: React.CSSProperties = {
+    minHeight: "100vh",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "radial-gradient(circle at top, #020617, #020617 45%, #000000)",
+    color: "#f8fafc",
+    fontFamily: "var(--font-sans)",
+    padding: "1rem",
+    boxSizing: "border-box"
+  };
+
+  const panelContainerStyle: React.CSSProperties = {
+    padding: "2.5rem 2rem",
+    borderRadius: "1.5rem",
+    textAlign: "center",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: "1.2rem",
+    maxWidth: "360px",
+    width: "100%",
+    boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.75)",
+    border: "1px solid rgba(255, 255, 255, 0.08)"
+  };
+
+  const titleStyle: React.CSSProperties = {
+    fontSize: "1.25rem",
+    fontWeight: 800,
+    margin: 0
+  };
+
+  const descStyle: React.CSSProperties = {
+    fontSize: "0.85rem",
+    color: "var(--text-muted)",
+    marginTop: "0.5rem",
+    lineHeight: 1.5,
+    marginBottom: 0
+  };
+
+  const btnStyle: React.CSSProperties = {
+    width: "100%",
+    padding: "0.75rem 1rem",
+    borderRadius: "999px",
+    border: "none",
+    fontWeight: 700,
+    cursor: "pointer",
+    fontSize: "0.9rem",
+    color: "var(--text-inverse)"
+  };
+
   if (!tableId) {
-    return <p>ID tavolo mancante.</p>;
+    return (
+      <div style={fullScreenContainerStyle}>
+        <div className="glass-panel" style={panelContainerStyle}>
+          <div style={{ color: "#ef4444" }}><ShieldAlert size={44} /></div>
+          <div>
+            <h3 style={titleStyle}>{t("table.error") || "Errore"}</h3>
+            <p style={descStyle}>ID tavolo non fornito o non valido nell'URL.</p>
+          </div>
+          <button onClick={() => navigate("/home")} className="poker-btn-primary" style={btnStyle}>
+            Torna alla Home
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (loading) {
-    return <p>Caricamento tavolo…</p>;
+    return (
+      <div style={fullScreenContainerStyle}>
+        <div className="glass-panel" style={panelContainerStyle}>
+          <div style={{ position: "relative", width: "50px", height: "50px" }}>
+            <div style={{
+              width: "100%", height: "100%",
+              borderRadius: "50%",
+              border: "3px solid rgba(59, 130, 246, 0.1)",
+              borderTopColor: "var(--color-primary)",
+              animation: "spin 1s linear infinite"
+            }} />
+            <div style={{
+              position: "absolute", top: "50%", left: "50%",
+              transform: "translate(-50%, -50%)",
+              fontSize: "1.25rem"
+            }}>♣️</div>
+          </div>
+          <div>
+            <h3 style={titleStyle}>{t("table.connecting") || "Connessione..."}</h3>
+            <p style={descStyle}>Caricamento dei dati del tavolo da gioco...</p>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (notFound || !table) {
-    return <p>Questo tavolo non esiste (più).</p>;
+    return (
+      <div style={fullScreenContainerStyle}>
+        <div className="glass-panel" style={panelContainerStyle}>
+          <div style={{ color: "#ef4444" }}><ShieldAlert size={44} /></div>
+          <div>
+            <h3 style={titleStyle}>Tavolo Non Trovato</h3>
+            <p style={descStyle}>
+              Il tavolo che stai cercando di visualizzare non esiste, è stato chiuso o rimosso dall'host.
+            </p>
+          </div>
+          <button onClick={() => navigate("/home")} className="poker-btn-primary" style={btnStyle}>
+            Torna alla Home
+          </button>
+        </div>
+      </div>
+    );
   }
 
     const myUid = user?.uid || null;
@@ -875,7 +1030,7 @@ export default function TablePage() {
   );
 
   const allReady =
-    table.state === "LOBBY" &&
+    table?.state === "LOBBY" &&
     players.length > 0 &&
     players.every((p) => p.isReady === true);
 
@@ -1257,19 +1412,7 @@ async function confirmEndGameAction() {
     };
   }
 
-  function getBetPosition(index: number, total: number) {
-    const angle = getAdjustedAngle(index, total);
-    const radiusX = 40;
-    const radiusY = 39;
-    const betRadiusX = radiusX - 11; // shift bet chips 11% towards center
-    const betRadiusY = radiusY - 10; // shift bet chips 10% towards center
-    const top = 50 + betRadiusY * Math.sin(angle);
-    const left = 50 + betRadiusX * Math.cos(angle);
-    return {
-      top: `${top}%`,
-      left: `${left}%`
-    };
-  }
+
 
   // Manual join to table
   async function handleJoinTable() {
@@ -1418,8 +1561,8 @@ async function handleConfirmWinners(potId: string) {
 </div>
 
           <p style={{ fontSize: "0.9rem", color: "#cbd5f5" }}>
-            {t("table.blindsShort")} {table.smallBlind}/{table.bigBlind} • {t("table.startingStack")} {" "}
-            {table.initialStack} • {t("table.state")} {table.state}
+            {t("table.blindsShort")} {table?.smallBlind}/{table?.bigBlind} • {t("table.startingStack")} {" "}
+            {table?.initialStack} • {t("table.state")} {table?.state}
           </p>
           {isHost && (
             <p style={{ fontSize: "0.85rem", color: "#a5b4fc" }}>
@@ -1471,7 +1614,7 @@ async function handleConfirmWinners(potId: string) {
             <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
               {players.map((p, index) => {
                 const isMe = myUid === p.userId;
-                const isHostPlayer = p.userId === table.hostId;
+                const isHostPlayer = p.userId === table?.hostId;
 
                 return (
                 <li
@@ -1488,10 +1631,25 @@ async function handleConfirmWinners(potId: string) {
                     }}
                 >
                     <div>
-                    <span style={{ fontWeight: 500, color: p.isSittingOut ? "#9ca3af" : "#e5e7eb" }}>
-                        {p.isSittingOut && <span style={{ color: "#facc15" }}>{t("table.pauseBadge")}</span>}
-                        {p.displayName}
-                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      {userProfiles[p.userId]?.photoURL ? (
+                        <img 
+                          src={userProfiles[p.userId].photoURL} 
+                          alt="Avatar" 
+                          style={{ width: "24px", height: "24px", borderRadius: "50%", objectFit: "cover" }} 
+                        />
+                      ) : (
+                        <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: "rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", fontWeight: 700 }}>
+                          {(userProfiles[p.userId]?.username || p.displayName || "G").charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <div>
+                        <span style={{ fontWeight: 500, color: p.isSittingOut ? "#9ca3af" : "#e5e7eb" }}>
+                            {p.isSittingOut && <span style={{ color: "#facc15" }}>{t("table.pauseBadge")}</span>}
+                            {userProfiles[p.userId]?.username || p.displayName || "Giocatore"}
+                        </span>
+                      </div>
+                    </div>
                     {isHostPlayer && (
                         <span
                         style={{
@@ -1691,8 +1849,8 @@ async function handleConfirmWinners(potId: string) {
                     : `${t("table.winnerSingle")} `
                 } {
                   currentHand.winnerIds && currentHand.winnerIds.length > 1
-                    ? currentHand.winnerIds.map(wId => players.find(p => p.userId === wId)?.displayName || t("table.unknown")).join(", ")
-                    : players.find(p => p.userId === currentHand.winnerId)?.displayName || t("table.unknown")
+                    ? currentHand.winnerIds.map(wId => userProfiles[wId]?.username || players.find(p => p.userId === wId)?.displayName || t("table.unknown")).join(", ")
+                    : userProfiles[currentHand.winnerId || ""]?.username || players.find(p => p.userId === currentHand.winnerId)?.displayName || t("table.unknown")
                 } 🏆
               </div>
               {currentHand.handResults && currentHand.winnerIds?.[0] && currentHand.handResults[currentHand.winnerIds[0]] && (
@@ -1869,7 +2027,16 @@ async function handleConfirmWinners(potId: string) {
                             [Out]
                           </span>
                         )}
-                        {p.displayName}
+                        <div style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", verticalAlign: "middle" }}>
+                          {userProfiles[p.userId]?.photoURL && (
+                            <img 
+                              src={userProfiles[p.userId].photoURL} 
+                              alt="" 
+                              style={{ width: "16px", height: "16px", borderRadius: "50%", objectFit: "cover" }} 
+                            />
+                          )}
+                          <span>{userProfiles[p.userId]?.username || p.displayName || "Giocatore"}</span>
+                        </div>
                       </div>
                     </div>
 
@@ -2324,7 +2491,7 @@ async function handleConfirmWinners(potId: string) {
           <p style={{ fontSize: "0.9rem", color: "#9ca3af" }}>
             {t("table.tableName")}:{" "}
             <span style={{ color: "#e5e7eb", fontWeight: 500 }}>
-              {table.name}
+              {table?.name}
             </span>
           </p>
         </header>
@@ -2407,7 +2574,7 @@ async function handleConfirmWinners(potId: string) {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <span style={{ fontWeight: 600, color: "#f8fafc" }}>
                       {isTournament && <span style={{ marginRight: "0.5rem", color: "#fbbf24" }}>#{idx + 1}</span>}
-                      {p.displayName}
+                      {userProfiles[p.userId]?.username || p.displayName || "Giocatore"}
                     </span>
                     {!isTournament && (
                       <span style={{ fontSize: "1rem", color: diffColor, fontWeight: 700 }}>
@@ -2517,7 +2684,7 @@ async function handleConfirmWinners(potId: string) {
                           await setDoc(inviteRef, {
                             tableId,
                             tableName: table.name,
-                            senderUsername: user?.displayName || "AirPoker Player",
+                            senderUsername: username || user?.displayName || "AirPoker Player",
                             senderUid: user?.uid,
                             createdAt: serverTimestamp()
                           });
