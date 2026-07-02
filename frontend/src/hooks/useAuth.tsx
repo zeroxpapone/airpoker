@@ -29,6 +29,7 @@ interface AuthContextValue {
   linkGuestToRegistered: (email: string, password: string, username: string, type: "email" | "google") => Promise<void>;
   logout: () => Promise<void>;
   updatePhotoURL: (url: string) => Promise<void>;
+  claimUsername: (username: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -45,36 +46,40 @@ async function createProfileForUser(uid: string, email: string | null, preferred
 
   let usernameToClaim = cleanUsername;
 
-  await runTransaction(db, async (transaction) => {
-    // Check if username unique
-    let usernameDocRef = doc(db, "usernames", usernameToClaim.toLowerCase());
-    let usernameDoc = await transaction.get(usernameDocRef);
+  // Check if username unique outside transaction since queries aren't allowed inside transactions
+  const usersCol = collection(db, "users");
+  const qUnique = query(usersCol, where("usernameLowercase", "==", usernameToClaim.toLowerCase()), limit(1));
+  const snapUnique = await getDocs(qUnique);
 
-    if (usernameDoc.exists()) {
-      if (forceUnique) {
-        throw new Error("Questo nome utente è già stato registrato da un altro utente.");
-      }
-      // auto-fallback for Google login if already taken
-      let attempts = 0;
-      while (usernameDoc.exists() && attempts < 10) {
-        usernameToClaim = cleanUsername + Math.floor(Math.random() * 1000);
-        usernameDocRef = doc(db, "usernames", usernameToClaim.toLowerCase());
-        usernameDoc = await transaction.get(usernameDocRef);
-        attempts++;
-      }
-      if (usernameDoc.exists()) {
-        throw new Error("Impossibile generare un nome utente univoco. Riprova.");
-      }
+  if (!snapUnique.empty) {
+    if (forceUnique) {
+      throw new Error("Questo nome utente è già stato registrato da un altro utente.");
     }
+    // auto-fallback for Google login if already taken
+    let attempts = 0;
+    let foundUnique = false;
+    while (!foundUnique && attempts < 10) {
+      const candidate = cleanUsername + Math.floor(Math.random() * 1000);
+      const qCand = query(usersCol, where("usernameLowercase", "==", candidate.toLowerCase()), limit(1));
+      const snapCand = await getDocs(qCand);
+      if (snapCand.empty) {
+        usernameToClaim = candidate;
+        foundUnique = true;
+      }
+      attempts++;
+    }
+    if (!foundUnique) {
+      throw new Error("Impossibile generare un nome utente univoco. Riprova.");
+    }
+  }
 
-    // Reserve username
-    transaction.set(usernameDocRef, { uid });
-
+  await runTransaction(db, async (transaction) => {
     // Create user profile doc
     const userDocRef = doc(db, "users", uid);
     transaction.set(userDocRef, {
       uid,
       username: usernameToClaim,
+      usernameLowercase: usernameToClaim.toLowerCase(),
       email: email,
       isRegistered: true,
       createdAt: serverTimestamp(),
@@ -112,23 +117,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (firebaseUser) {
         setUser(firebaseUser);
         if (!firebaseUser.isAnonymous) {
-          setIsRegisteredUser(true);
           // Fetch username & photoURL from Firestore
           try {
             const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
             if (userDoc.exists()) {
               const uData = userDoc.data();
-              setUsername(uData.username || firebaseUser.displayName || "Giocatore");
+              if (uData.username) {
+                setUsername(uData.username);
+                setIsRegisteredUser(true);
+              } else {
+                setUsername(null);
+                setIsRegisteredUser(false);
+              }
               setPhotoURL(uData.photoURL || firebaseUser.photoURL || null);
             } else {
-              // Fallback if doc doesn't exist yet (e.g., interrupted OAuth flow)
-              setUsername(firebaseUser.displayName || "Giocatore");
+              setUsername(null);
               setPhotoURL(firebaseUser.photoURL || null);
+              setIsRegisteredUser(false);
             }
           } catch (e) {
             console.error("Errore nel recupero dello username:", e);
-            setUsername(firebaseUser.displayName || "Giocatore");
+            setUsername(null);
             setPhotoURL(firebaseUser.photoURL || null);
+            setIsRegisteredUser(false);
           }
         } else {
           setIsRegisteredUser(false);
@@ -205,19 +216,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const usernameKey = trimmed.toLowerCase();
-    const usernameDoc = await getDoc(doc(db, "usernames", usernameKey));
-    if (usernameDoc.exists()) {
-      const userUid = usernameDoc.data().uid as string | undefined;
-      if (userUid) {
-        const userDoc = await getDoc(doc(db, "users", userUid));
-        const userEmail = userDoc.exists() ? (userDoc.data().email as string | undefined) : undefined;
-        if (userEmail) {
-          return userEmail;
-        }
-      }
-    }
-
-    const usersQuery = query(collection(db, "users"), where("username", "==", trimmed), limit(1));
+    const usersQuery = query(collection(db, "users"), where("usernameLowercase", "==", usernameKey), limit(1));
     const usersSnap = await getDocs(usersQuery);
     if (!usersSnap.empty) {
       const userEmail = usersSnap.docs[0].data().email as string | undefined;
@@ -248,24 +247,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const userDocRef = doc(db, "users", u.uid);
     const userDoc = await getDoc(userDocRef);
 
-    if (!userDoc.exists()) {
-      // Create profile with auto-unique username derived from displayName or email
-      const baseName = u.displayName || u.email?.split("@")[0] || "player";
-      const finalUsername = await createProfileForUser(u.uid, u.email, baseName, false, u.photoURL || undefined);
-      await updateProfile(u, { displayName: finalUsername, photoURL: u.photoURL || undefined });
-      setUsername(finalUsername);
-      setPhotoURL(u.photoURL || null);
+    if (!userDoc.exists() || !userDoc.data()?.username) {
+      const baseName = (u.displayName || u.email?.split("@")[0] || "player").replace(/\s+/g, "");
+      let canAutoCreate = false;
+      if (baseName.length >= 3 && /^[a-zA-Z0-9_]+$/.test(baseName)) {
+        const qUnique = query(collection(db, "users"), where("usernameLowercase", "==", baseName.toLowerCase()), limit(1));
+        const snapUnique = await getDocs(qUnique);
+        if (snapUnique.empty) {
+          canAutoCreate = true;
+        }
+      }
+
+      if (canAutoCreate) {
+        const finalUsername = await createProfileForUser(u.uid, u.email, baseName, true, u.photoURL || undefined);
+        await updateProfile(u, { displayName: finalUsername, photoURL: u.photoURL || undefined });
+        setUsername(finalUsername);
+        setPhotoURL(u.photoURL || null);
+        setIsRegisteredUser(true);
+      } else {
+        setUsername(null);
+        setPhotoURL(u.photoURL || null);
+        setIsRegisteredUser(false);
+      }
     } else {
       const uData = userDoc.data();
-      setUsername(uData.username || u.displayName || "Giocatore");
+      setUsername(uData.username || null);
       setPhotoURL(uData.photoURL || u.photoURL || null);
+      setIsRegisteredUser(!!uData.username);
     }
 
     setUser(u);
-    setIsRegisteredUser(true);
   }
-
-
 
   async function linkGuestToRegistered(email: string, password: string, desiredUsername: string, type: "email" | "google") {
     const currentUser = auth.currentUser;
@@ -278,11 +290,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error("Tutti i campi sono obbligatori per la registrazione.");
       }
 
-      // Reserve username first to avoid linking if username is taken
+      // Check username uniqueness
       const usernameToClaim = desiredUsername.trim();
-      const usernameDocRef = doc(db, "usernames", usernameToClaim.toLowerCase());
-      const usernameDoc = await getDoc(usernameDocRef);
-      if (usernameDoc.exists()) {
+      const qUnique = query(collection(db, "users"), where("usernameLowercase", "==", usernameToClaim.toLowerCase()), limit(1));
+      const snapUnique = await getDocs(qUnique);
+      if (!snapUnique.empty) {
         throw new Error("Questo nome utente è già stato registrato da un altro utente.");
       }
 
@@ -300,16 +312,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Check if user document exists
       const userDocRef = doc(db, "users", currentUser.uid);
       const userDoc = await getDoc(userDocRef);
-      if (!userDoc.exists()) {
-        const baseName = currentUser.displayName || currentUser.email?.split("@")[0] || "player";
-        const finalUsername = await createProfileForUser(currentUser.uid, currentUser.email, baseName, false, currentUser.photoURL || undefined);
-        await updateProfile(currentUser, { displayName: finalUsername, photoURL: currentUser.photoURL || undefined });
-        setUsername(finalUsername);
-        setPhotoURL(currentUser.photoURL || null);
+      if (!userDoc.exists() || !userDoc.data()?.username) {
+        const baseName = (currentUser.displayName || currentUser.email?.split("@")[0] || "player").replace(/\s+/g, "");
+        let canAutoCreate = false;
+        if (baseName.length >= 3 && /^[a-zA-Z0-9_]+$/.test(baseName)) {
+          const qUnique = query(collection(db, "users"), where("usernameLowercase", "==", baseName.toLowerCase()), limit(1));
+          const snapUnique = await getDocs(qUnique);
+          if (snapUnique.empty) {
+            canAutoCreate = true;
+          }
+        }
+
+        if (canAutoCreate) {
+          const finalUsername = await createProfileForUser(currentUser.uid, currentUser.email, baseName, true, currentUser.photoURL || undefined);
+          await updateProfile(currentUser, { displayName: finalUsername, photoURL: currentUser.photoURL || undefined });
+          setUsername(finalUsername);
+          setPhotoURL(currentUser.photoURL || null);
+          setIsRegisteredUser(true);
+        } else {
+          setUsername(null);
+          setPhotoURL(currentUser.photoURL || null);
+          setIsRegisteredUser(false);
+        }
       } else {
         const uData = userDoc.data();
-        setUsername(uData.username || currentUser.displayName || "Giocatore");
+        setUsername(uData.username || null);
         setPhotoURL(uData.photoURL || currentUser.photoURL || null);
+        setIsRegisteredUser(!!uData.username);
       }
     }
     
@@ -320,7 +349,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!auth.currentUser) throw new Error("Utente non loggato");
     const userDocRef = doc(db, "users", auth.currentUser.uid);
     await updateDoc(userDocRef, { photoURL: url });
-    await updateProfile(auth.currentUser, { photoURL: url });
+    if (!url.startsWith("data:")) {
+      await updateProfile(auth.currentUser, { photoURL: url });
+    }
     setPhotoURL(url);
   }
 
@@ -330,6 +361,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUsername(null);
     setPhotoURL(null);
     setIsRegisteredUser(false);
+  }
+
+  async function claimUsername(desiredUsername: string) {
+    if (!auth.currentUser) throw new Error("Utente non autenticato.");
+    const finalUsername = await createProfileForUser(auth.currentUser.uid, auth.currentUser.email, desiredUsername, true, auth.currentUser.photoURL || undefined);
+    await updateProfile(auth.currentUser, { displayName: finalUsername });
+    setUsername(finalUsername);
+    setIsRegisteredUser(true);
   }
 
   const value: AuthContextValue = {
@@ -344,7 +383,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signInWithGoogle,
     linkGuestToRegistered,
     logout,
-    updatePhotoURL
+    updatePhotoURL,
+    claimUsername
   };
 
   return (

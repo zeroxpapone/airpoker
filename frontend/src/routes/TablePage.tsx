@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
 import { useTranslation } from "react-i18next";
@@ -9,7 +9,11 @@ import {
   orderBy,
   query,
   updateDoc,
-  serverTimestamp
+  serverTimestamp,
+  where,
+  getDocs,
+  writeBatch,
+  setDoc
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../hooks/useAuth";
@@ -71,15 +75,11 @@ interface PlayerData {
   eliminatedAt?: number;
 }
 
-const Card = ({ card, hidden }: { card?: string, hidden?: boolean }) => {
-  if (hidden || !card) {
-    return (
-      <div className="poker-card poker-card-hidden" />
-    );
-  }
-
-  const rank = card.slice(0, -1);
-  const suit = card.slice(-1);
+const Card = ({ card, hidden, mini, miniMe, flipDelay }: { card?: string, hidden?: boolean, mini?: boolean, miniMe?: boolean, flipDelay?: number }) => {
+  const miniClass = miniMe ? 'poker-card-mini-me' : (mini ? 'poker-card-mini-others' : '');
+  
+  const rank = card ? card.slice(0, -1) : "";
+  const suit = card ? card.slice(-1) : "";
   const isRed = suit === 'h' || suit === 'd';
   
   const suitIcon = {
@@ -92,10 +92,20 @@ const Card = ({ card, hidden }: { card?: string, hidden?: boolean }) => {
   const rankDisplay = rank === 'T' ? '10' : rank;
 
   return (
-    <div className={`poker-card ${isRed ? 'poker-card-red' : 'poker-card-black'}`}>
-      <div className="poker-card-corner-top">{rankDisplay}</div>
-      <div className="poker-card-center-suit">{suitIcon}</div>
-      <div className="poker-card-corner-bottom">{rankDisplay}</div>
+    <div className={`poker-card-3d-container ${!hidden ? 'is-flipped' : ''} ${miniClass}`}>
+      <div 
+        className="poker-card-3d-inner"
+        style={{
+          transitionDelay: flipDelay ? `${flipDelay}ms` : undefined
+        }}
+      >
+        <div className={`poker-card-3d-back ${miniClass}`} />
+        <div className={`poker-card-3d-front ${isRed ? 'poker-card-red' : 'poker-card-black'} ${miniClass}`}>
+          <div className="poker-card-corner-top">{rankDisplay}</div>
+          <div className="poker-card-center-suit">{suitIcon}</div>
+          <div className="poker-card-corner-bottom">{rankDisplay}</div>
+        </div>
+      </div>
     </div>
   );
 };
@@ -143,6 +153,7 @@ interface ExtendedHandData extends HandData {
   createdAt?: any;
   blindsPopupClosed?: boolean;
   handResults?: Record<string, { rank: number; rankName: string; bestCards: string[] }>;
+  revealedPlayers?: Record<string, boolean>;
 }
 
 export default function TablePage() {
@@ -193,6 +204,9 @@ export default function TablePage() {
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [joinLoading, setJoinLoading] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
+  // Guard: set to true when the user intentionally leaves so the auto-join
+  // useEffect cannot re-trigger a join before the component unmounts
+  const hasLeftRef = useRef(false);
 
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -207,13 +221,86 @@ export default function TablePage() {
   const [transferHostConfirmTarget, setTransferHostConfirmTarget] = useState<string | null>(null);
   const [forceFoldConfirmTarget, setForceFoldConfirmTarget] = useState<string | null>(null);
   const [showMyCards, setShowMyCards] = useState(false);
+  const [isFlipping, setIsFlipping] = useState(false);
   const [, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
+
+  const [onlineFriends, setOnlineFriends] = useState<{ uid: string; username: string }[]>([]);
+  const [invitedFriends, setInvitedFriends] = useState<Record<string, boolean>>({});
+  const [enteredPassword, setEnteredPassword] = useState("");
 
   useEffect(() => {
     const handleResize = () => setWindowSize({ width: window.innerWidth, height: window.innerHeight });
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  // Listen to friends status in real-time in TablePage
+  useEffect(() => {
+    if (!user) return;
+
+    const qFriends = query(
+      collection(db, "users", user.uid, "friends"),
+      where("status", "==", "ACCEPTED")
+    );
+
+    let unsubFriendDocs: (() => void)[] = [];
+
+    const unsubFriends = onSnapshot(qFriends, (snap) => {
+      unsubFriendDocs.forEach(unsub => unsub());
+      unsubFriendDocs = [];
+
+      const friendsList: { friendUid: string; username: string }[] = [];
+      snap.forEach((d) => {
+        const fData = d.data();
+        friendsList.push({
+          friendUid: d.id,
+          username: fData.username || "Friend"
+        });
+      });
+
+      if (friendsList.length === 0) {
+        setOnlineFriends([]);
+        return;
+      }
+
+      const activeFriendStates: Record<string, any> = {};
+
+      friendsList.forEach((friend) => {
+        const friendDocRef = doc(db, "users", friend.friendUid);
+        const unsubDoc = onSnapshot(friendDocRef, (friendSnap) => {
+          if (friendSnap.exists()) {
+            const fDocData = friendSnap.data();
+            const presence = fDocData.presence;
+            
+            const isOnlineAndHome = presence?.status === "ONLINE" &&
+                                    presence?.location === "HOME" &&
+                                    presence?.lastActive &&
+                                    (Date.now() - presence.lastActive.toMillis() < 5 * 60 * 1000);
+
+            if (isOnlineAndHome) {
+              activeFriendStates[friend.friendUid] = {
+                uid: friend.friendUid,
+                username: fDocData.username || friend.username
+              };
+            } else {
+              delete activeFriendStates[friend.friendUid];
+            }
+          } else {
+            delete activeFriendStates[friend.friendUid];
+          }
+
+          setOnlineFriends(Object.values(activeFriendStates));
+        });
+
+        unsubFriendDocs.push(unsubDoc);
+      });
+    });
+
+    return () => {
+      unsubFriends();
+      unsubFriendDocs.forEach(unsub => unsub());
+    };
+  }, [user]);
 
   // Session timer: derives elapsed time from server-side gameStartedAt timestamp
   const [sessionElapsed, setSessionElapsed] = useState<string>("");
@@ -390,6 +477,15 @@ export default function TablePage() {
             eliminatedAt: d.eliminatedAt
           });
         });
+        
+        if (user && list.some(p => p.userId === user.uid)) {
+          localStorage.setItem("activeTableId", tableId);
+        } else {
+          if (user && localStorage.getItem("activeTableId") === tableId) {
+            localStorage.removeItem("activeTableId");
+          }
+        }
+
         setPlayers(list);
         setPlayersLoaded(true);
       },
@@ -414,14 +510,29 @@ export default function TablePage() {
     // If already seated or game is summary, nothing to do
     if (isSeated || table.state === "SUMMARY") return;
 
-    // Check if there's a password in query params (auto-join scenario)
+    // If the user just explicitly left, don't auto-join again
+    if (hasLeftRef.current) return;
+
+    // Check url params
     const pwd = searchParams.get("pwd");
+    const autoJoin = searchParams.get("autoJoin") === "1";
+
     if (pwd) {
-      // Auto-join with password
+      // Auto-join with explicit password in URL
       (async () => {
         try {
           await joinTable(tableId, user, pwd);
-          // Auto-join successful, no need to show join modal
+        } catch (err: any) {
+          console.error("Auto-join failed:", err);
+          setJoinError(err.message || "Errore durante il join automatico");
+          setShowJoinModal(true);
+        }
+      })();
+    } else if (!table.password || autoJoin) {
+      // Public table OR coming from invite/friend-link — join silently without modal
+      (async () => {
+        try {
+          await joinTable(tableId, user, undefined);
         } catch (err: any) {
           console.error("Auto-join failed:", err);
           setJoinError(err.message || "Errore durante il join automatico");
@@ -429,7 +540,7 @@ export default function TablePage() {
         }
       })();
     } else {
-      // No password in params, show join modal so user can join manually
+      // Password-protected table and no auto-join hint — show modal
       setShowJoinModal(true);
     }
   }, [playersLoaded, user?.uid, players, tableId, table, searchParams]);
@@ -481,7 +592,8 @@ export default function TablePage() {
           isVirtualCards: !!d.isVirtualCards,
           communityCards: d.communityCards || [],
           playerHands: d.playerHands || {},
-          handResults: d.handResults || null
+          handResults: d.handResults || null,
+          revealedPlayers: d.revealedPlayers || {}
         };
         setCurrentHand(hand);
       },
@@ -554,10 +666,29 @@ export default function TablePage() {
 
     const timer = setTimeout(() => {
       handleAdvanceStage();
-    }, 2000);
+    }, 100);
 
     return () => clearTimeout(timer);
   }, [currentHand?.id, currentHand?.stage, currentHand?.currentTurnIndex, table?.hostId, user?.uid, blindsPopupVisible]);
+
+  // Track card flipping state to disable actions during card animation
+  useEffect(() => {
+    if (!currentHand?.stage) return;
+    
+    let duration = 0;
+    if (currentHand.stage === "FLOP") duration = 2100;
+    else if (currentHand.stage === "TURN" || currentHand.stage === "RIVER") duration = 1600;
+    
+    if (duration > 0) {
+      setIsFlipping(true);
+      const timer = setTimeout(() => {
+        setIsFlipping(false);
+      }, duration);
+      return () => clearTimeout(timer);
+    } else {
+      setIsFlipping(false);
+    }
+  }, [currentHand?.stage]);
 
   // Local variables for pre-action hooks
   const localMyUid = user?.uid || null;
@@ -806,15 +937,21 @@ export default function TablePage() {
   }
 
   async function handleLeaveTable() {
-  if (!user || !tableId) return;
-  try {
-    await leaveTable(tableId, user);
-  } catch (err) {
-    console.error(err);
-  } finally {
-    navigate("/home");
+    if (!user || !tableId) return;
+    // Mark as left immediately to prevent any auto-join re-trigger
+    hasLeftRef.current = true;
+    try {
+      await leaveTable(tableId, user);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      // Explicitly remove the cached table ID so the "return to table" banner
+      // doesn't appear on the home page (the Firestore listener may not have
+      // fired yet by the time the user lands on /home)
+      localStorage.removeItem("activeTableId");
+      navigate("/home");
+    }
   }
-}
 
 async function handleToggleSittingOut() {
   if (!user || !tableId) return;
@@ -830,6 +967,18 @@ async function handleToggleSittingOut() {
     setPlayers(prev => prev.map(p => p.id === myPlayer.id ? { ...p, isSittingOut: !newValue } : p));
     setActionError(err.message || "Errore nel gestire lo stato di pausa.");
     window.alert("ATTENZIONE! Firebase ha scartato la richiesta: " + err.message);
+  }
+}
+
+async function handleRevealOwnCards() {
+  if (!tableId || !table || !table.currentHandId || !user) return;
+  try {
+    const handRef = doc(db, "tables", tableId, "hands", table.currentHandId);
+    await updateDoc(handRef, {
+      [`revealedPlayers.${user.uid}`]: true
+    });
+  } catch (err: any) {
+    console.error(err);
   }
 }
 
@@ -1037,16 +1186,85 @@ async function confirmEndGameAction() {
     );
   }
 
+  function getAdjustedAngle(index: number, total: number) {
+    if (total <= 1) return Math.PI / 2; // 90°
+
+    let B = 1;
+    if (total > 4) {
+      B = Math.ceil(total / 2);
+    }
+    const T = total - B;
+
+    if (index === 0) return Math.PI / 2;
+
+    const topAngles: number[] = [];
+    if (T === 1) {
+      topAngles.push(270);
+    } else if (T === 2) {
+      topAngles.push(220, 320);
+    } else if (T === 3) {
+      topAngles.push(220, 270, 320);
+    } else if (T > 3) {
+      const step = 120 / (T - 1);
+      for (let i = 0; i < T; i++) {
+        topAngles.push(210 + i * step);
+      }
+    }
+
+    const bottomAngles: number[] = [];
+    const B_others = B - 1;
+    if (B_others === 2) {
+      bottomAngles.push(140, 40);
+    } else if (B_others > 2) {
+      const half = Math.floor(B_others / 2);
+      const stepLeft = 35 / Math.max(1, half - 1);
+      const stepRight = 35 / Math.max(1, half - 1);
+      for (let i = 0; i < half; i++) {
+        bottomAngles.push(140 - i * stepLeft);
+      }
+      for (let i = 0; i < half; i++) {
+        bottomAngles.push(40 + i * stepRight);
+      }
+      if (B_others % 2 !== 0) {
+        bottomAngles.push(115);
+      }
+    }
+
+    const allAngles = [...topAngles, ...bottomAngles].map(deg => {
+      let norm = deg;
+      if (norm <= 90) norm += 360;
+      return { deg, norm };
+    });
+    allAngles.sort((a, b) => a.norm - b.norm);
+
+    const chosen = allAngles[index - 1];
+    return (chosen ? chosen.deg : 270) * Math.PI / 180;
+  }
+
   function getSeatPosition(index: number, total: number) {
     // index 0 is Me, placed at the bottom center (90 degrees or PI/2).
     // The others are spaced clockwise.
-    const angle = Math.PI / 2 + index * (2 * Math.PI / total);
+    const angle = getAdjustedAngle(index, total);
 
-    const radiusX = 46; // Horizontal radius (wider, pushes seats to rails)
-    const radiusY = 43; // Vertical radius (shorter, pushes seats to rails)
+    const radiusX = 46; // Pulled in slightly from 46 to prevent mobile rail overflow
+    const radiusY = 43; // Pulled in from 43 for balance
     const top = 50 + radiusY * Math.sin(angle);
     const left = 50 + radiusX * Math.cos(angle);
 
+    return {
+      top: `${top}%`,
+      left: `${left}%`
+    };
+  }
+
+  function getBetPosition(index: number, total: number) {
+    const angle = getAdjustedAngle(index, total);
+    const radiusX = 40;
+    const radiusY = 39;
+    const betRadiusX = radiusX - 11; // shift bet chips 11% towards center
+    const betRadiusY = radiusY - 10; // shift bet chips 10% towards center
+    const top = 50 + betRadiusY * Math.sin(angle);
+    const left = 50 + betRadiusX * Math.cos(angle);
     return {
       top: `${top}%`,
       left: `${left}%`
@@ -1059,7 +1277,7 @@ async function confirmEndGameAction() {
     setJoinError(null);
     setJoinLoading(true);
     try {
-      const pwd = searchParams.get("pwd");
+      const pwd = searchParams.get("pwd") || enteredPassword;
       await joinTable(tableId, user, pwd || undefined);
       setShowJoinModal(false);
     } catch (err: any) {
@@ -1301,7 +1519,7 @@ async function handleConfirmWinners(potId: string) {
                     {isMe && (
                         <button
                           onClick={() => handleToggleReady(p)}
-                          className={p.isReady ? "poker-btn-warning" : "poker-btn-success"}
+                          className={p.isReady ? "poker-btn-success" : "poker-btn-warning"}
                           style={{
                             padding: "0.3rem 0.6rem",
                             borderRadius: "0.5rem",
@@ -1309,7 +1527,7 @@ async function handleConfirmWinners(potId: string) {
                             fontSize: "0.8rem"
                           }}
                         >
-                          {p.isReady ? t("table.notReady") : t("table.ready")}
+                          {p.isReady ? t("table.ready") : t("table.notReady")}
                         </button>
                     )}
 
@@ -1443,20 +1661,52 @@ async function handleConfirmWinners(potId: string) {
         <main
           style={{
             flex: 1,
-            position: "relative",
             minHeight: 0,
             display: "flex",
-            justifyContent: "center",
+            flexDirection: "column",
             alignItems: "center",
-            overflow: "hidden"
+            overflow: "hidden",
+            padding: "0.5rem 0"
           }}
         >
+          {/* Top victory banner shown in the upper empty space */}
+          {inGame && currentHand && currentHand.stage === "SHOWDOWN" && (!!currentHand.winnerId || (currentHand.winnerIds && currentHand.winnerIds.length > 0)) && (
+            <div style={{
+              margin: "0.25rem auto",
+              padding: "0.6rem 1.2rem",
+              borderRadius: "0.75rem",
+              background: "rgba(16, 185, 129, 0.12)",
+              border: "1px solid rgba(16, 185, 129, 0.35)",
+              textAlign: "center",
+              maxWidth: "480px",
+              width: "90%",
+              boxShadow: "0 4px 15px rgba(16, 185, 129, 0.15)",
+              animation: "scaleIn 0.3s ease",
+              zIndex: 20
+            }}>
+              <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#facc15" }}>
+                🏆 {
+                  currentHand.winnerIds && currentHand.winnerIds.length > 1
+                    ? `${t("table.winnerSplit")} `
+                    : `${t("table.winnerSingle")} `
+                } {
+                  currentHand.winnerIds && currentHand.winnerIds.length > 1
+                    ? currentHand.winnerIds.map(wId => players.find(p => p.userId === wId)?.displayName || t("table.unknown")).join(", ")
+                    : players.find(p => p.userId === currentHand.winnerId)?.displayName || t("table.unknown")
+                } 🏆
+              </div>
+              {currentHand.handResults && currentHand.winnerIds?.[0] && currentHand.handResults[currentHand.winnerIds[0]] && (
+                <div style={{ fontSize: "0.85rem", color: "#4ade80", fontWeight: 600, marginTop: "0.2rem" }}>
+                  {currentHand.handResults[currentHand.winnerIds[0]].rankName} (Vinto: {currentHand.pot} fiches)
+                </div>
+              )}
+            </div>
+          )}
 
+          {/* Centering wrapper — fills all remaining space between banner and showdown buttons */}
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", width: "100%", minHeight: 0 }}>
           <div
             className="poker-felt"
-            style={{
-              width: "min(100%, 530px)"
-            }}
           >
             {/* Testo centrale: pot, stage, turno e community cards */}
             <div className="felt-pot" id="felt-pot-display">
@@ -1476,7 +1726,23 @@ async function handleConfirmWinners(potId: string) {
                   if (currentHand.stage === "TURN" && idx < 4) hidden = false;
                   if (currentHand.stage === "RIVER" && idx < 5) hidden = false;
                   if (currentHand.stage === "SHOWDOWN") hidden = false;
-                  return <Card key={idx} card={card} hidden={hidden} />;
+                  
+                  let delayMs = 0;
+                  if (!hidden) {
+                    if (currentHand.stage === "FLOP") {
+                      delayMs = 1000 + idx * 250;
+                    } else if (currentHand.stage === "TURN" && idx === 3) {
+                      delayMs = 1000;
+                    } else if (currentHand.stage === "RIVER" && idx === 4) {
+                      delayMs = 1000;
+                    }
+                  }
+
+                  return (
+                    <div key={idx}>
+                      <Card card={card} hidden={hidden} flipDelay={delayMs} />
+                    </div>
+                  );
                 })}
               </div>
             )}
@@ -1498,6 +1764,7 @@ async function handleConfirmWinners(potId: string) {
             </div>
 
             {/* Giocatori e Fiches puntate attorno al tavolo */}
+            {/* Giocatori attorno al tavolo */}
             {players.map((p, index) => {
               const myIndex = players.findIndex(orig => orig.userId === myUid);
               const visualIndex = myIndex >= 0 ? (index - myIndex + players.length) % players.length : index;
@@ -1512,11 +1779,22 @@ async function handleConfirmWinners(potId: string) {
                 ? activePot.eligible?.includes(p.userId) 
                 : (!p.isFolded && !p.isSittingOut);
 
-              const roundBet = currentHand && currentHand.roundBets[p.userId] ? currentHand.roundBets[p.userId] : 0;
-              const hasVirtualCardsDealt = isMe && table?.isVirtualCards && currentHand && currentHand.stage !== "SHOWDOWN" && currentHand.playerHands?.[p.userId] && !p.isFolded;
+              const hasVirtualCardsDealt = isMe && table?.isVirtualCards && currentHand && currentHand.stage !== "SHOWDOWN" && currentHand.playerHands?.[p.userId];
               
-              const angle = Math.PI / 2 + visualIndex * (2 * Math.PI / players.length);
+              const isHandOver = inGame && currentHand && currentHand.stage === "SHOWDOWN" && (!!currentHand.winnerId || (currentHand.winnerIds && currentHand.winnerIds.length > 0));
+              const isWinner = currentHand && (currentHand.winnerId === p.userId || currentHand.winnerIds?.includes(p.userId));
+              const isFoldOutWin = !currentHand?.handResults || Object.keys(currentHand.handResults).length === 0;
+              const isShowdownReveal = table?.isVirtualCards && 
+                                       currentHand?.stage === "SHOWDOWN" && 
+                                       currentHand.playerHands?.[p.userId] && 
+                                       ((!p.isFolded && !isFoldOutWin) || (currentHand as any).revealedPlayers?.[p.userId]);
+              const isMePeeking = isMe && hasVirtualCardsDealt && showMyCards;
+              const showCardsInPod = isShowdownReveal || isMePeeking;
+              const cardsToReveal = showCardsInPod ? currentHand.playerHands?.[p.userId] : null;
+
+              const angle = getAdjustedAngle(visualIndex, players.length);
               const isOnRightSide = Math.cos(angle) > 0.01;
+              const roundBet = currentHand && currentHand.roundBets[p.userId] ? currentHand.roundBets[p.userId] : 0;
 
               return (
                 <div
@@ -1526,189 +1804,160 @@ async function handleConfirmWinners(potId: string) {
                     top,
                     left,
                     transform: "translate(-50%, -50%)",
-                    width: (isMe && showMyCards) ? "32%" : "22%",
-                    maxWidth: (isMe && showMyCards) ? "150px" : "120px",
+                    width: showCardsInPod ? (isMe ? "28%" : "25%") : "22%",
+                    maxWidth: showCardsInPod ? (isMe ? "130px" : "110px") : "110px",
                     zIndex: 10
                   }}
                 >
-                  {/* Carte del giocatore allo Showdown */}
-                  {table?.isVirtualCards && currentHand?.stage === "SHOWDOWN" && currentHand.playerHands?.[p.userId] && !p.isFolded && (
-                    <div style={{
-                      position: "absolute",
-                      top: "-45px",
-                      left: "50%",
-                      transform: "translateX(-50%)",
-                      display: "flex",
-                      gap: "2px",
-                      zIndex: 100
-                    }}>
-                      {currentHand.playerHands[p.userId].map((c, i) => (
-                        <Card key={i} card={c} />
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Le mie carte personali durante il gioco (al posto del pod capsule) */}
-                  {hasVirtualCardsDealt && showMyCards ? (
-                    <div 
-                      className="my-cards-felt-display"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShowMyCards(false);
-                      }}
-                      style={{
-                        display: "flex",
-                        gap: "4px",
-                        justifyContent: "center",
-                        alignItems: "center",
-                        width: "100%",
-                        animation: "scaleIn 0.18s ease-out forwards",
-                        cursor: "pointer"
-                      }}
-                    >
-                      {currentHand.playerHands?.[p.userId]?.map((c, i) => (
-                        <Card key={i} card={c} />
-                      ))}
-                    </div>
-                  ) : (
-                    <div
-                      className={`player-pod ${isMe ? 'player-pod-me' : ''} ${isTurn ? 'player-pod-active-turn' : ''} ${p.isFolded ? 'player-pod-folded' : ''} ${p.isSittingOut ? 'player-pod-sitout' : ''}`}
-                      onClick={() => {
-                        if (hasVirtualCardsDealt) {
-                          setShowMyCards(true);
+                  <div
+                    className={`player-pod ${isMe ? 'player-pod-me' : ''} ${isTurn ? 'player-pod-active-turn' : ''} ${p.isFolded ? 'player-pod-folded' : ''} ${p.isSittingOut ? 'player-pod-sitout' : ''} ${showCardsInPod ? (isMe ? 'player-pod-dilated-me' : 'player-pod-dilated-others') : ''}`}
+                    onClick={() => {
+                      if (isMe && isHandOver) {
+                        handleRevealOwnCards();
+                      } else if (hasVirtualCardsDealt) {
+                        if (isMe) {
+                          setShowMyCards(prev => !prev);
                         }
-                      }}
-                      style={{
-                        borderWidth: isTurn || (selectedWinners.includes(p.userId) && votingOpen) ? "2px" : "1px",
-                        borderColor: isTurn || (selectedWinners.includes(p.userId) && votingOpen) ? "var(--color-success)" : undefined,
-                        boxShadow: isTurn ? "0 0 15px var(--color-success-glow)" : undefined,
-                        opacity: p.isSittingOut ? 0.4 : p.isFolded || (votingOpen && activePot && !isEligibleForActivePot) ? 0.6 : 1,
-                        cursor: hasVirtualCardsDealt ? "pointer" : undefined
-                      }}
-                    >
-                      {renderRoleBadgesAbsolute(index, isOnRightSide)}
-                      <div className="player-pod-inner" id={`player-pod-inner-${p.userId}`}>
-                        <div
-                          className={`player-pod-name ${isOnRightSide ? "right-side" : "left-side"}`}
-                          id={`player-pod-name-${p.userId}`}
-                          style={{
-                            color: p.isSittingOut ? "var(--text-muted)" : p.isFolded ? "#6b7280" : isMe ? "var(--color-success)" : "var(--text-main)",
-                            textDecoration: p.isFolded && !p.isSittingOut ? "line-through" : "none",
-                            textAlign: isOnRightSide ? "right" : "left",
-                            display: "block",
-                            width: "100%"
-                          }}
-                        >
-                          {p.isSittingOut && table?.mode === "TOURNAMENT" && p.stack === 0 && (
-                            <span style={{ color: "var(--color-danger)", paddingRight: "0.2rem", fontWeight: 700 }}>
-                              [Out]
-                            </span>
-                          )}
-                          {p.displayName}
-                        </div>
-                      </div>
+                      }
+                    }}
+                    style={{
+                      borderWidth: "1.5px",
+                      borderColor: isHandOver
+                        ? (isWinner ? "var(--color-warning)" : "rgba(255, 255, 255, 0.1)")
+                        : isTurn
+                        ? "var(--color-success)"
+                        : p.isSittingOut
+                        ? "rgba(56, 189, 248, 0.75)"
+                        : p.isFolded
+                        ? "rgba(239, 68, 68, 0.7)"
+                        : roundBet > 0
+                        ? "rgba(251, 191, 36, 0.85)"
+                        : (selectedWinners.includes(p.userId) && votingOpen)
+                        ? "var(--color-success)"
+                        : "rgba(255, 255, 255, 0.1)",
+                      boxShadow: isHandOver
+                        ? (isWinner ? "0 0 18px rgba(251, 191, 36, 0.85)" : undefined)
+                        : isTurn
+                        ? "0 0 15px var(--color-success-glow)"
+                        : p.isSittingOut
+                        ? "0 0 12px rgba(56, 189, 248, 0.55)"
+                        : p.isFolded
+                        ? "0 0 12px rgba(239, 68, 68, 0.55)"
+                        : roundBet > 0
+                        ? "0 0 12px rgba(251, 191, 36, 0.65)"
+                        : undefined,
+                      opacity: p.isSittingOut ? 0.6 : p.isFolded || (votingOpen && activePot && !isEligibleForActivePot) ? 0.6 : 1,
+                      cursor: (hasVirtualCardsDealt || (isMe && isHandOver)) ? "pointer" : undefined
+                    }}
+                  >
+                    {renderRoleBadgesAbsolute(index, isOnRightSide)}
+
+                    <div className="player-pod-inner" id={`player-pod-inner-${p.userId}`}>
                       <div
-                        className={`player-pod-stack ${isOnRightSide ? "right-side" : "left-side"}`}
-                        id={`player-pod-stack-${p.userId}`}
+                        className={`player-pod-name ${isOnRightSide ? "right-side" : "left-side"}`}
+                        id={`player-pod-name-${p.userId}`}
                         style={{
+                          color: p.isSittingOut ? "var(--text-muted)" : p.isFolded ? "#6b7280" : isMe ? "var(--color-success)" : "var(--text-main)",
+                          textDecoration: p.isFolded && !p.isSittingOut ? "line-through" : "none",
                           textAlign: isOnRightSide ? "right" : "left",
                           display: "block",
                           width: "100%"
                         }}
                       >
-                        {p.stack}
-                        {votingOpen && myVoteTargetId === p.userId && ` • ${t("table.yourChoice")}`}
+                        {p.isSittingOut && table?.mode === "TOURNAMENT" && p.stack === 0 && (
+                          <span style={{ color: "var(--color-danger)", paddingRight: "0.2rem", fontWeight: 700 }}>
+                            [Out]
+                          </span>
+                        )}
+                        {p.displayName}
                       </div>
                     </div>
-                  )}
 
-                  {/* Fiche puntata e badge di stato (Fold/Pause) posizionati in un layer relativo al suo pod */}
-                  <div
-                    style={{
-                      position: "absolute",
-                      bottom: "-6px",
-                      left: isOnRightSide ? "-10px" : undefined,
-                      right: isOnRightSide ? undefined : "-10px",
-                      zIndex: 20,
+                    {/* Cards Container (Fade In/Out with height transition) */}
+                    <div style={{
                       display: "flex",
-                      flexDirection: isOnRightSide ? "row" : "row-reverse",
-                      gap: "0.25rem"
-                    }}
-                  >
-                    {roundBet > 0 && !(isMe && showMyCards) && (
-                      <div
-                        style={{
-                          backgroundColor: "rgba(15, 23, 42, 0.95)",
-                          border: "1.5px solid var(--color-warning)",
-                          color: "var(--color-warning)",
-                          borderRadius: "999px",
-                          padding: "0.25rem 0.55rem",
-                          fontSize: "0.75rem",
-                          fontWeight: "bold",
-                          boxShadow: "0 3px 8px rgba(0,0,0,0.6), 0 0 8px rgba(251, 191, 36, 0.2)",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "0.25rem",
-                          animation: "scaleIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards",
-                          whiteSpace: "nowrap"
-                        }}
-                      >
-                        <PokerChip size={14} style={{ marginRight: "0.2rem" }} />{roundBet}
-                      </div>
-                    )}
+                      gap: "5px",
+                      justifyContent: "center",
+                      transition: "opacity 0.25s ease, max-height 0.25s ease, transform 0.25s ease, margin-top 0.25s ease",
+                      opacity: showCardsInPod && cardsToReveal ? 1 : 0,
+                      maxHeight: showCardsInPod && cardsToReveal ? "70px" : "0px",
+                      transform: showCardsInPod && cardsToReveal ? "scale(1)" : "scale(0.85)",
+                      marginTop: showCardsInPod && cardsToReveal ? "0.15rem" : "0rem",
+                      overflow: "hidden",
+                      pointerEvents: showCardsInPod && cardsToReveal ? "auto" : "none"
+                    }}>
+                      {(cardsToReveal || (isMe && currentHand?.playerHands?.[p.userId]) || []).map((c, i) => (
+                        <Card key={i} card={c} miniMe={isMe} mini={!isMe} />
+                      ))}
+                    </div>
 
-                    {p.isFolded && !p.isSittingOut && (
-                      <div
-                        style={{
-                          backgroundColor: "rgba(15, 23, 42, 0.95)",
-                          border: "1.5px solid var(--color-danger)",
-                          color: "var(--color-danger)",
-                          borderRadius: "999px",
-                          fontSize: "0.68rem",
-                          fontWeight: "bold",
-                          boxShadow: "0 3px 8px rgba(0,0,0,0.6), 0 0 8px rgba(239, 68, 68, 0.2)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          animation: "scaleIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards",
-                          width: "22px",
-                          height: "22px",
-                          minWidth: "22px"
-                        }}
-                        title={t("table.folded")}
-                      >
-                        F
-                      </div>
-                    )}
-
-                    {p.isSittingOut && (
-                      <div
-                        style={{
-                          backgroundColor: "rgba(15, 23, 42, 0.95)",
-                          border: "1.5px solid #a78bfa",
-                          color: "#a78bfa",
-                          borderRadius: "999px",
-                          fontSize: "0.68rem",
-                          fontWeight: "bold",
-                          boxShadow: "0 3px 8px rgba(0,0,0,0.6), 0 0 8px rgba(167, 139, 250, 0.2)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          animation: "scaleIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards",
-                          width: "22px",
-                          height: "22px",
-                          minWidth: "22px"
-                        }}
-                        title={t("table.pauseBadge")}
-                      >
-                        P
-                      </div>
-                    )}
+                    {/* Stack Container (Fade In/Out with height transition) */}
+                    <div
+                      className={`player-pod-stack ${isOnRightSide ? "right-side" : "left-side"}`}
+                      id={`player-pod-stack-${p.userId}`}
+                      style={{
+                        textAlign: isOnRightSide ? "right" : "left",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: isOnRightSide ? "flex-end" : "flex-start",
+                        gap: "0.4rem",
+                        transition: "opacity 0.25s ease, max-height 0.25s ease, transform 0.25s ease",
+                        opacity: showCardsInPod && cardsToReveal ? 0 : 1,
+                        maxHeight: showCardsInPod && cardsToReveal ? "0px" : "20px",
+                        transform: showCardsInPod && cardsToReveal ? "scale(0.85)" : "scale(1)",
+                        overflow: "hidden",
+                        pointerEvents: showCardsInPod && cardsToReveal ? "none" : "auto",
+                        width: "100%"
+                      }}
+                    >
+                      <span>{p.stack}</span>
+                      {roundBet > 0 && (
+                        <span style={{ 
+                          color: "var(--color-warning)", 
+                          fontWeight: 800, 
+                          display: "inline-flex", 
+                          alignItems: "center", 
+                          gap: "2px" 
+                        }}>
+                          <PokerChip size={11} /> {roundBet}
+                        </span>
+                      )}
+                      {votingOpen && myVoteTargetId === p.userId && (
+                        <span style={{ fontSize: "0.65rem", opacity: 0.7 }}>
+                          • {t("table.yourChoice")}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
             })}
           </div>
+          </div>{/* end centering wrapper */}
+
+          {/* Bottom inline controls for host & players shown in the lower empty space */}
+          {inGame && currentHand && currentHand.stage === "SHOWDOWN" && (!!currentHand.winnerId || (currentHand.winnerIds && currentHand.winnerIds.length > 0)) && (
+            <div style={{
+              margin: "0.25rem auto",
+              display: "flex",
+              gap: "0.6rem",
+              justifyContent: "center",
+              alignItems: "center",
+              width: "90%",
+              maxWidth: "480px",
+              zIndex: 20
+            }}>
+              {isHost && (
+                <button
+                  onClick={handleNextHand}
+                  className="poker-btn-success"
+                  style={{ padding: "0.6rem 1.5rem", fontSize: "0.95rem", borderRadius: "999px", fontWeight: 700 }}
+                >
+                  {t("table.nextHand")}
+                </button>
+              )}
+            </div>
+          )}
         </main>
 
         {/* Action bar in basso */}
@@ -1824,15 +2073,15 @@ async function handleConfirmWinners(potId: string) {
                   {/* Fold sempre disponibile se è il tuo turno */}
                   <button
                     id="btn-action-fold"
-                    disabled={!isMyTurn || actionLoading}
+                    disabled={!isMyTurn || actionLoading || isFlipping}
                     onClick={() => setShowFoldConfirm(true)}
-                    className={isMyTurn ? "poker-btn-danger" : ""}
+                    className={isMyTurn && !isFlipping ? "poker-btn-danger" : ""}
                     style={{
                       ...pillActionButton,
-                      backgroundColor: isMyTurn ? undefined : "#ef444433",
-                      color: isMyTurn ? undefined : "rgba(248, 250, 252, 0.4)",
-                      boxShadow: isMyTurn ? undefined : "none",
-                      cursor: isMyTurn && !actionLoading ? "pointer" : "default"
+                      backgroundColor: isMyTurn && !isFlipping ? undefined : "#ef444433",
+                      color: isMyTurn && !isFlipping ? undefined : "rgba(248, 250, 252, 0.4)",
+                      boxShadow: isMyTurn && !isFlipping ? undefined : "none",
+                      cursor: isMyTurn && !actionLoading && !isFlipping ? "pointer" : "default"
                     }}
                   >
                     Fold
@@ -1841,22 +2090,22 @@ async function handleConfirmWinners(potId: string) {
                   {/* Bottone centrale: Check o Call */}
                   <button
                     id="btn-action-check-call"
-                    disabled={!isMyTurn || actionLoading || (!canCheck && !canCall)}
+                    disabled={!isMyTurn || actionLoading || (!canCheck && !canCall) || isFlipping}
                     onClick={() =>
                       canCall ? doAction("CALL") : canCheck ? doAction("CHECK") : null
                     }
-                    className={isMyTurn && (canCheck || canCall) ? (canCall ? "poker-btn-warning" : "poker-btn-info") : ""}
+                    className={isMyTurn && (canCheck || canCall) && !isFlipping ? (canCall ? "poker-btn-warning" : "poker-btn-info") : ""}
                     style={{
                       flex: 1,
                       padding: "0.6rem 0.9rem",
                       borderRadius: "999px",
-                      border: isMyTurn && (canCheck || canCall) ? undefined : "none",
-                      cursor: isMyTurn && (canCheck || canCall) && !actionLoading ? "pointer" : "default",
-                      backgroundColor: isMyTurn && (canCheck || canCall) ? undefined : "#4b556333",
-                      color: isMyTurn && (canCheck || canCall) ? undefined : "rgba(248, 250, 252, 0.4)",
+                      border: isMyTurn && (canCheck || canCall) && !isFlipping ? undefined : "none",
+                      cursor: isMyTurn && (canCheck || canCall) && !actionLoading && !isFlipping ? "pointer" : "default",
+                      backgroundColor: isMyTurn && (canCheck || canCall) && !isFlipping ? undefined : "#4b556333",
+                      color: isMyTurn && (canCheck || canCall) && !isFlipping ? undefined : "rgba(248, 250, 252, 0.4)",
                       fontSize: "0.9rem",
                       textAlign: "center",
-                      boxShadow: isMyTurn && (canCheck || canCall) ? undefined : "none",
+                      boxShadow: isMyTurn && (canCheck || canCall) && !isFlipping ? undefined : "none",
                       transition: "all 0.2s"
                     }}
                   >
@@ -1874,15 +2123,15 @@ async function handleConfirmWinners(potId: string) {
                   {/* Bottone Bet/Raise + pannello */}
                   <button
                     id="btn-action-bet-raise"
-                    disabled={!isMyTurn || actionLoading || !canBetOrRaise}
+                    disabled={!isMyTurn || actionLoading || !canBetOrRaise || isFlipping}
                     onClick={openBetPanel}
-                    className={isMyTurn && canBetOrRaise ? "poker-btn-success" : ""}
+                    className={isMyTurn && canBetOrRaise && !isFlipping ? "poker-btn-success" : ""}
                     style={{
                       ...pillActionButton,
-                      backgroundColor: isMyTurn && canBetOrRaise ? undefined : "#22c55e33",
-                      color: isMyTurn && canBetOrRaise ? undefined : "rgba(248, 250, 252, 0.4)",
-                      boxShadow: isMyTurn && canBetOrRaise ? undefined : "none",
-                      cursor: isMyTurn && canBetOrRaise && !actionLoading ? "pointer" : "default"
+                      backgroundColor: isMyTurn && canBetOrRaise && !isFlipping ? undefined : "#22c55e33",
+                      color: isMyTurn && canBetOrRaise && !isFlipping ? undefined : "rgba(248, 250, 252, 0.4)",
+                      boxShadow: isMyTurn && canBetOrRaise && !isFlipping ? undefined : "none",
+                      cursor: isMyTurn && canBetOrRaise && !actionLoading && !isFlipping ? "pointer" : "default"
                     }}
                   >
                     {currentBet === 0 && myRoundBet === 0 ? t("table.bet") : t("table.raise")}
@@ -2210,7 +2459,8 @@ async function handleConfirmWinners(potId: string) {
         background: "rgba(15,23,42,0.95)", border: "1px solid #1e293b",
         borderRadius: "1.5rem", padding: "2rem", display: "grid", gap: "1.5rem",
         textAlign: "center", maxWidth: "340px", width: "90%",
-        boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.7)"
+        boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.7)",
+        overflow: "visible"
       }}>
         <h2 style={{ fontSize: "1.4rem", margin: 0, color: "#e2e8f0" }}>{t("table.invite")}</h2>
         <div style={{ background: "white", padding: "1.2rem", borderRadius: "1rem", display: "inline-block", margin: "0 auto" }}>
@@ -2243,6 +2493,51 @@ async function handleConfirmWinners(potId: string) {
         >
           {typeof navigator.share === "function" ? t("table.shareLink") : t("table.copyLink")}
         </button>
+
+        {/* Invito Diretto Amici Online */}
+        <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: "1.2rem", textAlign: "left" }}>
+          <label style={{ fontSize: "0.85rem", fontWeight: 700, color: "#e2e8f0", display: "flex", alignItems: "center", gap: "0.35rem", marginBottom: "0.5rem" }}>
+            <Users size={14} /> Invito Diretto Amici Online
+          </label>
+          {onlineFriends.length === 0 ? (
+            <p style={{ fontSize: "0.8rem", color: "#9ca3af", margin: 0 }}>Nessun amico online a casa.</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", maxHeight: "120px", overflowY: "auto", overflowX: "visible", padding: "0 4px" }}>
+              {onlineFriends.map((friend) => {
+                const invited = invitedFriends[friend.uid];
+                return (
+                  <div key={friend.uid} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.4rem 2px" }}>
+                    <span style={{ fontSize: "0.85rem" }}>@{friend.username}</span>
+                    <button
+                      disabled={invited}
+                      onClick={async () => {
+                        try {
+                          if (!tableId || !table) return;
+                          const inviteRef = doc(db, "users", friend.uid, "invitations", tableId);
+                          await setDoc(inviteRef, {
+                            tableId,
+                            tableName: table.name,
+                            senderUsername: user?.displayName || "AirPoker Player",
+                            senderUid: user?.uid,
+                            createdAt: serverTimestamp()
+                          });
+                          setInvitedFriends(prev => ({ ...prev, [friend.uid]: true }));
+                        } catch (err) {
+                          console.error(err);
+                        }
+                      }}
+                      className="poker-btn-success"
+                      style={{ padding: "0.2rem 0.5rem", fontSize: "0.75rem", borderRadius: "999px" }}
+                    >
+                      {invited ? "Invitato" : "Invita"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         <button 
           onClick={() => setShowShareModal(false)}
           style={{
@@ -2281,6 +2576,23 @@ async function handleConfirmWinners(potId: string) {
         
         {joinError && (
           <p style={{ fontSize: "0.85rem", color: "var(--color-danger)", margin: "0.5rem 0" }}>{joinError}</p>
+        )}
+
+        {table.password && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", textAlign: "left" }}>
+            <label style={{ fontSize: "0.85rem", color: "#e2e8f0", fontWeight: 600 }}>Tavolo Privato: Inserisci Password</label>
+            <input
+              type="text"
+              placeholder="Password..."
+              value={enteredPassword}
+              onChange={(e) => setEnteredPassword(e.target.value)}
+              style={{
+                width: "100%", padding: "0.6rem 0.8rem", borderRadius: "0.5rem",
+                backgroundColor: "rgba(15, 23, 42, 0.6)", border: "1px solid rgba(255,255,255,0.1)",
+                color: "white", outline: "none", boxSizing: "border-box"
+              }}
+            />
+          </div>
         )}
 
         <div style={{ display: "flex", flexDirection: "column", gap: "0.8rem", marginTop: "0.5rem" }}>
@@ -2494,7 +2806,7 @@ async function handleConfirmWinners(potId: string) {
 
   if (inGame && currentHand) {
     if (currentHand.stage === "SHOWDOWN" && hasWinner) {
-      stageModalVisible = true;
+      stageModalVisible = false; // Reworked to show inline rather than modal popup
       stageModalTitle = t("table.handOver");
 
       const winnerNames = currentHand.winnerIds && currentHand.winnerIds.length > 1
@@ -2676,7 +2988,7 @@ async function handleConfirmWinners(potId: string) {
           </button>
         );
       }
-    } else if (currentHand.currentTurnIndex === -1) {
+    } else if (currentHand.currentTurnIndex === -1 && !table?.isVirtualCards) {
       stageModalVisible = true;
       if (currentHand.stage === "PREFLOP") {
         stageModalTitle = "Flop";

@@ -46,15 +46,18 @@ export default function PlayerProfilePage() {
   const { t } = useTranslation();
 
   const [targetUser, setTargetUser] = useState<TargetUser | null>(null);
+  const [targetUserPresence, setTargetUserPresence] = useState<any>(null);
   const [friendStatus, setFriendStatus] = useState<"NONE" | "PENDING_SENT" | "PENDING_RECEIVED" | "ACCEPTED" | "SELF">("NONE");
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Load target user profile
+  // Load target user profile and real-time presence
   useEffect(() => {
     if (!targetUsername) return;
     setLoading(true);
     setErrorMsg(null);
+
+    let unsubPresence: (() => void) | undefined;
 
     async function fetchTargetUser() {
       try {
@@ -93,6 +96,13 @@ export default function PlayerProfilePage() {
           }
         });
 
+        // Set up real-time presence listener
+        unsubPresence = onSnapshot(doc(db, "users", userDoc.id), (docSnap) => {
+          if (docSnap.exists()) {
+            setTargetUserPresence(docSnap.data().presence || null);
+          }
+        });
+
         if (user && userDoc.id === user.uid) {
           setFriendStatus("SELF");
         }
@@ -105,6 +115,10 @@ export default function PlayerProfilePage() {
     }
 
     fetchTargetUser();
+
+    return () => {
+      if (unsubPresence) unsubPresence();
+    };
   }, [targetUsername, user]);
 
   // Listen to friend status
@@ -304,6 +318,21 @@ export default function PlayerProfilePage() {
               </button>
             )}
           </div>
+        )}
+
+        {/* Join Active Table Button */}
+        {targetUserPresence?.status === "ONLINE" &&
+         targetUserPresence?.location === "TABLE" &&
+         targetUserPresence?.tableId && (
+          <button
+            id="btn-player-profile-join-table"
+            onClick={() => navigate(`/table/${targetUserPresence.tableId}`)}
+            className="poker-btn-success"
+            style={{ width: "100%", maxWidth: "240px", padding: "0.65rem", borderRadius: "99px", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.4rem", fontSize: "0.9rem", marginTop: "0.5rem" }}
+          >
+            <Play size={16} fill="currentColor" />
+            Unisciti al Tavolo
+          </button>
         )}
       </div>
 

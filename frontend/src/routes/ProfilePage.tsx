@@ -12,11 +12,13 @@ import {
    AlertCircle,
    TrendingUp,
    Award,
-   Upload
+   Upload,
+   Trash2
 } from "lucide-react";
-import { doc, getDoc, runTransaction, updateDoc } from "firebase/firestore";
+import { doc, getDoc, runTransaction, updateDoc, collection, query, where, limit, getDocs } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import AdvancedStats from "../components/AdvancedStats";
+import { deleteAccount } from "../lib/firestoreApi";
 
 export default function ProfilePage() {
   const { user, username, isRegisteredUser, photoURL, updatePhotoURL } = useAuth();
@@ -56,6 +58,10 @@ export default function ProfilePage() {
   const [loadingReset, setLoadingReset] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
   const [resetSuccess, setResetSuccess] = useState<string | null>(null);
+
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [loadingDelete, setLoadingDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const advancedStatsRef = useRef<HTMLDivElement>(null);
 
@@ -147,25 +153,19 @@ export default function ProfilePage() {
         return;
       }
 
+      // 1. Check if new username is taken
+      const qUnique = query(collection(db, "users"), where("usernameLowercase", "==", cleanName.toLowerCase()), limit(1));
+      const snapUnique = await getDocs(qUnique);
+      if (!snapUnique.empty) {
+        throw new Error("Questo nome utente è già occupato.");
+      }
+
       await runTransaction(db, async (transaction) => {
-        // 1. Check if new username is taken
-        const newUsernameRef = doc(db, "usernames", cleanName.toLowerCase());
-        const newUsernameSnap = await transaction.get(newUsernameRef);
-        if (newUsernameSnap.exists()) {
-          throw new Error("Questo nome utente è già occupato.");
-        }
-
-        // 2. Delete old username reservation if existed
-        if (currentUsername) {
-          const oldUsernameRef = doc(db, "usernames", currentUsername.toLowerCase());
-          transaction.delete(oldUsernameRef);
-        }
-
-        // 3. Set new reservation
-        transaction.set(newUsernameRef, { uid: user!.uid });
-
-        // 4. Update user profile document
-        transaction.update(userDocRef, { username: cleanName });
+        // Update user profile document
+        transaction.update(userDocRef, { 
+          username: cleanName,
+          usernameLowercase: cleanName.toLowerCase()
+        });
       });
 
       setSuccessMsg(t("profile.successUsernameUpdateReload"));
@@ -591,7 +591,144 @@ export default function ProfilePage() {
         >
           {loadingReset ? t("profile.btnResetting") || "Reset in corso..." : t("profile.btnResetStats") || "Resetta tutte le statistiche"}
         </button>
+
+        {/* ---- Danger Zone: Elimina Account ---- */}
+        <div style={{
+          marginTop: "2rem",
+          paddingTop: "1.5rem",
+          borderTop: "1px solid rgba(239, 68, 68, 0.2)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: "0.5rem"
+        }}>
+          <p style={{ fontSize: "0.8rem", color: "#9ca3af", margin: 0, textAlign: "center" }}>
+            Questa azione è <strong style={{ color: "#ef4444" }}>irreversibile</strong>: tutti i tuoi dati verranno eliminati permanentemente.
+          </p>
+          {deleteError && (
+            <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", color: "var(--color-danger)", fontSize: "0.8rem" }}>
+              <AlertCircle size={14} />
+              <span>{deleteError}</span>
+            </div>
+          )}
+          <button
+            id="btn-delete-account"
+            type="button"
+            onClick={() => setShowDeleteConfirm(true)}
+            style={{
+              padding: "0.75rem 1.5rem",
+              borderRadius: "99px",
+              border: "1.5px solid rgba(239, 68, 68, 0.6)",
+              cursor: "pointer",
+              backgroundColor: "rgba(239, 68, 68, 0.1)",
+              color: "#ef4444",
+              fontWeight: 800,
+              fontSize: "0.85rem",
+              width: "100%",
+              maxWidth: "280px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "0.4rem",
+              transition: "all 0.2s ease"
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "rgba(239, 68, 68, 0.2)";
+              e.currentTarget.style.borderColor = "#ef4444";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "rgba(239, 68, 68, 0.1)";
+              e.currentTarget.style.borderColor = "rgba(239, 68, 68, 0.6)";
+            }}
+          >
+            <Trash2 size={15} />
+            Elimina account
+          </button>
+        </div>
       </div>
+
+      {/* ---- Confirm Delete Modal ---- */}
+      {showDeleteConfirm && (
+        <div
+          className="modal-overlay"
+          id="modal-delete-account"
+          style={{ zIndex: 2000 }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowDeleteConfirm(false); }}
+        >
+          <div className="glass-panel modal-panel-box" style={{
+            maxWidth: "360px",
+            padding: "2rem",
+            textAlign: "center",
+            display: "flex",
+            flexDirection: "column",
+            gap: "1.2rem"
+          }}>
+            <div style={{ color: "#ef4444", display: "flex", justifyContent: "center" }}>
+              <Trash2 size={44} />
+            </div>
+            <div>
+              <h3 style={{ fontSize: "1.2rem", fontWeight: 800, margin: 0 }}>Elimina account</h3>
+              <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "0.6rem", lineHeight: 1.5 }}>
+                Stai per eliminare definitivamente il tuo account e tutti i dati associati (statistiche, amici, inviti).
+                <br /><strong style={{ color: "#ef4444" }}>Questa azione non può essere annullata.</strong>
+              </p>
+            </div>
+            {deleteError && (
+              <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", color: "var(--color-danger)", fontSize: "0.8rem", justifyContent: "center" }}>
+                <AlertCircle size={14} />
+                <span>{deleteError}</span>
+              </div>
+            )}
+            <div style={{ display: "flex", gap: "0.8rem" }}>
+              <button
+                id="btn-cancel-delete-account"
+                onClick={() => { setShowDeleteConfirm(false); setDeleteError(null); }}
+                disabled={loadingDelete}
+                className="poker-btn-secondary"
+                style={{ flex: 1, padding: "0.7rem", borderRadius: "99px", fontWeight: 700 }}
+              >
+                Annulla
+              </button>
+              <button
+                id="btn-confirm-delete-account"
+                onClick={async () => {
+                  if (!user) return;
+                  setLoadingDelete(true);
+                  setDeleteError(null);
+                  try {
+                    await deleteAccount(user);
+                    localStorage.clear();
+                    navigate("/");
+                  } catch (err: any) {
+                    if (err.code === "auth/requires-recent-login") {
+                      setDeleteError("Per sicurezza, esci e rientra nell'account prima di eliminarlo.");
+                    } else {
+                      setDeleteError(err.message || "Errore durante l'eliminazione.");
+                    }
+                  } finally {
+                    setLoadingDelete(false);
+                  }
+                }}
+                disabled={loadingDelete}
+                style={{
+                  flex: 1,
+                  padding: "0.7rem",
+                  borderRadius: "99px",
+                  border: "none",
+                  backgroundColor: loadingDelete ? "#6b1d1d" : "#ef4444",
+                  color: "#fff",
+                  fontWeight: 800,
+                  fontSize: "0.9rem",
+                  cursor: loadingDelete ? "not-allowed" : "pointer",
+                  transition: "background 0.2s ease"
+                }}
+              >
+                {loadingDelete ? "Eliminazione..." : "Sì, elimina"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

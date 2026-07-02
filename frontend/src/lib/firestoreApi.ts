@@ -5,6 +5,7 @@ import {
   setDoc,
   getDoc,
   getDocs,
+  deleteDoc,
   query,
   orderBy,
   updateDoc,
@@ -12,6 +13,7 @@ import {
   where,
   increment
 } from "firebase/firestore";
+import { deleteUser } from "firebase/auth";
 import type { User } from "firebase/auth";
 import { db } from "./firebase";
 import { determineWinners } from "./pokerEvaluator";
@@ -2220,4 +2222,41 @@ export async function transferHost(tableId: string, currentUser: User, targetUse
   }
 
   await updateDoc(tableRef, { hostId: targetUserId });
+}
+
+/**
+ * Elimina completamente l'account dell'utente:
+ * - Rimuove tutte le subcollection Firestore note (invitations, friends, invites)
+ * - Elimina il documento principale dell'utente in /users/{uid}
+ * - Elimina l'account Firebase Auth
+ */
+export async function deleteAccount(user: User): Promise<void> {
+  const uid = user.uid;
+  const userRef = doc(db, "users", uid);
+
+  // Helper: elimina tutti i doc di una subcollection
+  async function deleteSubcollection(subcollectionName: string) {
+    const colRef = collection(db, "users", uid, subcollectionName);
+    const snap = await getDocs(colRef);
+    if (snap.empty) return;
+    const batch = writeBatch(db);
+    snap.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+  }
+
+  // 1. Cancella subcollections note
+  await Promise.all([
+    deleteSubcollection("invitations"),
+    deleteSubcollection("invites"),
+    deleteSubcollection("friends"),
+    deleteSubcollection("notifications"),
+  ]);
+
+  // 2. Cancella il documento principale dell'utente
+  await deleteDoc(userRef);
+
+  // 3. Cancella l'account Firebase Auth
+  // Nota: se la sessione è troppo vecchia Firebase richiede re-autenticazione
+  // (errore auth/requires-recent-login) — il chiamante deve gestirlo
+  await deleteUser(user);
 }

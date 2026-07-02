@@ -268,9 +268,8 @@ button:active {
 
 .poker-felt {
   position: relative;
-  /* Constrain width to 95vw on mobile, 58vh max, and restrict height to 58vh of viewport.
-     Since aspect-ratio is 1.04/1, width = height * 1.04, so max width from height is 58vh * 1.04 = 60vh approx. */
-  width: min(95vw, 58vh, 520px);
+  /* On tall screens let the felt grow up to 72vh; on wide screens cap at 95vw and 560px absolute. */
+  width: min(95vw, 72vh, 560px);
   height: auto;
   aspect-ratio: 1.04 / 1;
   border-radius: 50%;
@@ -1549,11 +1548,377 @@ input[type="password"]:focus {
   color: var(--text-muted);
   font-weight: 700;
   text-transform: uppercase;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+}
+.pot-badge.unsettled {
+  background-color: rgba(251,191,36,0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(251,191,36,0.25);
+}
+.pot-badge.settled {
+  background-color: rgba(74,222,128,0.15);
+  color: #4ade80;
+  border: 1px solid rgba(74,222,128,0.25);
+}
+.game-controls-bar {
+  margin-top: 0.2rem;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  font-size: 0.8rem;
+}
+.game-controls-flex {
+  display: flex;
+  gap: 0.4rem;
+}
+
+/* Player Pod Styling Refinements */
+.player-pod-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 0.4rem;
+}
+.player-pod-inner.right-side {
+  flex-direction: row-reverse;
+}
+.player-pod-name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 1;
+}
+.player-pod-stack {
+  margin-top: 0.1rem;
+  color: #94a3b8;
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+.player-pod-stack.right-side {
+  text-align: right;
+}
+.player-pod-stack.left-side {
+  text-align: left;
+}
+
+/* Avatar image styles */
+.profile-avatar-large img,
+.profile-avatar-circle img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+/* Clickable list row styling */
+.list-item-row.clickable {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.list-item-row.clickable:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px);
+}
+
+/* Stats Page Styling */
+.stats-page-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1rem;
+  max-width: 600px;
+  margin: 0 auto;
+  width: 100%;
+}
+.stats-back-btn {
+  background: none;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #fff;
+  transition: all 0.2s ease;
+}
+.stats-back-btn:hover {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.15);
+}
+.radar-chart-card {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+.radar-chart-title {
+  font-size: 1.1rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+  text-align: center;
+}
+.radar-chart-subtitle {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+.radar-chart-svg-container {
+  width: 220px;
+  height: 220px;
+  position: relative;
+}
+.radar-badge {
+  position: absolute;
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  background-color: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.05);
+  color: var(--text-muted);
+}
+.radar-badge.active {
+  background-color: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.4);
+  color: var(--color-success);
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
+}
+.radar-badge.tag { top: 0; left: 0; }
+.radar-badge.lag { top: 0; right: 0; }
+.radar-badge.rock { bottom: 0; left: 0; }
+.radar-badge.fish { bottom: 0; right: 0; }
+
+.stats-detailed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+.stats-detailed-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1rem;
+}
+.stats-detailed-label-group {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+.stats-detailed-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.stats-detailed-value {
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+/* 3D Card Flipping Styles */
+.poker-card-3d-container {
+  perspective: 1000px;
+  width: 48px;
+  height: 70px;
+  display: inline-block;
+  user-select: none;
+}
+.poker-card-3d-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* By default (hidden), the card back is facing the user (0deg) and the front is facing away (180deg) */
+.poker-card-3d-container .poker-card-3d-inner {
+  transform: rotateY(180deg);
+}
+
+/* When not hidden (.is-flipped), rotate to 0deg to show front side */
+.poker-card-3d-container.is-flipped .poker-card-3d-inner {
+  transform: rotateY(0deg);
+}
+
+.poker-card-3d-front,
+.poker-card-3d-back {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  border-radius: 6px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+  box-sizing: border-box;
+}
+
+/* Front side */
+.poker-card-3d-front {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  transform: rotateY(0deg);
+}
+
+/* Back side */
+.poker-card-3d-back {
+  background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%);
+  border: 2px solid #3b82f6;
+  transform: rotateY(180deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.poker-card-3d-back::after {
+  content: "♦️";
+  font-size: 1.1rem;
+  opacity: 0.25;
+}
+
+.poker-card-red {
+  color: #ef4444;
+}
+
+.poker-card-black {
+  color: #0f172a;
+}
+
+.poker-card-corner-top {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.poker-card-corner-bottom {
+  position: absolute;
+  bottom: 2px;
+  right: 4px;
+  font-size: 1.05rem;
+  line-height: 1;
+  transform: rotate(180deg);
+}
+
+.poker-card-center-suit {
+  font-size: 1.25rem;
+}
+
+.stats-sub-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.4rem;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+.stats-sub-box {
+  background-color: rgba(255,255,255,0.01);
+  border: 1px solid rgba(255,255,255,0.03);
+  border-radius: 0.4rem;
+  padding: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.stats-sub-label {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  font-weight: 700;
+  text-transform: uppercase;
 }
 .stats-sub-value {
   font-size: 0.85rem;
   font-weight: 800;
   margin-top: 0.1rem;
 }
+.poker-card-mini-me {
+  width: 45px !important;
+  height: 66px !important;
+}
+.poker-card-mini-me .poker-card-3d-front,
+.poker-card-mini-me .poker-card-3d-back {
+  border-radius: 4px !important;
+}
+.poker-card-mini-me .poker-card-corner-top {
+  font-size: 0.78rem !important;
+  top: 1px !important;
+  left: 2px !important;
+}
+.poker-card-mini-me .poker-card-corner-bottom {
+  font-size: 0.78rem !important;
+  bottom: 1px !important;
+  right: 2px !important;
+}
+.poker-card-mini-me .poker-card-center-suit {
+  font-size: 0.95rem !important;
+}
+.poker-card-mini-me .poker-card-3d-back::after {
+  content: "♦️";
+  font-size: 0.95rem !important;
+  opacity: 0.25;
+}
 
+.poker-card-mini-others {
+  width: 32px !important;
+  height: 48px !important;
+}
+.poker-card-mini-others .poker-card-3d-front,
+.poker-card-mini-others .poker-card-3d-back {
+  border-radius: 3px !important;
+}
+.poker-card-mini-others .poker-card-corner-top {
+  font-size: 0.68rem !important;
+  top: 1px !important;
+  left: 2px !important;
+}
+.poker-card-mini-others .poker-card-corner-bottom {
+  font-size: 0.68rem !important;
+  bottom: 1px !important;
+  right: 2px !important;
+}
+.poker-card-mini-others .poker-card-center-suit {
+  font-size: 0.75rem !important;
+}
+.poker-card-mini-others .poker-card-3d-back::after {
+  content: "♦️";
+  font-size: 0.75rem !important;
+  opacity: 0.25;
+}
 
+.player-pod-dilated-me {
+  min-width: 106px !important;
+  padding: 0.2rem 0.25rem !important;
+}
+.player-pod-dilated-others {
+  min-width: 82px !important;
+  padding: 0.2rem 0.2rem !important;
+}
+
+/* Felt/Community Cards Sizing */
+.felt-cards .poker-card-corner-top {
+  font-size: 0.80rem !important;
+  top: 2px !important;
+  left: 4px !important;
+}
+.felt-cards .poker-card-corner-bottom {
+  font-size: 0.80rem !important;
+  bottom: 2px !important;
+  right: 4px !important;
+}
+.felt-cards .poker-card-center-suit {
+  font-size: 1.1rem !important;
+}

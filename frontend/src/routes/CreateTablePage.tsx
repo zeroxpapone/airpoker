@@ -413,68 +413,7 @@ export default function CreateTablePage() {
             />
           </Field>
 
-          {/* Invite Friends Checklist */}
-          <div className="form-field-group" id="field-invite-friends" style={{ marginTop: "1rem" }}>
-            <label className="form-label-title" style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-              <Users size={16} />
-              {t("dashboard.inviteFriendsTitle") || "Invita Amici"}
-            </label>
-            <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: "0 0 0.5rem 0", lineHeight: 1.3 }}>
-              {t("createTable.inviteFriendsDesc") || "Seleziona gli amici online nella HomePage da invitare al tuo tavolo."}
-            </p>
-            
-            {onlineFriends.length === 0 ? (
-              <div style={{ padding: "0.85rem", borderRadius: "0.6rem", border: "1px solid rgba(255,255,255,0.04)", backgroundColor: "rgba(255,255,255,0.01)", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <ShieldAlert size={16} style={{ color: "var(--text-muted)" }} />
-                <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
-                  {t("dashboard.noFriendsOnline") || "Nessun amico online nella Home al momento."}
-                </span>
-              </div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", maxHeight: "150px", overflowY: "auto", padding: "0.4rem 0" }}>
-                {onlineFriends.map((friend) => {
-                  const isChecked = selectedFriends.includes(friend.uid);
-                  return (
-                    <div 
-                      key={friend.uid} 
-                      onClick={() => {
-                        if (isChecked) {
-                          setSelectedFriends(selectedFriends.filter(id => id !== friend.uid));
-                        } else {
-                          setSelectedFriends([...selectedFriends, friend.uid]);
-                        }
-                      }}
-                      style={{ 
-                        display: "flex", 
-                        alignItems: "center", 
-                        justifyContent: "space-between", 
-                        padding: "0.55rem 0.75rem", 
-                        borderRadius: "0.5rem", 
-                        backgroundColor: isChecked ? "rgba(16, 185, 129, 0.08)" : "rgba(255,255,255,0.01)",
-                        border: isChecked ? "1px solid rgba(16, 185, 129, 0.3)" : "1px solid rgba(255,255,255,0.04)",
-                        cursor: "pointer",
-                        transition: "all 0.15s ease"
-                      }}
-                    >
-                      <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>@{friend.username}</span>
-                      <div style={{ 
-                        width: "18px", 
-                        height: "18px", 
-                        borderRadius: "4px", 
-                        border: isChecked ? "none" : "1px solid rgba(255,255,255,0.2)", 
-                        backgroundColor: isChecked ? "var(--color-success)" : "transparent",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center"
-                      }}>
-                        {isChecked && <Check size={12} color="#fff" strokeWidth={3} />}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+
 
           {errorMsg && (
             <p style={{ fontSize: "0.8rem", color: "var(--color-danger)", margin: "0.2rem 0" }} id="create-table-error">{errorMsg}</p>

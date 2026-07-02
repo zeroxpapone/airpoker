@@ -69,6 +69,32 @@ export default function HomePage() {
   const { t } = useTranslation();
 
   const [activeTab, setActiveTab] = useState<TabType>("leaderboard");
+  const [activeTableId, setActiveTableId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const cachedId = localStorage.getItem("activeTableId");
+    if (!cachedId) return;
+    // Verify the table is still in a joinable state before showing the banner
+    import("../lib/firebase").then(({ db }) => {
+      import("firebase/firestore").then(({ doc, getDoc }) => {
+        getDoc(doc(db, "tables", cachedId)).then((snap) => {
+          if (!snap.exists()) {
+            localStorage.removeItem("activeTableId");
+            return;
+          }
+          const state = snap.data()?.state;
+          if (state === "SUMMARY" || state === "ENDED") {
+            localStorage.removeItem("activeTableId");
+          } else {
+            setActiveTableId(cachedId);
+          }
+        }).catch(() => {
+          // On error, still show the banner (network issue, not a finished game)
+          setActiveTableId(cachedId);
+        });
+      });
+    });
+  }, []);
 
   // Main Dashboard Data States
   const [stats, setStats] = useState({
@@ -263,7 +289,7 @@ export default function HomePage() {
   async function handleAcceptInvitation(invite: any) {
     try {
       await deleteDoc(doc(db, "users", user!.uid, "invitations", invite.id));
-      navigate(`/table/${invite.tableId}`);
+      navigate(`/table/${invite.tableId}?autoJoin=1`);
     } catch (e) {
       console.error(e);
     }
@@ -306,14 +332,16 @@ export default function HomePage() {
     try {
       setLoadingAction(true);
       // Check if username exists
-      const usernameDocRef = doc(db, "usernames", friendName.toLowerCase());
-      const usernameSnap = await getDoc(usernameDocRef);
-      if (!usernameSnap.exists()) {
+      const qFriend = query(collection(db, "users"), where("usernameLowercase", "==", friendName.toLowerCase()), limit(1));
+      const qFriendSnap = await getDocs(qFriend);
+      if (qFriendSnap.empty) {
         setErrorMsg(t("dashboard.errFriendNotFound", { name: friendName }));
         return;
       }
 
-      const friendUid = usernameSnap.data().uid;
+      const friendDoc = qFriendSnap.docs[0];
+      const friendUid = friendDoc.id;
+      const actualFriendUsername = friendDoc.data().username || friendName;
 
       // Check if already friends/pending
       const checkFriendRef = doc(db, "users", user!.uid, "friends", friendUid);
@@ -327,7 +355,7 @@ export default function HomePage() {
       // Me -> Friend (PENDING_SENT)
       await setDoc(doc(db, "users", user!.uid, "friends", friendUid), {
         friendUid,
-        username: friendName,
+        username: actualFriendUsername,
         status: "PENDING_SENT"
       });
 
@@ -338,7 +366,7 @@ export default function HomePage() {
         status: "PENDING_RECEIVED"
       });
 
-      setSuccessMsg(t("dashboard.successFriendRequest", { name: friendName }));
+      setSuccessMsg(t("dashboard.successFriendRequest", { name: actualFriendUsername }));
       setFriendInput("");
     } catch (err: any) {
       console.error(err);
@@ -504,6 +532,36 @@ export default function HomePage() {
           </button>
         </div>
       </div>
+
+      {activeTableId && (
+        <div 
+          className="glass-panel" 
+          style={{ 
+            padding: "1rem", 
+            marginBottom: "1rem", 
+            display: "flex", 
+            justifyContent: "space-between", 
+            alignItems: "center", 
+            borderColor: "rgba(250, 204, 21, 0.4)", 
+            background: "rgba(250, 204, 21, 0.05)" 
+          }}
+          id="banner-active-table"
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <span style={{ fontSize: "1.2rem" }}>🔔</span>
+            <span style={{ fontSize: "0.9rem", color: "#e2e8f0" }}>
+              Hai una partita attiva in corso (ID: <strong style={{ color: "#facc15" }}>{activeTableId}</strong>)
+            </span>
+          </div>
+          <button
+            onClick={() => navigate(`/table/${activeTableId}`)}
+            className="poker-btn-success"
+            style={{ padding: "0.4rem 1rem", borderRadius: "999px", fontSize: "0.85rem", fontWeight: 700 }}
+          >
+            Rientra
+          </button>
+        </div>
+      )}
 
       {/* Grid of Actions and Quick Join */}
       <div className="dashboard-actions-grid">
