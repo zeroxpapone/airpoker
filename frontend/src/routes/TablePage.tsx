@@ -2504,9 +2504,6 @@ async function handleConfirmWinners(potId: string) {
         >
           <div>{t("table.sessionDuration")}: {durata}</div>
           <div>{t("table.handsPlayed")}: {handsPlayed}</div>
-          <div style={{ fontSize: "0.8rem", color: "#9ca3af" }}>
-            {t("table.summaryDisclaimer")}
-          </div>
         </div>
 
         <div style={{ marginTop: "0.5rem" }}>
