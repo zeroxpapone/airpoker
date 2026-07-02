@@ -11,7 +11,7 @@ import {
   updateDoc,
   serverTimestamp,
   where,
-  getDocs,
+  getDoc,
   writeBatch,
   setDoc
 } from "firebase/firestore";
