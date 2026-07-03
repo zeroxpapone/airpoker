@@ -94,6 +94,7 @@ async function createProfileForUser(uid: string, email: string | null, preferred
         netProfit: 0,
         sessionsPlayed: 0,
         bestHandName: "",
+        bestHandRank: -1,
         aggressiveActions: 0,
         totalActions: 0,
         stagePreflopCount: 0,
@@ -212,7 +213,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             sessionsPlayed: 0,
             timePlayedSeconds: 0,
             bestHandName: "",
-            bestHandRank: 999999
+            bestHandRank: -1
           }
         }, { merge: true });
       } catch (e) {

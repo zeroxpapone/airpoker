@@ -265,6 +265,7 @@ export default function ProfilePage() {
         "stats.totalChipsLost": 0,
         "stats.netProfit": 0,
         "stats.bestHandName": "",
+        "stats.bestHandRank": -1,
         "stats.vpipCount": 0,
         "stats.totalActions": 0,
         "stats.aggressiveActions": 0,

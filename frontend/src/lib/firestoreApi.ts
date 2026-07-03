@@ -135,12 +135,16 @@ async function updateUserStatsForHand(
         const currentStats = userData.stats || {};
         const wonHand = chipsWon > 0;
 
-        let bestHandRank = currentStats.bestHandRank || 999999;
+        let bestHandRank = currentStats.bestHandRank;
         let bestHandName = currentStats.bestHandName || "";
 
-        if (hand.isVirtualCards && hand.handResults && hand.handResults[userId]) {
+        if (bestHandRank === undefined || bestHandRank === null || bestHandRank === 999999) {
+          bestHandRank = -1;
+        }
+
+        if (!player.isFolded && hand.isVirtualCards && hand.handResults && hand.handResults[userId]) {
           const myResult = hand.handResults[userId];
-          if (myResult.rank < bestHandRank) {
+          if (bestHandRank === -1 || myResult.rank > bestHandRank) {
             bestHandRank = myResult.rank;
             bestHandName = myResult.rankName;
           }
