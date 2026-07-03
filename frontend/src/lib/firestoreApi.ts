@@ -138,8 +138,13 @@ async function updateUserStatsForHand(
         let bestHandRank = currentStats.bestHandRank;
         let bestHandName = currentStats.bestHandName || "";
 
-        if (bestHandRank === undefined || bestHandRank === null || bestHandRank === 999999) {
-          bestHandRank = -1;
+        if (bestHandRank === undefined || bestHandRank === null || bestHandRank === 999999 || bestHandRank === -1) {
+          const RANK_NAMES = [
+            'High Card', 'Pair', 'Two Pair', 'Three of a Kind', 'Straight',
+            'Flush', 'Full House', 'Four of a Kind', 'Straight Flush', 'Royal Flush'
+          ];
+          const inferredIdx = RANK_NAMES.indexOf(bestHandName);
+          bestHandRank = inferredIdx !== -1 ? inferredIdx : -1;
         }
 
         if (!player.isFolded && hand.isVirtualCards && hand.handResults && hand.handResults[userId]) {
