@@ -13,7 +13,7 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       includeAssets: ['favicon-airpoker.ico', 'favicon-airpoker-32x32.png', 'android-chrome-192x192.png'],
       manifest: {
         name: 'AirPoker',

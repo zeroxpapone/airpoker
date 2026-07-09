@@ -8,6 +8,15 @@
     ],
     "headers": [
       {
+        "source": "**/index.html",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
         "source": "**/*.@(js|css|webp|png|jpg|jpeg|svg|gif|woff|woff2|ttf|eot|ico)",
         "headers": [
           {

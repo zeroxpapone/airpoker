@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Home, ShieldAlert } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
+import ReloadPrompt from "./ReloadPrompt";
 
 interface Props {
   children: ReactNode;
@@ -47,6 +48,7 @@ export default function Layout({ children }: Props) {
 
   return (
     <div className="app-layout" id="app-layout-root">
+      <ReloadPrompt />
       <header className="app-header" id="app-header-navigation">
         {showHomeBtn && !showUsernameModal && (
           <button
