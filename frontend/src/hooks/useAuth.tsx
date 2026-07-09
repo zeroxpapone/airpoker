@@ -129,6 +129,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               if (uData.username) {
                 setUsername(uData.username);
                 setIsRegisteredUser(true);
+                // Sync Auth displayName with Firestore username if they differ
+                if (firebaseUser.displayName !== uData.username) {
+                  updateProfile(firebaseUser, { displayName: uData.username }).catch((err) => {
+                    console.warn("Could not sync Auth displayName with Firestore username:", err);
+                  });
+                }
               } else {
                 setUsername(null);
                 setIsRegisteredUser(false);
@@ -296,32 +302,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const userDoc = await getDoc(userDocRef);
 
     if (!userDoc.exists() || !userDoc.data()?.username) {
-      const baseName = (u.displayName || u.email?.split("@")[0] || "player").replace(/\s+/g, "");
-      let canAutoCreate = false;
-      if (baseName.length >= 3 && /^[a-zA-Z0-9_]+$/.test(baseName)) {
-        const qUnique = query(collection(db, "users"), where("usernameLowercase", "==", baseName.toLowerCase()), limit(1));
-        const snapUnique = await getDocs(qUnique);
-        if (snapUnique.empty) {
-          canAutoCreate = true;
-        }
-      }
-
-      if (canAutoCreate) {
-        const finalUsername = await createProfileForUser(u.uid, u.email, baseName, true, u.photoURL || undefined);
-        await updateProfile(u, { displayName: finalUsername, photoURL: u.photoURL || undefined });
-        setUsername(finalUsername);
-        setPhotoURL(u.photoURL || null);
-        setIsRegisteredUser(true);
-      } else {
-        setUsername(null);
-        setPhotoURL(u.photoURL || null);
-        setIsRegisteredUser(false);
-      }
+      // Don't auto-create username from Google details, force user to select a username
+      setUsername(null);
+      setPhotoURL(u.photoURL || null);
+      setIsRegisteredUser(false);
     } else {
       const uData = userDoc.data();
-      setUsername(uData.username || null);
+      const dbUsername = uData.username || null;
+      if (dbUsername && u.displayName !== dbUsername) {
+        await updateProfile(u, { displayName: dbUsername });
+      }
+      setUsername(dbUsername);
       setPhotoURL(uData.photoURL || u.photoURL || null);
-      setIsRegisteredUser(!!uData.username);
+      setIsRegisteredUser(!!dbUsername);
     }
 
     setUser(u);
@@ -361,32 +354,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const userDocRef = doc(db, "users", currentUser.uid);
       const userDoc = await getDoc(userDocRef);
       if (!userDoc.exists() || !userDoc.data()?.username) {
-        const baseName = (currentUser.displayName || currentUser.email?.split("@")[0] || "player").replace(/\s+/g, "");
-        let canAutoCreate = false;
-        if (baseName.length >= 3 && /^[a-zA-Z0-9_]+$/.test(baseName)) {
-          const qUnique = query(collection(db, "users"), where("usernameLowercase", "==", baseName.toLowerCase()), limit(1));
-          const snapUnique = await getDocs(qUnique);
-          if (snapUnique.empty) {
-            canAutoCreate = true;
-          }
-        }
-
-        if (canAutoCreate) {
-          const finalUsername = await createProfileForUser(currentUser.uid, currentUser.email, baseName, true, currentUser.photoURL || undefined);
-          await updateProfile(currentUser, { displayName: finalUsername, photoURL: currentUser.photoURL || undefined });
-          setUsername(finalUsername);
-          setPhotoURL(currentUser.photoURL || null);
-          setIsRegisteredUser(true);
-        } else {
-          setUsername(null);
-          setPhotoURL(currentUser.photoURL || null);
-          setIsRegisteredUser(false);
-        }
+        // Don't auto-create username from Google details, force user to select a username
+        setUsername(null);
+        setPhotoURL(currentUser.photoURL || null);
+        setIsRegisteredUser(false);
       } else {
         const uData = userDoc.data();
-        setUsername(uData.username || null);
+        const dbUsername = uData.username || null;
+        if (dbUsername && currentUser.displayName !== dbUsername) {
+          await updateProfile(currentUser, { displayName: dbUsername });
+        }
+        setUsername(dbUsername);
         setPhotoURL(uData.photoURL || currentUser.photoURL || null);
-        setIsRegisteredUser(!!uData.username);
+        setIsRegisteredUser(!!dbUsername);
       }
     }
     
