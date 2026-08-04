@@ -74,6 +74,7 @@ export default function ProfilePage() {
   const [resetError, setResetError] = useState<string | null>(null);
   const [resetSuccess, setResetSuccess] = useState<string | null>(null);
 
+  const [showResetStatsConfirm, setShowResetStatsConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [loadingDelete, setLoadingDelete] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -299,10 +300,6 @@ export default function ProfilePage() {
 
   async function handleResetStats() {
     if (!user) return;
-    const confirmReset = window.confirm(
-      t("profile.confirmResetStats") || "Sei sicuro di voler resettare tutte le tue statistiche? Questa azione manterrà solo il tempo di gioco."
-    );
-    if (!confirmReset) return;
 
     setLoadingReset(true);
     setResetError(null);
@@ -354,6 +351,7 @@ export default function ProfilePage() {
       setResetError(err?.message || "Errore durante il reset delle statistiche.");
     } finally {
       setLoadingReset(false);
+      setShowResetStatsConfirm(false);
     }
   }
 
@@ -733,7 +731,7 @@ export default function ProfilePage() {
         <button
           id="btn-reset-stats"
           type="button"
-          onClick={handleResetStats}
+          onClick={() => setShowResetStatsConfirm(true)}
           disabled={loadingReset}
           style={{
             padding: "0.75rem 1.5rem",
@@ -818,6 +816,60 @@ export default function ProfilePage() {
           </button>
         </div>
       </div>
+
+      {/* ---- Confirm Reset Stats Modal ---- */}
+      {showResetStatsConfirm && (
+        <div
+          className="modal-overlay"
+          id="modal-reset-stats"
+          style={{ zIndex: 2000 }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowResetStatsConfirm(false); }}
+        >
+          <div className="glass-panel modal-panel-box" style={{
+            maxWidth: "360px",
+            padding: "2rem",
+            textAlign: "center",
+            display: "flex",
+            flexDirection: "column",
+            gap: "1.2rem"
+          }}>
+            <div>
+              <h3 style={{ fontSize: "1.2rem", fontWeight: 800, margin: 0 }}>{t("profile.btnResetStats")}</h3>
+              <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "0.6rem", lineHeight: 1.5 }}>
+                {t("profile.confirmResetStats") || "Sei sicuro di voler resettare tutte le tue statistiche? Questa azione manterrà solo il tempo di gioco."}
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: "0.8rem" }}>
+              <button
+                id="btn-cancel-reset-stats"
+                onClick={() => setShowResetStatsConfirm(false)}
+                disabled={loadingReset}
+                className="poker-btn-secondary"
+                style={{ flex: 1, padding: "0.7rem", borderRadius: "99px", fontWeight: 700 }}
+              >
+                {t("table.cancel")}
+              </button>
+              <button
+                id="btn-confirm-reset-stats"
+                onClick={handleResetStats}
+                disabled={loadingReset}
+                style={{
+                  flex: 1,
+                  padding: "0.7rem",
+                  borderRadius: "99px",
+                  border: "none",
+                  backgroundColor: loadingReset ? "#6b1d1d" : "#ef4444",
+                  color: "#fff",
+                  fontWeight: 700,
+                  cursor: loadingReset ? "not-allowed" : "pointer"
+                }}
+              >
+                {loadingReset ? t("profile.btnResetting") : t("profile.btnResetStatsConfirm")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ---- Confirm Delete Modal ---- */}
       {showDeleteConfirm && (

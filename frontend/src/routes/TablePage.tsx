@@ -196,6 +196,7 @@ export default function TablePage() {
   const [players, setPlayers] = useState<PlayerData[]>([]);
   const [playersLoaded, setPlayersLoaded] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [linkCopiedMsg, setLinkCopiedMsg] = useState(false);
   const [currentHand, setCurrentHand] = useState<ExtendedHandData | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -1189,7 +1190,6 @@ async function handleToggleSittingOut() {
     // Revert ottimistico
     setPlayers(prev => prev.map(p => p.id === myPlayer.id ? { ...p, isSittingOut: !newValue } : p));
     setActionError(err.message || "Errore nel gestire lo stato di pausa.");
-    window.alert("ATTENZIONE! Firebase ha scartato la richiesta: " + err.message);
   }
 }
 
@@ -2789,7 +2789,8 @@ async function handleConfirmWinners(potId: string) {
               }
             } else {
               navigator.clipboard.writeText(inviteLink);
-              alert(t("table.linkCopied"));
+              setLinkCopiedMsg(true);
+              setTimeout(() => setLinkCopiedMsg(false), 2000);
             }
           }}
           className="poker-btn-info"
@@ -2799,6 +2800,12 @@ async function handleConfirmWinners(potId: string) {
         >
           {typeof navigator.share === "function" ? t("table.shareLink") : t("table.copyLink")}
         </button>
+
+        {linkCopiedMsg && (
+          <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--color-success)", textAlign: "center" }}>
+            {t("table.linkCopied")}
+          </p>
+        )}
 
         {/* Invito Diretto Amici Online */}
         {isRegisteredUser && (

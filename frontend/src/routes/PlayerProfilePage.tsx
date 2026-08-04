@@ -50,6 +50,8 @@ export default function PlayerProfilePage() {
   const [friendStatus, setFriendStatus] = useState<"NONE" | "PENDING_SENT" | "PENDING_RECEIVED" | "ACCEPTED" | "SELF">("NONE");
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [showRemoveFriendConfirm, setShowRemoveFriendConfirm] = useState(false);
+  const [addFriendError, setAddFriendError] = useState<string | null>(null);
 
   // Load target user profile and real-time presence
   useEffect(() => {
@@ -142,13 +144,14 @@ export default function PlayerProfilePage() {
 
   async function handleAddFriend() {
     if (!user || !targetUser) return;
-    
+    setAddFriendError(null);
+
     // Only registered users can add friends
     if (!isRegisteredUser) {
-      alert(t("dashboard.errGuestCannotAddFriend") || "Solo gli utenti registrati possono aggiungere amici.");
+      setAddFriendError(t("dashboard.errGuestCannotAddFriend") || "Solo gli utenti registrati possono aggiungere amici.");
       return;
     }
-    
+
     try {
       // Me -> Target (PENDING_SENT)
       await setDoc(doc(db, "users", user.uid, "friends", targetUser.uid), {
@@ -182,12 +185,13 @@ export default function PlayerProfilePage() {
 
   async function handleRemoveFriend() {
     if (!user || !targetUser) return;
-    if (!window.confirm(t("profile.confirmRemoveFriend", { name: targetUser.username }))) return;
     try {
       await deleteDoc(doc(db, "users", user.uid, "friends", targetUser.uid));
       await deleteDoc(doc(db, "users", targetUser.uid, "friends", user.uid));
     } catch (e) {
       console.error(e);
+    } finally {
+      setShowRemoveFriendConfirm(false);
     }
   }
 
@@ -259,7 +263,7 @@ export default function PlayerProfilePage() {
         {user && friendStatus !== "SELF" && (
           <div style={{ marginTop: "0.4rem", width: "100%", maxWidth: "240px" }} id="friendship-controls">
             {friendStatus === "NONE" && (
-              <button 
+              <button
                 id="btn-friendship-add"
                 onClick={handleAddFriend}
                 className="poker-btn-primary"
@@ -268,6 +272,13 @@ export default function PlayerProfilePage() {
                 <UserPlus size={16} />
                 {t("profile.btnAddFriend")}
               </button>
+            )}
+
+            {addFriendError && (
+              <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", color: "var(--color-danger)", fontSize: "0.8rem", marginTop: "0.5rem" }}>
+                <AlertCircle size={14} />
+                <span>{addFriendError}</span>
+              </div>
             )}
 
             {friendStatus === "PENDING_SENT" && (
@@ -294,9 +305,9 @@ export default function PlayerProfilePage() {
             )}
 
             {friendStatus === "ACCEPTED" && (
-              <button 
+              <button
                 id="btn-friendship-remove"
-                onClick={handleRemoveFriend}
+                onClick={() => setShowRemoveFriendConfirm(true)}
                 style={{
                   width: "100%",
                   padding: "0.65rem",
@@ -396,6 +407,42 @@ export default function PlayerProfilePage() {
         </h3>
         <AdvancedStats stats={targetUser.stats} />
       </div>
+
+      {showRemoveFriendConfirm && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+          background: "rgba(2, 6, 23, 0.85)", backdropFilter: "blur(8px)",
+          display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000
+        }}>
+          <div style={{
+            background: "rgba(15,23,42,0.95)", border: "1px solid #1e293b",
+            borderRadius: "1.5rem", padding: "2rem", display: "grid", gap: "1.5rem",
+            textAlign: "center", maxWidth: "340px", width: "90%",
+            boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.7)"
+          }}>
+            <h2 style={{ fontSize: "1.3rem", margin: 0, color: "#e2e8f0" }}>{t("profile.btnRemoveFriend")}</h2>
+            <p style={{ margin: 0, fontSize: "0.9rem", color: "#9ca3af" }}>
+              {t("profile.confirmRemoveFriend", { name: targetUser.username })}
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.8rem" }}>
+              <button
+                onClick={handleRemoveFriend}
+                className="poker-btn-danger"
+                style={{ padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontSize: "0.95rem" }}
+              >
+                {t("profile.btnRemoveFriend")}
+              </button>
+              <button
+                onClick={() => setShowRemoveFriendConfirm(false)}
+                className="poker-btn-secondary"
+                style={{ padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontSize: "0.95rem" }}
+              >
+                {t("table.cancel")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

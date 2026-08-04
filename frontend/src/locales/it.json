@@ -393,6 +393,7 @@
     "confirmResetStats": "Sei sicuro di voler resettare tutte le tue statistiche? Questa azione manterrà solo il tempo di gioco e non può essere annullata.",
     "successResetStats": "Statistiche resettate con successo!",
     "btnResetStats": "Resetta tutte le statistiche",
+    "btnResetStatsConfirm": "Sì, resetta",
     "btnResetting": "Reset in corso..."
   },
   "stats": {

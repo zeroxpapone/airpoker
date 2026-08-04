@@ -394,6 +394,7 @@
     "confirmResetStats": "Are you sure you want to reset all your statistics? This action will only keep your playtime/sessions and cannot be undone.",
     "successResetStats": "Statistics reset successfully!",
     "btnResetStats": "Reset all statistics",
+    "btnResetStatsConfirm": "Yes, reset",
     "btnResetting": "Resetting..."
   },
   "stats": {
