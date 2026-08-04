@@ -1,0 +1,42 @@
+name: End stale IN_GAME tables
+
+on:
+  schedule:
+    # Every 30 minutes. Tables are only actually ended once idle past
+    # STALE_THRESHOLD_MS (default 3h, see scripts/end-stale-tables.mjs) —
+    # this just controls how promptly we notice.
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (log what would happen, don't write anything)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: end-stale-tables
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: scripts/package-lock.json
+
+      - name: Install script dependencies
+        working-directory: ./scripts
+        run: npm install
+
+      - name: Run sweep
+        working-directory: ./scripts
+        run: npm run end-stale-tables
+        env:
+          FIRESTORE_SWEEPER_KEY: ${{ secrets.FIRESTORE_SWEEPER_KEY }}
+          DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && '1' || '' }}

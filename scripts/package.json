@@ -1,0 +1,13 @@
+{
+  "name": "airpoker-scripts",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Standalone server-side maintenance scripts, run on a schedule via GitHub Actions (not part of the frontend build).",
+  "scripts": {
+    "end-stale-tables": "node end-stale-tables.mjs"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.0"
+  }
+}
