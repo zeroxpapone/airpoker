@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   onAuthStateChanged,
@@ -32,6 +32,9 @@ interface AuthContextValue {
   updatePhotoURL: (url: string) => Promise<void>;
   claimUsername: (username: string) => Promise<void>;
   isRegistering: boolean;
+  linkedProviderIds: string[];
+  linkEmailPasswordToAccount: (email: string, password: string) => Promise<void>;
+  linkGoogleToAccount: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -115,6 +118,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isRegisteredUser, setIsRegisteredUser] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isRegistering, setIsRegistering] = useState(false);
+  // onAuthStateChanged below subscribes exactly once (empty dep array — resubscribing
+  // a Firebase auth listener on every state change risks missing events during the
+  // brief unsub/resub window). That means its callback closure would otherwise only
+  // ever see isRegistering's value from the initial render (always false), making an
+  // `if (!isRegistering)` check inside it permanently useless. Mirroring the state into
+  // a ref that's always current sidesteps that without touching the subscription.
+  const isRegisteringRef = useRef(isRegistering);
+  useEffect(() => {
+    isRegisteringRef.current = isRegistering;
+  }, [isRegistering]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -135,27 +148,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     console.warn("Could not sync Auth displayName with Firestore username:", err);
                   });
                 }
-              } else {
+              } else if (!isRegisteringRef.current) {
                 setUsername(null);
                 setIsRegisteredUser(false);
               }
               setPhotoURL(uData.photoURL || firebaseUser.photoURL || null);
             } else {
-              // If the user registration flow is currently active,
-              // don't reset states to false since we are writing Firestore now
-              if (!isRegistering) {
+              // If the user registration flow is currently active (profile doc not
+              // written yet), don't reset state to "unregistered" out from under it.
+              if (!isRegisteringRef.current) {
                 setUsername(null);
                 setPhotoURL(firebaseUser.photoURL || null);
                 setIsRegisteredUser(false);
               }
             }
           } catch (e) {
+            // A transient read failure (network blip, brief offline window) is not
+            // reliable evidence the user isn't registered — leave existing state
+            // alone rather than bouncing an already-registered user back to the
+            // "choose a username" prompt.
             console.error("Errore nel recupero dello username:", e);
-            if (!isRegistering) {
-              setUsername(null);
-              setPhotoURL(firebaseUser.photoURL || null);
-              setIsRegisteredUser(false);
-            }
           }
         } else {
           setIsRegisteredUser(false);
@@ -373,6 +385,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsRegisteredUser(true);
   }
 
+  // Firebase's User object is mutable — linkWithCredential/linkWithPopup update
+  // auth.currentUser in place rather than returning a new object, so calling
+  // setUser(auth.currentUser) with the same reference wouldn't reliably trigger a
+  // re-render. Tracking linked provider IDs as their own plain-array state avoids
+  // relying on object-identity change detection for this.
+  const [linkedProviderIds, setLinkedProviderIds] = useState<string[]>([]);
+  useEffect(() => {
+    setLinkedProviderIds(user ? user.providerData.map((p) => p.providerId) : []);
+  }, [user]);
+
+  // Adds an email/password login method to the CURRENT, already-registered account
+  // (as opposed to linkGuestToRegistered, which converts a fresh anonymous guest
+  // into a registered account and picks a username in the same step). This never
+  // touches the existing username/profile — it only adds a second way to sign in.
+  async function linkEmailPasswordToAccount(email: string, password: string) {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error("Utente non autenticato.");
+    if (currentUser.isAnonymous) {
+      throw new Error("Devi prima registrarti per collegare un metodo di accesso.");
+    }
+    if (!email.trim() || !password) {
+      throw new Error("Email e password sono obbligatorie.");
+    }
+
+    const credential = EmailAuthProvider.credential(email.trim(), password);
+    await linkWithCredential(currentUser, credential);
+    setLinkedProviderIds(currentUser.providerData.map((p) => p.providerId));
+  }
+
+  // Adds Google as a login method to the CURRENT, already-registered account.
+  async function linkGoogleToAccount() {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error("Utente non autenticato.");
+    if (currentUser.isAnonymous) {
+      throw new Error("Devi prima registrarti per collegare un metodo di accesso.");
+    }
+
+    await linkWithPopup(currentUser, googleProvider);
+    setLinkedProviderIds(currentUser.providerData.map((p) => p.providerId));
+  }
+
   async function updatePhotoURL(url: string) {
     if (!auth.currentUser) throw new Error("Utente non loggato");
     const userDocRef = doc(db, "users", auth.currentUser.uid);
@@ -415,7 +468,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     logout,
     updatePhotoURL,
     claimUsername,
-    isRegistering
+    isRegistering,
+    linkedProviderIds,
+    linkEmailPasswordToAccount,
+    linkGoogleToAccount
   };
 
   return (

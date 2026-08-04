@@ -228,18 +228,26 @@ export default function HomePage() {
 
   // Fetch Leaderboard
   useEffect(() => {
+    // Over-fetch beyond the top 10, since users who have never played a hand
+    // (handsPlayed === 0, netProfit === 0) get filtered out client-side below —
+    // without this buffer, a table full of zero-hand registrants could push
+    // real (including losing) players off the visible top 10. Filtering by
+    // handsPlayed here instead of via a Firestore `where` clause avoids needing
+    // a new composite index (netProfit desc + handsPlayed range) to be deployed.
     const q = query(
       collection(db, "users"),
       orderBy("stats.netProfit", "desc"),
-      limit(10)
+      limit(50)
     );
 
     const unsub = onSnapshot(q, (snap) => {
       const list: LeaderboardUser[] = [];
       snap.forEach((d) => {
         const data = d.data();
-        // Only include registered users (those with a username)
-        if (data.username) {
+        // Only include registered users (those with a username) who have
+        // actually played at least one hand — negative netProfit is fine and
+        // expected to show, but a fresh registrant who never played shouldn't.
+        if (data.username && (data.stats?.handsPlayed || 0) > 0) {
           list.push({
             uid: d.id,
             username: data.username || "Player",
@@ -248,7 +256,7 @@ export default function HomePage() {
           });
         }
       });
-      setLeaderboard(list);
+      setLeaderboard(list.slice(0, 10));
     }, (err) => {
       console.error("Leaderboard error:", err);
     });

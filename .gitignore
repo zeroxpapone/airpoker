@@ -67,3 +67,10 @@ node_modules/
 
 # dataconnect generated files
 .dataconnect
+dataconnect/
+frontend/src/dataconnect-generated/
+
+# Claude Code local tooling (not project code)
+.claude/
+.agents/
+skills-lock.json

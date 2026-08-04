@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Home, ShieldAlert } from "lucide-react";
@@ -14,6 +14,16 @@ export default function Layout({ children }: Props) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, isRegisteredUser, claimUsername, logout, isRegistering } = useAuth();
+
+  // .app-layout is a fixed-height (100dvh) flex column — the page itself never
+  // scrolls. The actual scrollable element is this <main>, so a route change
+  // has to reset ITS scrollTop, not window.scrollTo (which is a no-op here and
+  // was why a new page could open already scrolled to wherever the previous
+  // page's <main> was left).
+  const mainRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    mainRef.current?.scrollTo(0, 0);
+  }, [location.pathname]);
 
   const [newUsername, setNewUsername] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -70,7 +80,7 @@ export default function Layout({ children }: Props) {
         </button>
       </header>
       
-      <main className="app-main-content" id="app-main-view">
+      <main className="app-main-content" id="app-main-view" ref={mainRef}>
         {children}
       </main>
 

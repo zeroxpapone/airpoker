@@ -24,6 +24,8 @@ import {
   playerAction,
   leaveTable,
   setSittingOut,
+  quitGame,
+  kickPlayer,
   endGame,
   advanceStage,
   confirmWinners,
@@ -70,6 +72,7 @@ interface PlayerData {
   isAllIn?: boolean;
   totalBuyIn?: number;
   eliminatedAt?: number;
+  hasLeft?: boolean;
 }
 
 const Card = ({ card, hidden, mini, miniMe, flipDelay }: { card?: string, hidden?: boolean, mini?: boolean, miniMe?: boolean, flipDelay?: number }) => {
@@ -215,10 +218,24 @@ export default function TablePage() {
   const [rebuyAmounts, setRebuyAmounts] = useState<Record<string, number>>({});
   const [showFoldConfirm, setShowFoldConfirm] = useState(false);
   const [showEndGameConfirm, setShowEndGameConfirm] = useState(false);
+  const [showQuitConfirm, setShowQuitConfirm] = useState(false);
   const [transferHostConfirmTarget, setTransferHostConfirmTarget] = useState<string | null>(null);
   const [forceFoldConfirmTarget, setForceFoldConfirmTarget] = useState<string | null>(null);
+  const [kickConfirmTarget, setKickConfirmTarget] = useState<string | null>(null);
   const [showMyCards, setShowMyCards] = useState(false);
   const [isFlipping, setIsFlipping] = useState(false);
+  // Tracks the last hand stage we reacted to, so the flip-lock above can be set
+  // synchronously during render the instant the stage changes (see effect below).
+  const [prevFlipStage, setPrevFlipStage] = useState<string | undefined>(undefined);
+  // What's actually painted on each of the 5 community card slots. This is intentionally
+  // NOT just `currentHand.communityCards` — that would update the instant Firestore sends
+  // the next hand's real cards, so the "flip back to hidden" animation between hands would
+  // either show the next hand's cards early (a leak) or, if we blanked it, show a bare
+  // white face instead of the hand that just ended (looks broken). Instead we only commit
+  // a slot's real value into this cache at the exact moment that slot is due to be revealed
+  // for whichever hand is current; while a slot is hidden, it keeps showing whatever it last
+  // legitimately revealed, so the outgoing flip animates the correct (already-public) card.
+  const [revealedCommunityCards, setRevealedCommunityCards] = useState<(string | undefined)[]>([]);
   const [, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
 
   const [onlineFriends, setOnlineFriends] = useState<{ uid: string; username: string }[]>([]);
@@ -481,7 +498,8 @@ export default function TablePage() {
             isSittingOut: !!d.isSittingOut,
             isAllIn: !!d.isAllIn,
             totalBuyIn: d.totalBuyIn,
-            eliminatedAt: d.eliminatedAt
+            eliminatedAt: d.eliminatedAt,
+            hasLeft: !!d.hasLeft
           });
           activeUids.push(d.userId);
         });
@@ -520,7 +538,10 @@ export default function TablePage() {
           }
         });
         
-        if (user && list.some(p => p.userId === user.uid)) {
+        // A player who has permanently quit still has a document here (so the final
+        // recap and seat-index math stay correct), but they shouldn't count as
+        // "currently in this game" for the home page's "return to your table" banner.
+        if (user && list.some(p => p.userId === user.uid && !p.hasLeft)) {
           localStorage.setItem("activeTableId", tableId);
         } else {
           if (user && localStorage.getItem("activeTableId") === tableId) {
@@ -721,24 +742,73 @@ export default function TablePage() {
     return () => clearTimeout(timer);
   }, [currentHand?.id, currentHand?.stage, currentHand?.currentTurnIndex, table?.hostId, user?.uid, blindsPopupVisible]);
 
-  // Track card flipping state to disable actions during card animation
+  // Track card flipping state to disable actions during card animation.
+  //
+  // The "turn on" must happen synchronously during render (not in a useEffect),
+  // otherwise there's a paint frame where the new stage has already committed
+  // (community cards start animating) but isFlipping is still stale `false`,
+  // leaving the action buttons briefly clickable. Comparing against state
+  // computed during render is the React-sanctioned way to react to a prop/state
+  // change without waiting for a post-paint effect.
+  if (currentHand?.stage !== prevFlipStage) {
+    const newStage = currentHand?.stage;
+    setPrevFlipStage(newStage);
+
+    let duration = 0;
+    if (newStage === "FLOP") duration = 2100;
+    else if (newStage === "TURN" || newStage === "RIVER") duration = 1600;
+
+    if (duration > 0 && !isFlipping) {
+      setIsFlipping(true);
+    }
+  }
+
+  // Commit newly-revealed community cards into `revealedCommunityCards` — synchronously
+  // during render, same reasoning as isFlipping above: this must land in the very same
+  // commit as the stage change, or there'd be a frame where the slot is already flagged
+  // `!hidden` but still showing the previous value. Slots that aren't due to be revealed
+  // yet are left untouched, so they keep displaying whatever they last legitimately showed.
+  if (currentHand?.communityCards) {
+    const stage = currentHand.stage;
+    const real = currentHand.communityCards;
+    let changed = false;
+    const next = [...revealedCommunityCards];
+    for (let idx = 0; idx < real.length; idx++) {
+      let shouldReveal = false;
+      if (stage === "FLOP" && idx < 3) shouldReveal = true;
+      if (stage === "TURN" && idx < 4) shouldReveal = true;
+      if (stage === "RIVER" && idx < 5) shouldReveal = true;
+      if (stage === "SHOWDOWN") shouldReveal = true;
+
+      if (shouldReveal && next[idx] !== real[idx]) {
+        next[idx] = real[idx];
+        changed = true;
+      }
+    }
+    if (changed) {
+      setRevealedCommunityCards(next);
+    }
+  }
+
+  // Turning it back OFF doesn't need to be paint-synchronous (re-enabling a frame
+  // late isn't exploitable), so a regular effect scheduling the timeout is fine.
   useEffect(() => {
-    if (!currentHand?.stage) return;
-    
+    if (!isFlipping || !currentHand?.stage) return;
+
     let duration = 0;
     if (currentHand.stage === "FLOP") duration = 2100;
     else if (currentHand.stage === "TURN" || currentHand.stage === "RIVER") duration = 1600;
-    
-    if (duration > 0) {
-      setIsFlipping(true);
-      const timer = setTimeout(() => {
-        setIsFlipping(false);
-      }, duration);
-      return () => clearTimeout(timer);
-    } else {
+
+    if (duration <= 0) {
       setIsFlipping(false);
+      return;
     }
-  }, [currentHand?.stage]);
+
+    const timer = setTimeout(() => {
+      setIsFlipping(false);
+    }, duration);
+    return () => clearTimeout(timer);
+  }, [isFlipping, currentHand?.stage]);
 
   // Local variables for pre-action hooks
   const localMyUid = user?.uid || null;
@@ -1120,6 +1190,25 @@ async function handleToggleSittingOut() {
     setPlayers(prev => prev.map(p => p.id === myPlayer.id ? { ...p, isSittingOut: !newValue } : p));
     setActionError(err.message || "Errore nel gestire lo stato di pausa.");
     window.alert("ATTENZIONE! Firebase ha scartato la richiesta: " + err.message);
+  }
+}
+
+async function handleQuitGame() {
+  if (!user || !tableId) return;
+  setActionLoading(true);
+  try {
+    await quitGame(tableId, user);
+    // Same cleanup as leaving a lobby: prevent the "return to table" banner and
+    // any auto-rejoin logic from firing before the Firestore listener catches up.
+    hasLeftRef.current = true;
+    localStorage.removeItem("activeTableId");
+    navigate("/home");
+  } catch (err: any) {
+    console.error(err);
+    setActionError(err.message || "Errore nell'abbandonare la partita.");
+  } finally {
+    setActionLoading(false);
+    setShowQuitConfirm(false);
   }
 }
 
@@ -1734,6 +1823,30 @@ async function handleConfirmWinners(potId: string) {
   function renderGame() {
     if (!table) return null;
 
+    // A player who has permanently quit keeps a document (recap + seat-index stability),
+    // but must never see or interact with the live game again — otherwise they'd end up
+    // in the exact broken state this guards against: invisible on the felt (their pod is
+    // filtered out) yet still able to act via the Stand Up toggle or action buttons, since
+    // nothing else in this component checks hasLeft. This single early return is the one
+    // place that has to catch it.
+    if (myPlayer?.hasLeft) {
+      return (
+        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "1.5rem" }}>
+          <div className="glass-panel" style={{ padding: "2rem", borderRadius: "1.5rem", textAlign: "center", maxWidth: "380px", width: "100%", display: "grid", gap: "1rem" }}>
+            <h2 style={{ margin: 0, fontSize: "1.2rem", color: "#e2e8f0" }}>{t("table.youHaveLeftTitle")}</h2>
+            <p style={{ margin: 0, fontSize: "0.9rem", color: "#9ca3af" }}>{t("table.youHaveLeftBody")}</p>
+            <button
+              onClick={() => navigate("/home")}
+              className="poker-btn-primary"
+              style={{ padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontSize: "0.95rem" }}
+            >
+              {t("table.backHome")}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="game-page-container" id="game-table-screen">
         <header className="game-header" id="game-table-header">
@@ -1774,6 +1887,24 @@ async function handleConfirmWinners(potId: string) {
                   }}
                 >
                   {myPlayer?.isSittingOut ? t("table.sitDown") : t("table.standUp")}
+                </button>
+              )}
+
+              {!myPlayer?.hasLeft && (
+                <button
+                  id="btn-table-quit-game"
+                  onClick={() => setShowQuitConfirm(true)}
+                  disabled={!!disableSitToggle}
+                  className="poker-btn-danger"
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: "999px",
+                    cursor: disableSitToggle ? "default" : "pointer",
+                    fontSize: "0.8rem",
+                    opacity: disableSitToggle ? 0.5 : 1
+                  }}
+                >
+                  {t("table.quitGame")}
                 </button>
               )}
 
@@ -1876,13 +2007,13 @@ async function handleConfirmWinners(potId: string) {
 
             {table?.isVirtualCards && currentHand && (
               <div className="felt-cards" id="felt-cards-display">
-                {currentHand.communityCards?.map((card, idx) => {
+                {currentHand.communityCards?.map((_card, idx) => {
                   let hidden = true;
                   if (currentHand.stage === "FLOP" && idx < 3) hidden = false;
                   if (currentHand.stage === "TURN" && idx < 4) hidden = false;
                   if (currentHand.stage === "RIVER" && idx < 5) hidden = false;
                   if (currentHand.stage === "SHOWDOWN") hidden = false;
-                  
+
                   let delayMs = 0;
                   if (!hidden) {
                     if (currentHand.stage === "FLOP") {
@@ -1896,7 +2027,11 @@ async function handleConfirmWinners(potId: string) {
 
                   return (
                     <div key={idx}>
-                      <Card card={card} hidden={hidden} flipDelay={delayMs} />
+                      {/* Card value comes from revealedCommunityCards, not currentHand.communityCards
+                          directly — see the comment where that state is declared. This keeps the
+                          outgoing flip-to-hidden animation showing the hand that just ended instead
+                          of either leaking the next hand's card or flashing a blank face. */}
+                      <Card card={revealedCommunityCards[idx]} hidden={hidden} flipDelay={delayMs} />
                     </div>
                   );
                 })}
@@ -1922,6 +2057,14 @@ async function handleConfirmWinners(potId: string) {
             {/* Giocatori e Fiches puntate attorno al tavolo */}
             {/* Giocatori attorno al tavolo */}
             {players.map((p, index) => {
+              // A player who has fully quit keeps their document (and seat slot) alive —
+              // their name must still show up in the final recap and dealer/turn indices
+              // must stay stable — but their pod should no longer render on the live felt.
+              // We deliberately don't filter the array itself: index/visualIndex/players.length
+              // below all have to line up with currentHand.currentTurnIndex, which is computed
+              // server-side against the full, unfiltered seat order.
+              if (p.hasLeft) return null;
+
               const myIndex = players.findIndex(orig => orig.userId === myUid);
               const visualIndex = myIndex >= 0 ? (index - myIndex + players.length) % players.length : index;
               const { top, left } = getSeatPosition(visualIndex, players.length);
@@ -2268,6 +2411,7 @@ async function handleConfirmWinners(potId: string) {
                       cursor: isMyTurn && (canCheck || canCall) && !actionLoading && !isFlipping ? "pointer" : "default",
                       backgroundColor: isMyTurn && (canCheck || canCall) && !isFlipping ? undefined : "#4b556333",
                       color: isMyTurn && (canCheck || canCall) && !isFlipping ? undefined : "rgba(248, 250, 252, 0.4)",
+                      fontWeight: 700,
                       fontSize: "0.9rem",
                       textAlign: "center",
                       boxShadow: isMyTurn && (canCheck || canCall) && !isFlipping ? undefined : "none",
@@ -2817,7 +2961,7 @@ async function handleConfirmWinners(potId: string) {
           >
             {t("table.foldYes")}
           </button>
-          <button 
+          <button
             onClick={() => setShowFoldConfirm(false)}
             className="poker-btn-secondary"
             style={{
@@ -2825,6 +2969,49 @@ async function handleConfirmWinners(potId: string) {
             }}
           >
             {t("table.foldNo")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const quitGameConfirmModalUI = showQuitConfirm && (
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+      background: "rgba(2, 6, 23, 0.8)", backdropFilter: "blur(8px)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000
+    }}>
+      <div style={{
+        background: "rgba(15,23,42,0.95)", border: "1px solid #1e293b",
+        borderRadius: "1.5rem", padding: "2rem", display: "grid", gap: "1.5rem",
+        textAlign: "center", maxWidth: "340px", width: "90%",
+        boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.7)"
+      }}>
+        <h2 style={{ fontSize: "1.3rem", margin: 0, color: "#e2e8f0" }}>{t("table.confirmQuitGame")}</h2>
+        <p style={{ fontSize: "0.9rem", color: "#9ca3af", margin: 0 }}>{t("table.quitGameWarning")}</p>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.8rem", marginTop: "0.5rem" }}>
+          <button
+            onClick={handleQuitGame}
+            disabled={actionLoading}
+            className="poker-btn-danger"
+            style={{
+              padding: "0.8rem", borderRadius: "999px",
+              cursor: actionLoading ? "default" : "pointer", fontSize: "0.95rem",
+              opacity: actionLoading ? 0.7 : 1
+            }}
+          >
+            {t("table.quitGameYes")}
+          </button>
+          <button
+            onClick={() => setShowQuitConfirm(false)}
+            disabled={actionLoading}
+            className="poker-btn-secondary"
+            style={{
+              padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontSize: "0.95rem"
+            }}
+          >
+            {t("table.quitGameNo")}
           </button>
         </div>
       </div>
@@ -2956,6 +3143,52 @@ async function handleConfirmWinners(potId: string) {
           </button>
           <button
             onClick={() => setForceFoldConfirmTarget(null)}
+            className="poker-btn-secondary"
+            style={{ padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontSize: "0.95rem" }}
+          >
+            {t("table.cancel")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  /* ─── Kick Player Confirm Modal ─── */
+  const kickConfirmModalUI = kickConfirmTarget && (
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+      background: "rgba(2, 6, 23, 0.85)", backdropFilter: "blur(8px)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000
+    }}>
+      <div style={{
+        background: "rgba(15,23,42,0.95)", border: "1px solid #1e293b",
+        borderRadius: "1.5rem", padding: "2rem", display: "grid", gap: "1.5rem",
+        textAlign: "center", maxWidth: "340px", width: "90%",
+        boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.7)"
+      }}>
+        <h2 style={{ fontSize: "1.3rem", margin: 0, color: "#e2e8f0" }}>
+          {t("table.kickPlayer")} {userProfiles[kickConfirmTarget]?.username ? `@${userProfiles[kickConfirmTarget].username}` : ""}
+        </h2>
+        <p style={{ margin: 0, fontSize: "0.9rem", color: "#9ca3af" }}>
+          {t("table.confirmKickPlayer")}
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.8rem" }}>
+          <button
+            onClick={async () => {
+              if (kickConfirmTarget && user && tableId) {
+                try {
+                  await kickPlayer(tableId, user, kickConfirmTarget);
+                } catch (e: any) { setActionError(e.message); }
+                setKickConfirmTarget(null);
+              }
+            }}
+            className="poker-btn-danger"
+            style={{ padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontSize: "0.95rem" }}
+          >
+            {t("table.kickPlayer")}
+          </button>
+          <button
+            onClick={() => setKickConfirmTarget(null)}
             className="poker-btn-secondary"
             style={{ padding: "0.8rem", borderRadius: "999px", cursor: "pointer", fontSize: "0.95rem" }}
           >
@@ -3102,6 +3335,16 @@ async function handleConfirmWinners(potId: string) {
               style={{ width: "100%", padding: "0.65rem", borderRadius: "999px", cursor: disableSitToggle ? "default" : "pointer", fontSize: "0.95rem", opacity: disableSitToggle ? 0.5 : 1 }}
             >
               {myPlayer?.isSittingOut ? t("table.sitDown") : t("table.standUp")}
+            </button>
+          )}
+          {myPlayer && !myPlayer.hasLeft && (
+            <button
+              onClick={() => setShowQuitConfirm(true)}
+              disabled={!!disableSitToggle}
+              className="poker-btn-danger"
+              style={{ width: "100%", padding: "0.65rem", borderRadius: "999px", cursor: disableSitToggle ? "default" : "pointer", fontSize: "0.95rem", opacity: disableSitToggle ? 0.5 : 1 }}
+            >
+              {t("table.quitGame")}
             </button>
           )}
         </div>
@@ -3291,6 +3534,11 @@ async function handleConfirmWinners(potId: string) {
 
         <div style={{ display: "grid", gap: "0.6rem" }}>
           {players.map((p, idx) => {
+            // Same reasoning as the felt render — keep the array/indices intact, just
+            // skip rendering a row for someone who already left (nothing here is
+            // actionable for them anymore).
+            if (p.hasLeft) return null;
+
             const isTournament = table?.mode === "TOURNAMENT";
             const canRebuy = !isTournament && p.stack < (table?.bigBlind || 0);
             const isMe = myUid === p.userId;
@@ -3304,6 +3552,20 @@ async function handleConfirmWinners(potId: string) {
                 {!isMe && inGame && currentHand && currentHand.currentTurnIndex === idx && (
                   <button onClick={() => setForceFoldConfirmTarget(p.userId)} style={{ padding: "0 0.4rem", fontSize: "0.85rem", cursor: "pointer", background: "transparent", border: "1px solid #ef4444", borderRadius: "4px", color: "#f87171" }} title={t("table.forceFold")}>🃏</button>
                 )}
+                {!isMe && (() => {
+                  const targetHandOver = currentHand?.stage === "SHOWDOWN" && hasWinner;
+                  const canKick = !currentHand || p.isFolded || p.isSittingOut || targetHandOver;
+                  return (
+                    <button
+                      onClick={() => canKick && setKickConfirmTarget(p.userId)}
+                      disabled={!canKick}
+                      title={canKick ? t("table.kickPlayer") : t("table.kickPlayerBlocked")}
+                      style={{ padding: "0 0.4rem", fontSize: "0.85rem", cursor: canKick ? "pointer" : "default", opacity: canKick ? 1 : 0.35, background: "transparent", border: "1px solid #ef4444", borderRadius: "4px", color: "#f87171" }}
+                    >
+                      ⛔
+                    </button>
+                  );
+                })()}
                 <span style={{ flex: 1, fontSize: "0.85rem", color: "#f8fafc", minWidth: "100px", fontWeight: 500 }}>{userProfiles[p.userId]?.username || "Giocatore"} <span style={{ color: "#94a3b8", fontWeight: 400 }}>({p.stack})</span></span>
                 {canRebuy ? (
                   <>
@@ -3348,9 +3610,11 @@ async function handleConfirmWinners(potId: string) {
       {joinModalUI}
       {modalUI}
       {foldConfirmModalUI}
+      {quitGameConfirmModalUI}
       {endGameConfirmModalUI}
       {transferHostConfirmModalUI}
       {forceFoldConfirmModalUI}
+      {kickConfirmModalUI}
       {actionErrorUI}
       {/* Popups specifici del gioco */}
       {inGame && (

@@ -2,18 +2,20 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useTranslation } from "react-i18next";
-import { 
-   ArrowLeft, 
-   Crown, 
-   Calendar, 
-   Trophy, 
-   Play, 
-   Check, 
+import {
+   ArrowLeft,
+   Crown,
+   Calendar,
+   Trophy,
+   Play,
+   Check,
    AlertCircle,
    TrendingUp,
    Award,
    Upload,
-   Trash2
+   Trash2,
+   Mail,
+   Link as LinkIcon
 } from "lucide-react";
 import { doc, getDoc, runTransaction, updateDoc, collection, query, where, limit, getDocs } from "firebase/firestore";
 import { db } from "../lib/firebase";
@@ -21,7 +23,10 @@ import AdvancedStats from "../components/AdvancedStats";
 import { deleteAccount } from "../lib/firestoreApi";
 
 export default function ProfilePage() {
-  const { user, username, isRegisteredUser, photoURL, updatePhotoURL } = useAuth();
+  const {
+    user, username, isRegisteredUser, photoURL, updatePhotoURL,
+    linkedProviderIds, linkEmailPasswordToAccount, linkGoogleToAccount
+  } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { t } = useTranslation();
@@ -54,6 +59,15 @@ export default function ProfilePage() {
   const [loadingPhoto, setLoadingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [photoSuccess, setPhotoSuccess] = useState<string | null>(null);
+
+  const [linkEmailInput, setLinkEmailInput] = useState("");
+  const [linkPasswordInput, setLinkPasswordInput] = useState("");
+  const [loadingLinkEmail, setLoadingLinkEmail] = useState(false);
+  const [linkEmailError, setLinkEmailError] = useState<string | null>(null);
+  const [linkEmailSuccess, setLinkEmailSuccess] = useState<string | null>(null);
+
+  const [loadingLinkGoogle, setLoadingLinkGoogle] = useState(false);
+  const [linkGoogleError, setLinkGoogleError] = useState<string | null>(null);
 
   const [loadingReset, setLoadingReset] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
@@ -242,6 +256,42 @@ export default function ProfilePage() {
       setPhotoError(err?.message || t("profile.errPhotoUpdateGeneric"));
     } finally {
       setLoadingPhoto(false);
+    }
+  }
+
+  async function handleLinkEmailPassword(e: React.FormEvent) {
+    e.preventDefault();
+    setLinkEmailError(null);
+    setLinkEmailSuccess(null);
+
+    if (!linkEmailInput.trim() || !linkPasswordInput) {
+      setLinkEmailError(t("profile.errLinkEmailEmpty"));
+      return;
+    }
+
+    try {
+      setLoadingLinkEmail(true);
+      await linkEmailPasswordToAccount(linkEmailInput.trim(), linkPasswordInput);
+      setLinkEmailSuccess(t("profile.successLinkEmail"));
+      setLinkPasswordInput("");
+    } catch (err: any) {
+      console.error(err);
+      setLinkEmailError(err?.message || t("profile.errLinkEmailGeneric"));
+    } finally {
+      setLoadingLinkEmail(false);
+    }
+  }
+
+  async function handleLinkGoogle() {
+    setLinkGoogleError(null);
+    try {
+      setLoadingLinkGoogle(true);
+      await linkGoogleToAccount();
+    } catch (err: any) {
+      console.error(err);
+      setLinkGoogleError(err?.message || t("profile.errLinkGoogleGeneric"));
+    } finally {
+      setLoadingLinkGoogle(false);
     }
   }
 
@@ -536,6 +586,123 @@ export default function ProfilePage() {
           </button>
         </form>
       </div>
+
+      {/* Login Methods Section — link additional sign-in methods to this same account */}
+      {isRegisteredUser && (
+        <div className="glass-panel" style={{ padding: "1.5rem", width: "100%", marginTop: "1.5rem" }} id="login-methods-section">
+          <h3 style={{ fontSize: "1.2rem", fontWeight: 800, fontFamily: "var(--font-display)", marginBottom: "0.3rem" }}>
+            {t("profile.loginMethodsTitle")}
+          </h3>
+          <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "1rem" }}>
+            {t("profile.loginMethodsDesc")}
+          </p>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            {/* Google */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+                <LinkIcon size={16} color="var(--text-muted)" />
+                <span style={{ fontSize: "0.9rem", fontWeight: 600 }}>Google</span>
+              </div>
+              {linkedProviderIds.includes("google.com") ? (
+                <span style={{ display: "flex", alignItems: "center", gap: "0.3rem", fontSize: "0.8rem", color: "var(--color-success)", fontWeight: 700 }}>
+                  <Check size={14} /> {t("profile.linked")}
+                </span>
+              ) : (
+                <button
+                  id="btn-link-google"
+                  type="button"
+                  onClick={handleLinkGoogle}
+                  disabled={loadingLinkGoogle}
+                  className="poker-btn-secondary"
+                  style={{ padding: "0.5rem 1rem", borderRadius: "999px", cursor: loadingLinkGoogle ? "default" : "pointer", fontSize: "0.8rem", fontWeight: 700 }}
+                >
+                  {loadingLinkGoogle ? t("profile.btnSaving") : t("profile.btnLinkGoogle")}
+                </button>
+              )}
+            </div>
+
+            {linkGoogleError && (
+              <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", color: "var(--color-danger)", fontSize: "0.8rem" }}>
+                <AlertCircle size={14} />
+                <span>{linkGoogleError}</span>
+              </div>
+            )}
+
+            {/* Email / Password */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+                <Mail size={16} color="var(--text-muted)" />
+                <span style={{ fontSize: "0.9rem", fontWeight: 600 }}>{t("profile.emailPassword")}</span>
+              </div>
+              {linkedProviderIds.includes("password") && (
+                <span style={{ display: "flex", alignItems: "center", gap: "0.3rem", fontSize: "0.8rem", color: "var(--color-success)", fontWeight: 700 }}>
+                  <Check size={14} /> {t("profile.linked")}
+                </span>
+              )}
+            </div>
+
+            {!linkedProviderIds.includes("password") && (
+              <form onSubmit={handleLinkEmailPassword} style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                <input
+                  id="input-link-email"
+                  type="email"
+                  value={linkEmailInput}
+                  onChange={(e) => setLinkEmailInput(e.target.value)}
+                  placeholder={t("profile.placeholderEmail")}
+                  autoComplete="off"
+                  style={{
+                    width: "100%", padding: "0.65rem 1rem", borderRadius: "999px", boxSizing: "border-box",
+                    backgroundColor: "rgba(15, 23, 42, 0.6)", border: "1px solid rgba(255,255,255,0.1)",
+                    color: "white", outline: "none", fontSize: "0.85rem"
+                  }}
+                />
+                <input
+                  id="input-link-password"
+                  type="password"
+                  value={linkPasswordInput}
+                  onChange={(e) => setLinkPasswordInput(e.target.value)}
+                  placeholder={t("profile.placeholderPassword")}
+                  autoComplete="new-password"
+                  style={{
+                    width: "100%", padding: "0.65rem 1rem", borderRadius: "999px", boxSizing: "border-box",
+                    backgroundColor: "rgba(15, 23, 42, 0.6)", border: "1px solid rgba(255,255,255,0.1)",
+                    color: "white", outline: "none", fontSize: "0.85rem"
+                  }}
+                />
+
+                {linkEmailError && (
+                  <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", color: "var(--color-danger)", fontSize: "0.8rem" }}>
+                    <AlertCircle size={14} />
+                    <span>{linkEmailError}</span>
+                  </div>
+                )}
+                {linkEmailSuccess && (
+                  <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", color: "var(--color-success)", fontSize: "0.8rem" }}>
+                    <Check size={14} />
+                    <span>{linkEmailSuccess}</span>
+                  </div>
+                )}
+
+                <button
+                  id="btn-link-email"
+                  type="submit"
+                  disabled={loadingLinkEmail || !linkEmailInput.trim() || !linkPasswordInput}
+                  className="poker-btn-secondary"
+                  style={{
+                    padding: "0.6rem", borderRadius: "999px",
+                    cursor: loadingLinkEmail || !linkEmailInput.trim() || !linkPasswordInput ? "default" : "pointer",
+                    fontSize: "0.85rem", fontWeight: 700,
+                    opacity: loadingLinkEmail || !linkEmailInput.trim() || !linkPasswordInput ? 0.6 : 1
+                  }}
+                >
+                  {loadingLinkEmail ? t("profile.btnSaving") : t("profile.btnLinkEmail")}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Advanced Statistics Section */}
       <div ref={advancedStatsRef} style={{ width: "100%" }}>

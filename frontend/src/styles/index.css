@@ -840,6 +840,12 @@ input[type="password"]:focus {
   flex: 1;
   display: flex;
   flex-direction: column;
+  /* Scrolls internally once the list (leaderboard/history/friends) grows past
+     this height, instead of pushing the whole page taller and scrolling the
+     header/stat cards out of view along with it. */
+  max-height: 55vh;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
 }
 
 /* List Items (Leaderboard, History, Friends) */

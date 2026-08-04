@@ -12,8 +12,9 @@
     "predeploy": "npm run build"
   },
   "dependencies": {
+    "@dataconnect/generated": "file:src/dataconnect-generated",
     "@yudiel/react-qr-scanner": "^2.5.1",
-    "firebase": "^12.6.0",
+    "firebase": "^12.17.0",
     "i18next": "^25.10.9",
     "i18next-browser-languagedetector": "^8.2.1",
     "lucide-react": "^1.6.0",

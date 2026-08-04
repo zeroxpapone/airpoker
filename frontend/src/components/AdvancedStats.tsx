@@ -38,8 +38,14 @@ export default function AdvancedStats({ stats }: AdvancedStatsProps) {
   // VPIP (Tight vs Loose) simulation/calculation
   const sessions = stats.sessionsPlayed || 1;
   const estimatedVpip = Math.max(12, Math.min(75, Math.round(22 + (winRate > 0 ? (winRate - 30) * 0.25 : 0))));
-  const vpip = stats.vpipCount && stats.vpipCount > 0 && totalHands > 0
-    ? Math.round((stats.vpipCount / totalHands) * 100)
+  // stagePreflopCount (not vpipCount) is the right "do we have real data" signal:
+  // it increments on every preflop action regardless of outcome, so it's never
+  // ambiguous. vpipCount itself is a legitimate 0 for a very tight player who has
+  // genuinely never voluntarily entered a pot — using it as the presence check
+  // would wrongly show a simulated value for that player instead of a real 0%.
+  const hasRealVpipData = (stats.stagePreflopCount || 0) > 0;
+  const vpip = hasRealVpipData && totalHands > 0
+    ? Math.round(((stats.vpipCount || 0) / totalHands) * 100)
     : estimatedVpip;
 
   // Aggression Frequency (Aggressive vs Passive)

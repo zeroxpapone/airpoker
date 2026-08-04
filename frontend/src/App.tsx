@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from "react";
-import { Routes, Route, Navigate, useParams, useLocation } from "react-router-dom";
+import { Routes, Route, Navigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "./hooks/useAuth";
 
@@ -22,16 +22,6 @@ function ProtectedTableRoute() {
     return <Navigate to={`/?redirect=/table/${tableId}`} replace />;
   }
   return <TablePage />;
-}
-
-function ScrollToTop() {
-  const { pathname } = useLocation();
-
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [pathname]);
-
-  return null;
 }
 
 function App() {
@@ -134,7 +124,6 @@ function App() {
         </div>
       </div>
     }>
-      <ScrollToTop />
       <Layout>
         <Routes>
           <Route

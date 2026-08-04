@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { ArrowLeft } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { createTable } from "../lib/firestoreApi";
 
@@ -144,9 +145,18 @@ export default function CreateTablePage() {
   return (
     <div className="create-table-container" id="create-table-page-container">
       <div className="glass-panel create-table-panel" id="create-table-panel-box">
-        <h1 style={{ fontSize: "1.6rem", fontWeight: 800, fontFamily: "var(--font-display)" }} id="create-table-title">
-          {t("createTable.title")}
-        </h1>
+        <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "0.5rem" }}>
+          <button
+            id="btn-create-table-back"
+            onClick={() => navigate("/home")}
+            className="profile-back-btn"
+          >
+            <ArrowLeft size={20} />
+          </button>
+          <h1 style={{ fontSize: "1.6rem", fontWeight: 800, fontFamily: "var(--font-display)", margin: 0 }} id="create-table-title">
+            {t("createTable.title")}
+          </h1>
+        </div>
 
         <form onSubmit={handleSubmit} className="form-group" id="form-create-table">
           <Field
