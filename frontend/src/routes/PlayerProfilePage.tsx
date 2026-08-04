@@ -88,6 +88,7 @@ export default function PlayerProfilePage() {
             timePlayedSeconds: data.stats?.timePlayedSeconds || 0,
             bestHandName: data.stats?.bestHandName || "Nessuna",
             vpipCount: data.stats?.vpipCount || 0,
+            vpipEligibleHands: data.stats?.vpipEligibleHands || 0,
             totalActions: data.stats?.totalActions || 0,
             aggressiveActions: data.stats?.aggressiveActions || 0,
             stagePreflopCount: data.stats?.stagePreflopCount || 0,

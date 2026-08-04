@@ -1952,6 +1952,19 @@ export async function playerAction(
         const isSB = currentPlayer.seatIndex === handData.smallBlindIndex;
         const isBB = currentPlayer.seatIndex === handData.bigBlindIndex;
 
+        // True on a player's first preflop decision point of the hand, regardless
+        // of what they do with it (fold/check/call/bet) — this is the correct VPIP
+        // denominator. stats.handsPlayed/stagePreflopCount aren't usable for this:
+        // they've been accumulating correctly since long before vpipCount tracking
+        // was fixed, so dividing the (still small, just-started) vpipCount by either
+        // of them produces an artificially low ratio until months of new hands dilute
+        // the old history back out. vpipEligibleHands starts from the same zero
+        // baseline as vpipCount, so their ratio is meaningful immediately.
+        const isFirstPreflopDecision =
+          (!isSB && !isBB && currentContrib === 0) ||
+          (isSB && currentContrib <= sbSize) ||
+          (isBB && currentContrib <= bbSize);
+
         let isVpipAction = false;
         if (action === "CALL" || action === "BET") {
           if (!isSB && !isBB && currentContrib === 0) {
@@ -1961,6 +1974,10 @@ export async function playerAction(
           } else if (isBB && currentContrib <= bbSize) {
             isVpipAction = true;
           }
+        }
+
+        if (isFirstPreflopDecision) {
+          updates["stats.vpipEligibleHands"] = increment(1);
         }
 
         if (isVpipAction) {

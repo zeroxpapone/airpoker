@@ -17,6 +17,7 @@ export interface AdvancedStatsData {
   timePlayedSeconds?: number;
   bestHandName?: string;
   vpipCount?: number;
+  vpipEligibleHands?: number;
   totalActions?: number;
   aggressiveActions?: number;
   stagePreflopCount?: number;
@@ -38,14 +39,17 @@ export default function AdvancedStats({ stats }: AdvancedStatsProps) {
   // VPIP (Tight vs Loose) simulation/calculation
   const sessions = stats.sessionsPlayed || 1;
   const estimatedVpip = Math.max(12, Math.min(75, Math.round(22 + (winRate > 0 ? (winRate - 30) * 0.25 : 0))));
-  // stagePreflopCount (not vpipCount) is the right "do we have real data" signal:
-  // it increments on every preflop action regardless of outcome, so it's never
-  // ambiguous. vpipCount itself is a legitimate 0 for a very tight player who has
-  // genuinely never voluntarily entered a pot — using it as the presence check
-  // would wrongly show a simulated value for that player instead of a real 0%.
-  const hasRealVpipData = (stats.stagePreflopCount || 0) > 0;
-  const vpip = hasRealVpipData && totalHands > 0
-    ? Math.round(((stats.vpipCount || 0) / totalHands) * 100)
+  // vpipEligibleHands (not handsPlayed/stagePreflopCount) is the right denominator
+  // and "do we have real data" signal. handsPlayed/stagePreflopCount have been
+  // accumulating since long before vpipCount tracking was fixed, so dividing
+  // vpipCount by either of them would produce an artificially low ratio for
+  // months until enough new hands dilute out the pre-fix history.
+  // vpipEligibleHands started at the same zero baseline as vpipCount, so their
+  // ratio is meaningful immediately, and a genuine 0% VPIP player isn't wrongly
+  // shown a simulated value just because vpipCount itself happens to be 0.
+  const hasRealVpipData = (stats.vpipEligibleHands || 0) > 0;
+  const vpip = hasRealVpipData
+    ? Math.round(((stats.vpipCount || 0) / stats.vpipEligibleHands!) * 100)
     : estimatedVpip;
 
   // Aggression Frequency (Aggressive vs Passive)
