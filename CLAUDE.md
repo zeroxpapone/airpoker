@@ -47,6 +47,15 @@ in the Firebase console, so nothing here enforces them and any new invariant tha
 enforcement has to be applied in the console separately. In-repo, the only authorization checks are
 client-side (`tableData.hostId !== user.uid` and similar in `firestoreApi.ts`).
 
+Two gaps worth knowing about, since nothing in the repo covers them:
+
+- `startGame(tableId)` and `endGame(tableId)` take **no `user` argument and perform no host check
+  at all** — unlike `startNextHand`, `advanceStage`, `kickPlayer`, `addChips`, `confirmWinners` and
+  `transferHost`, which all compare against `hostId`. `endGame` also has no `state` guard, so
+  re-ending a `SUMMARY` table re-increments every player's `stats.sessionsPlayed`.
+- The table `password` is stored **in cleartext on the table doc** and checked client-side in
+  `joinTable`, so any client that can read `tables/{id}` can read it out of the snapshot.
+
 ## Architecture
 
 ### There is no backend
@@ -65,15 +74,25 @@ change one, change the other.
 
 - `tables/{tableId}` — id is a 5-char human-typeable code (`generateShortTableId`, ambiguous chars
   excluded). `state`: `LOBBY` → `IN_GAME` → `SUMMARY`. Holds `hostId`, blinds, `initialStack`,
-  `mode` (`CASH`|`TOURNAMENT`) + `tournamentConfig`, `isVirtualCards`, `currentHandId`, and
-  `lastHandStartedAt`/`gameStartedAt` (bumped only on hand start — the sweeper's idleness signal).
+  `mode` (`CASH`|`TOURNAMENT`) + `tournamentConfig`, `isVirtualCards`, `currentHandId`, `password`
+  (cleartext, see above), `createdAt`, and two timestamps that are easy to confuse:
+  `lastHandStartedAt` is bumped on **every** hand start (the sweeper's idleness signal), while
+  `gameStartedAt` is written **once**, in `startGame`, and never again — `TablePage`'s whole-session
+  elapsed timer reads `gameStartedAt || createdAt`, so bumping it per hand would reset that timer
+  every hand. The sweeper falls back `lastHandStartedAt ?? gameStartedAt ?? createdAt`.
   On `endGame()` the recap (`playerIds[]`, `players[]`) is written **onto the table doc itself**;
   there is no separate history collection. `HomePage` reads history via
   `where("state","==","SUMMARY") + where("playerIds","array-contains",uid)` — the one composite
   index in `firestore.indexes.json`.
 - `tables/{tableId}/players/{uid}` — `stack`, `seatIndex`, `isFolded`, `isSittingOut`, `isAllIn`,
-  `totalBuyIn` (rebuys, for net-profit), `satAt`/`accumulatedTime` (time-played tracking).
-  **Turn order is `seatIndex` ascending, and hand logic indexes players by seat position, not uid.**
+  `totalBuyIn` (rebuys, for net-profit), `satAt`/`accumulatedTime` (time-played tracking), and
+  `hasLeft`/`leftAt`. **Turn order is `seatIndex` ascending, and hand logic indexes players by seat
+  position, not uid.** That is why `quitGame` sets `hasLeft: true` rather than deleting the doc —
+  deleting mid-hand would shift every stored positional index. Host handoff picks the first
+  candidate with `!hasLeft`, so anything that iterates players for a *live* role must filter on it.
+  Note `leaveTable` (lobby-only in practice, wired to the "leave lobby" button) *does* delete the
+  doc, and `joinTable` derives the new `seatIndex` from the player count — so a lobby departure
+  followed by a join produces two players on the same seat.
 - `tables/{tableId}/hands/{handId}` — the `HandData` interface: `stage`, `dealerIndex`/
   `smallBlindIndex`/`bigBlindIndex`/`currentTurnIndex`/`firstToActIndex`/`lastAggressorIndex`,
   `pot`, `currentBet`, `roundBets` (this street), `handContributions` (whole hand — the side-pot
@@ -86,11 +105,12 @@ change one, change the other.
 
 ### Transaction discipline (the main footgun)
 
-Firestore transactions cannot run queries, and every read must precede every write. So each mutating
-API in `firestoreApi.ts` follows the same shape, and new ones should too:
+Firestore transactions cannot run queries, and every read must precede every write. So most mutating
+APIs in `firestoreApi.ts` follow the same shape, and new ones should too:
 
 1. `getDocs(query(players, orderBy("seatIndex")))` **outside** the transaction, purely to learn which
-   doc refs exist (seat order can't change mid-hand).
+   doc refs exist. This assumes seat order can't change mid-hand — an assumption **nothing enforces**:
+   `swapSeats` is a bare `writeBatch` with neither a host check nor a `state !== "IN_GAME"` guard.
 2. Inside `runTransaction`: `transaction.get()` the table, the hand, all player docs — *and* the
    `users/{id}` docs needed for stats (`getStatsCandidateIds()` exists to compute that set before any
    write).
@@ -103,18 +123,33 @@ phases. Adding a read after a write silently breaks the transaction at runtime.
 Operations that can't fit one transaction (e.g. `startNextHand` discovering the tournament is over)
 set a flag and call the follow-up (`endGame()`) after the transaction commits.
 
+Known exceptions to the shape above — don't read them as the pattern:
+
+- `endGame()` is **not transactional at all**: it does `getDoc`/`getDocs` and then commits a
+  `writeBatch`, so two clients ending the same table concurrently both read the pre-end state and
+  both increment `stats.sessionsPlayed`/`stats.timePlayedSeconds`. `scripts/end-stale-tables.mjs`
+  mirrors it, so the same race exists server-side.
+- `endGame()` and `confirmWinners()` call `getDocs(playersRef)` with **no `orderBy`**, so their
+  `playerRefs` are *not* in seat order. Don't index them positionally.
+
 ### Hand lifecycle
 
 `startGame` / `startNextHand` create a hand doc (rotating dealer/SB/BB, heads-up special-cased:
 dealer is SB and acts first preflop) → `playerAction` (`CHECK` | `CALL` | `BET` | `FOLD`; all-in is
 expressed as a `BET` equal to the full stack, or a `CALL` clipped to it — there is no `ALLIN` action)
-→ round closes via `lastAggressorIndex` bookkeeping → `advanceStage`
+→ round closes via `lastAggressorIndex` bookkeeping → `advanceStage` **(host-only)**
 (`PREFLOP`→`FLOP`→`TURN`→`RIVER`→`SHOWDOWN`; post-flop the SB, or the first active player after,
-always acts first) → showdown → `startNextHand` (host-only).
+always acts first) → showdown → `startNextHand` **(host-only)**.
+
+`HomePage` also branches on a `state === "ENDED"`, which nothing in `frontend/src` or `scripts/`
+ever writes — treat it as vestigial, not a fourth state.
 
 Pots: `calculatePotsCore()` derives cascading side pots from `handContributions`; a pot with ≤1
 eligible player auto-settles. `splitPot()` rounds shares down to a multiple of 5 and hands the
-remainder to a random winner — chip totals stay integral and losslessly conserved.
+remainder to a random winner, so chip totals stay integral. **It picks that winner with an internal
+`Math.random()` and is called more than once per settlement** (once to credit stacks, again from
+`getStatsCandidateIds`/`applyStatsUpdates`), so the rolls disagree and recorded stats can diverge
+from the chips actually paid. Compute the split once and thread the result through.
 
 ### Two card modes, one engine
 
@@ -129,10 +164,17 @@ Both paths converge on the same pot/stat writes, so changes to settlement usuall
 
 ### Player stats
 
-`applyStatsUpdates()` runs inside the same transaction that finishes a hand. Note the VPIP
-bookkeeping: `stats.vpipCount` is divided by `stats.vpipEligibleHands`, deliberately **not** by
-`handsPlayed`/`stagePreflopCount`, because those accumulated before VPIP tracking existed and would
-skew the ratio for months. Keep new ratio metrics on their own matched-baseline denominators.
+`applyStatsUpdates()` runs inside the same transaction that finishes a hand, and handles the
+per-hand counters (`handsPlayed`, `handsWon`, `totalChipsWon`/`totalChipsLost`, `netProfit`,
+`bestHandRank`).
+
+VPIP is **not** in there, despite being the stat most likely to be copied as a template. Its two
+counters are incremented in `playerAction`, in the preflop branch, gated on the player's first
+preflop decision — so `stats.vpipEligibleHands` counts decision points, not hands — and the ratio
+itself is computed in `components/AdvancedStats.tsx`. It is divided by `vpipEligibleHands`
+deliberately, **not** by `handsPlayed`/`stagePreflopCount`, because those accumulated before VPIP
+tracking existed and would skew the ratio for months. Keep new ratio metrics on their own
+matched-baseline denominators, and increment them where the event actually happens.
 
 ### Auth
 
@@ -152,10 +194,17 @@ re-render detection fails). Read the comments before refactoring that file.
   whole in-game UI. Confirmations are custom JSX modal blocks (`foldConfirmModalUI`,
   `kickConfirmModalUI`, …) assembled at the bottom of the component — native `confirm()`/`alert()`
   were deliberately removed, so follow that pattern for new prompts.
-- All user-facing text goes through `react-i18next` (`locales/en.json`, `locales/it.json`; add keys to
-  **both**). User-visible errors thrown from `firestoreApi.ts` should be i18n keys — `throw new
+- Almost all user-facing text goes through `react-i18next` (`locales/en.json`, `locales/it.json`; add
+  keys to **both** — the current baseline is 384 vs 383 keys, `it.json` is missing
+  `joinTable.gameInProgressWarning`). The documented exception is `components/ReloadPrompt.tsx`,
+  which branches on `i18n.resolvedLanguage === 'it'` and inlines both translations, so its strings
+  are invisible to anyone grepping the locale files.
+- User-visible errors thrown from `firestoreApi.ts` should be i18n keys — `throw new
   Error("error.onlyHost")` — because `TablePage` renders them as `t(actionError)`. Older code throws
-  raw Italian strings, which pass through `t()` unchanged; prefer keys for anything new.
+  raw Italian strings. Those pass through `t()` unchanged **only if they contain no colon**:
+  `i18n.ts` doesn't set `nsSeparator: false`, so i18next reads the text before a `:` as a namespace
+  and renders only what follows it, silently truncating the message. Several existing throws are
+  already truncated this way. Use keys for anything new.
 - Comments and internal error text are mixed Italian/English (Italian dominates the older code).
   Match the surrounding file.
 
@@ -172,3 +221,7 @@ cache headers to those two.
 `dataconnect/` and `frontend/src/dataconnect-generated/` are gitignored and unused — nothing imports
 `@dataconnect/generated` despite the package.json entry. Root `dist/` is a stale gh-pages leftover;
 the deployed output is `frontend/dist`.
+
+`frontend/src/index.css` and `frontend/src/App.css` are orphans — `main.tsx` imports only
+`./styles/index.css`, and the reset in `src/index.css` is duplicated inside it. Editing the
+conventional-looking `src/index.css` has no effect on the app and produces no error.
