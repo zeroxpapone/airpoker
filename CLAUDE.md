@@ -47,12 +47,18 @@ in the Firebase console, so nothing here enforces them and any new invariant tha
 enforcement has to be applied in the console separately. In-repo, the only authorization checks are
 client-side (`tableData.hostId !== user.uid` and similar in `firestoreApi.ts`).
 
-Two gaps worth knowing about, since nothing in the repo covers them:
+Every mutating API in `firestoreApi.ts` now takes a `user` and compares it against `hostId` —
+`startGame` and `endGame` were the last two without one, and gained the check (plus a `SUMMARY`
+guard on `endGame`) alongside `startNextHand`, `advanceStage`, `kickPlayer`, `addChips`,
+`confirmWinners` and `transferHost`. **`swapSeats` is still the exception**: a bare `writeBatch`
+with neither a host check nor a `state !== "IN_GAME"` guard.
 
-- `startGame(tableId)` and `endGame(tableId)` take **no `user` argument and perform no host check
-  at all** — unlike `startNextHand`, `advanceStage`, `kickPlayer`, `addChips`, `confirmWinners` and
-  `transferHost`, which all compare against `hostId`. `endGame` also has no `state` guard, so
-  re-ending a `SUMMARY` table re-increments every player's `stats.sessionsPlayed`.
+Because these checks are client-side, they constrain the app's own code paths, not a hand-crafted
+SDK call against the same project. Anything that must actually hold has to be enforced in the
+console rules.
+
+One gap worth knowing about, since nothing in the repo covers it:
+
 - The table `password` is stored **in cleartext on the table doc** and checked client-side in
   `joinTable`, so any client that can read `tables/{id}` can read it out of the snapshot.
 
@@ -126,15 +132,18 @@ set a flag and call the follow-up (`endGame()`) after the transaction commits.
 Known exceptions to the shape above — don't read them as the pattern:
 
 - `endGame()` is **not transactional at all**: it does `getDoc`/`getDocs` and then commits a
-  `writeBatch`, so two clients ending the same table concurrently both read the pre-end state and
-  both increment `stats.sessionsPlayed`/`stats.timePlayedSeconds`. `scripts/end-stale-tables.mjs`
-  mirrors it, so the same race exists server-side.
+  `writeBatch`. Its `state === "SUMMARY"` guard rejects a *sequential* re-end (the case that used to
+  silently double every player's `stats.sessionsPlayed`), but it does **not** close the concurrent
+  race: two clients that both read before either commits both see `IN_GAME`, both pass the guard,
+  and both increment `stats.sessionsPlayed`/`stats.timePlayedSeconds`. Making that safe needs the
+  read and the write in one transaction, not a stronger guard. `scripts/end-stale-tables.mjs`
+  mirrors the same read-then-batch shape, so the race exists server-side too.
 - `endGame()` and `confirmWinners()` call `getDocs(playersRef)` with **no `orderBy`**, so their
   `playerRefs` are *not* in seat order. Don't index them positionally.
 
 ### Hand lifecycle
 
-`startGame` / `startNextHand` create a hand doc (rotating dealer/SB/BB, heads-up special-cased:
+`startGame` **(host-only)** / `startNextHand` create a hand doc (rotating dealer/SB/BB, heads-up special-cased:
 dealer is SB and acts first preflop) → `playerAction` (`CHECK` | `CALL` | `BET` | `FOLD`; all-in is
 expressed as a `BET` equal to the full stack, or a `CALL` clipped to it — there is no `ALLIN` action)
 → round closes via `lastAggressorIndex` bookkeeping → `advanceStage` **(host-only)**
@@ -195,7 +204,7 @@ re-render detection fails). Read the comments before refactoring that file.
   `kickConfirmModalUI`, …) assembled at the bottom of the component — native `confirm()`/`alert()`
   were deliberately removed, so follow that pattern for new prompts.
 - Almost all user-facing text goes through `react-i18next` (`locales/en.json`, `locales/it.json`; add
-  keys to **both** — the current baseline is 384 vs 383 keys, `it.json` is missing
+  keys to **both** — the current baseline is 385 vs 384 keys, `it.json` is missing
   `joinTable.gameInProgressWarning`). The documented exception is `components/ReloadPrompt.tsx`,
   which branches on `i18n.resolvedLanguage === 'it'` and inlines both translations, so its strings
   are invisible to anyone grepping the locale files.
@@ -225,3 +234,13 @@ the deployed output is `frontend/dist`.
 `frontend/src/index.css` and `frontend/src/App.css` are orphans — `main.tsx` imports only
 `./styles/index.css`, and the reset in `src/index.css` is duplicated inside it. Editing the
 conventional-looking `src/index.css` has no effect on the app and produces no error.
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
