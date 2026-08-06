@@ -74,3 +74,6 @@ frontend/src/dataconnect-generated/
 .claude/
 .agents/
 skills-lock.json
+
+# graphify knowledge-graph output (regenerate with `graphify update .`)
+graphify-out/
