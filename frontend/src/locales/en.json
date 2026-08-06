@@ -219,8 +219,10 @@
     "minPlayersStart": "At least 2 active players are required to start.",
     "onlyHost": "Only the host can perform this action.",
     "gameAlreadyEnded": "This game has already ended.",
+    "seatChangeDuringHand": "Seats cannot be reordered while a hand is in progress.",
     "notInGame": "The table is not in a game state.",
     "tableNotFound": "Table not found.",
+    "playerNotFound": "Player not found.",
     "noPrevHand": "No previous hand found.",
     "prevHandNotFound": "Previous hand not found.",
     "notShowdown": "The current hand has not finished yet."

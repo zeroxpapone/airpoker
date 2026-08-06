@@ -19,7 +19,6 @@ import { useWakeLock } from "../hooks/useWakeLock";
 import {
   setPlayerReady,
   startGame,
-  swapSeats,
   type HandData,
   playerAction,
   leaveTable,
@@ -1127,38 +1126,36 @@ export default function TablePage() {
     if (!isHost) return;
     if (!tableId) return;
     if (!table) return;
+    if (!user) return;
     if (table.state !== "LOBBY") return;
     if (index <= 0) return;
 
     const current = players[index];
     const above = players[index - 1];
 
-    await swapSeats(
-      tableId,
-      current.id,
-      above.id,
-      current.seatIndex,
-      above.seatIndex
-    );
+    try {
+      await swapPlayerSeats(tableId, user, current.id, above.id);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : null);
+    }
   }
 
   async function handleMoveDown(index: number) {
     if (!isHost) return;
     if (!tableId) return;
     if (!table) return;
+    if (!user) return;
     if (table.state !== "LOBBY") return;
     if (index >= players.length - 1) return;
 
     const current = players[index];
     const below = players[index + 1];
 
-    await swapSeats(
-      tableId,
-      current.id,
-      below.id,
-      current.seatIndex,
-      below.seatIndex
-    );
+    try {
+      await swapPlayerSeats(tableId, user, current.id, below.id);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : null);
+    }
   }
 
   async function handleLeaveTable() {

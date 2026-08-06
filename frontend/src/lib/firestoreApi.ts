@@ -552,6 +552,17 @@ export async function addChips(
 
 /**
  * Host: riordina i giocatori scambiando i seatIndex di due posti.
+ *
+ * L'ordine dei posti è un invariante del motore di gioco: la logica delle mani
+ * indicizza i giocatori per posizione, non per uid, quindi scambiare i seatIndex
+ * mentre una mano è viva sposta dealer/SB/BB e i turni sotto i piedi della mano
+ * in corso. Il guard qui sotto rispecchia `disableEndGame` lato UI: riordinare è
+ * lecito in LOBBY, in SUMMARY e *tra* una mano e l'altra (showdown con vincitore
+ * già assegnato), mai a mano viva.
+ *
+ * Sta dentro una transazione proprio per quel guard: con il vecchio
+ * read-then-writeBatch, una mano che parte tra la lettura e il commit avrebbe
+ * lasciato passare lo scambio comunque.
  */
 export async function swapPlayerSeats(
   tableId: string,
@@ -560,24 +571,41 @@ export async function swapPlayerSeats(
   userIdB: string
 ) {
   const tableRef = doc(db, "tables", tableId);
-  const tableSnap = await getDoc(tableRef);
-  if (!tableSnap.exists()) throw new Error("Tavolo inesistente");
-  const tableData = tableSnap.data() as any;
-  if (tableData.hostId !== host.uid) throw new Error("Solo l'host può riordinare i giocatori");
-
   const refA = doc(db, "tables", tableId, "players", userIdA);
   const refB = doc(db, "tables", tableId, "players", userIdB);
-  const [snapA, snapB] = await Promise.all([getDoc(refA), getDoc(refB)]);
 
-  if (!snapA.exists() || !snapB.exists()) throw new Error("Uno dei giocatori non esiste");
+  await runTransaction(db, async (transaction) => {
+    // ===== LETTURA =====
+    const tableSnap = await transaction.get(tableRef);
+    if (!tableSnap.exists()) throw new Error("error.tableNotFound");
+    const tableData = tableSnap.data() as any;
 
-  const seatA = (snapA.data() as any).seatIndex;
-  const seatB = (snapB.data() as any).seatIndex;
+    if (tableData.hostId !== host.uid) throw new Error("error.onlyHost");
 
-  const batch = writeBatch(db);
-  batch.update(refA, { seatIndex: seatB });
-  batch.update(refB, { seatIndex: seatA });
-  await batch.commit();
+    if (tableData.state === "IN_GAME" && tableData.currentHandId) {
+      const handRef = doc(db, "tables", tableId, "hands", tableData.currentHandId);
+      const handSnap = await transaction.get(handRef);
+      if (handSnap.exists()) {
+        const handData = handSnap.data();
+        const handOver =
+          handData.stage === "SHOWDOWN" &&
+          (!!handData.winnerId ||
+            (Array.isArray(handData.winnerIds) && handData.winnerIds.length > 0));
+        if (!handOver) throw new Error("error.seatChangeDuringHand");
+      }
+    }
+
+    const snapA = await transaction.get(refA);
+    const snapB = await transaction.get(refB);
+    if (!snapA.exists() || !snapB.exists()) throw new Error("error.playerNotFound");
+
+    const seatA = (snapA.data() as any).seatIndex;
+    const seatB = (snapB.data() as any).seatIndex;
+
+    // ===== SCRITTURA =====
+    transaction.update(refA, { seatIndex: seatB });
+    transaction.update(refB, { seatIndex: seatA });
+  });
 }
 
 /**
@@ -792,25 +820,9 @@ export async function startGame(tableId: string, user: User) {
 }
 
 
-/**
- * Scambia i seatIndex di due giocatori (usato dall'host per riordinare).
- */
-export async function swapSeats(
-  tableId: string,
-  playerAId: string,
-  playerBId: string,
-  seatA: number,
-  seatB: number
-) {
-  const playerARef = doc(db, "tables", tableId, "players", playerAId);
-  const playerBRef = doc(db, "tables", tableId, "players", playerBId);
-
-  const batch = writeBatch(db);
-  batch.update(playerARef, { seatIndex: seatB });
-  batch.update(playerBRef, { seatIndex: seatA });
-
-  await batch.commit();
-}
+// swapSeats() è stato rimosso: duplicava swapPlayerSeats() senza host check né
+// guard di stato, e si fidava dei seatIndex passati dal chiamante invece di
+// rileggerli. Usare swapPlayerSeats().
 
 export async function setSittingOut(
   tableId: string,
