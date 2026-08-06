@@ -591,7 +591,7 @@ export async function swapPlayerSeats(
  * - Con 2 giocatori (heads-up): giocatore 0 = BB, giocatore 1 = SB/Dealer
  * - Con 3+ giocatori: giocatore 0 = Dealer, 1 = SB, 2 = BB
  */
-export async function startGame(tableId: string) {
+export async function startGame(tableId: string, user: User) {
   const tableRef = doc(db, "tables", tableId);
 
   const playersRef = collection(db, "tables", tableId, "players");
@@ -606,6 +606,10 @@ export async function startGame(tableId: string) {
     }
 
     const tableData = tableSnap.data() as any;
+
+    if (tableData.hostId !== user.uid) {
+      throw new Error("error.onlyHost");
+    }
 
     if (tableData.state !== "LOBBY") {
       throw new Error("La partita è già iniziata o il tavolo non è in LOBBY");
@@ -1127,11 +1131,21 @@ export async function forceFoldPlayer(
   });
 }
 
-export async function endGame(tableId: string) {
+export async function endGame(tableId: string, user: User) {
   const tableRef = doc(db, "tables", tableId);
   const tableSnap = await getDoc(tableRef);
-  if (!tableSnap.exists()) throw new Error("Tavolo inesistente.");
+  if (!tableSnap.exists()) throw new Error("error.tableNotFound");
   const tableData = tableSnap.data() as any;
+
+  if (tableData.hostId !== user.uid) {
+    throw new Error("error.onlyHost");
+  }
+
+  // Senza questo guard, ri-terminare un tavolo già in SUMMARY ri-incrementa
+  // stats.sessionsPlayed e stats.timePlayedSeconds di ogni giocatore.
+  if (tableData.state === "SUMMARY") {
+    throw new Error("error.gameAlreadyEnded");
+  }
 
   const playersSnap = await getDocs(collection(db, "tables", tableId, "players"));
   const userSnaps: Record<string, any> = {};
@@ -1437,7 +1451,7 @@ export async function startNextHand(tableId: string, user: User) {
   });
 
   if (shouldEndTournament) {
-    await endGame(tableId);
+    await endGame(tableId, user);
   }
 }
 

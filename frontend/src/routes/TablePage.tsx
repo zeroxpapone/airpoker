@@ -1115,8 +1115,9 @@ export default function TablePage() {
   async function handleStartGame() {
     if (!isHost) return;
     if (!tableId) return;
+    if (!user) return;
     try {
-      await startGame(tableId);
+      await startGame(tableId, user);
     } catch (err) {
       console.error("Errore startGame:", err);
     }
@@ -1259,10 +1260,10 @@ async function handleEndGame() {
 }
 
 async function confirmEndGameAction() {
-  if (!isHost || !tableId) return;
+  if (!isHost || !tableId || !user) return;
   try {
     setShowEndGameConfirm(false);
-    await endGame(tableId);
+    await endGame(tableId, user);
   } catch (err) {
     console.error(err);
   }

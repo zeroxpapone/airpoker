@@ -218,6 +218,7 @@
     "minPlayers": "At least 2 active players are required for a new hand.",
     "minPlayersStart": "At least 2 active players are required to start.",
     "onlyHost": "Only the host can perform this action.",
+    "gameAlreadyEnded": "This game has already ended.",
     "notInGame": "The table is not in a game state.",
     "tableNotFound": "Table not found.",
     "noPrevHand": "No previous hand found.",
