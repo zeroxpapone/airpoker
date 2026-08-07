@@ -80,19 +80,46 @@ export interface Pot {
 }
 
 /**
- * Divide `amount` tra `numWinners` vincitori arrotondando al multiplo di 5 inferiore.
- * Il resto (sempre multiplo di 5) viene assegnato a un vincitore casuale.
- * Restituisce un array di importi della stessa lunghezza di `numWinners`.
+ * Hash stabile a 32 bit (FNV-1a). Serve solo a scegliere in modo riproducibile
+ * il destinatario del resto: nessun requisito crittografico.
  */
-function splitPot(amount: number, numWinners: number): number[] {
+function hashString(input: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    h ^= input.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+/**
+ * Divide `amount` tra `winners` arrotondando al multiplo di 5 inferiore.
+ * Il resto (sempre multiplo di 5) viene assegnato a uno solo dei vincitori.
+ * Restituisce un array di importi della stessa lunghezza di `winners`.
+ *
+ * ATTENZIONE: lo stesso pot viene splittato più volte durante una singola
+ * assegnazione — una volta per accreditare gli stack, e di nuovo da
+ * computeChipsWonMap() per getStatsCandidateIds()/applyStatsUpdates(). Con un
+ * Math.random() interno le due chiamate sceglievano destinatari diversi: lo
+ * stack di un giocatore cresceva del resto mentre le stats lo attribuivano a un
+ * altro, e un vincitore con quota 0 nel secondo tiro spariva da candidateIds
+ * restando senza alcun aggiornamento. Il destinatario è quindi derivato in modo
+ * deterministico da (seed del pot, vincitori, importo): tutti i chiamanti
+ * ottengono la stessa ripartizione senza doversela passare l'un l'altro.
+ * `winners` viene ordinato prima di calcolare l'hash, così l'esito non dipende
+ * dall'ordine in cui i vari chiamanti costruiscono la lista.
+ */
+function splitPot(amount: number, winners: string[], seed: string): number[] {
+  const numWinners = winners.length;
   if (numWinners <= 0) return [];
   if (numWinners === 1) return [amount];
   const base = Math.floor(amount / numWinners / 5) * 5;
   const remainder = amount - base * numWinners;
   const shares = Array(numWinners).fill(base);
   if (remainder > 0) {
-    const luckyIdx = Math.floor(Math.random() * numWinners);
-    shares[luckyIdx] += remainder;
+    const sorted = [...winners].sort();
+    const luckyId = sorted[hashString(`${seed}|${amount}|${sorted.join(",")}`) % numWinners];
+    shares[winners.indexOf(luckyId)] += remainder;
   }
   return shares;
 }
@@ -104,7 +131,7 @@ function computeChipsWonMap(pots: Pot[]): Record<string, number> {
   const chipsWonMap: Record<string, number> = {};
   pots.forEach(pot => {
     if (pot.settled && pot.winners && pot.winners.length > 0) {
-      const shares = splitPot(pot.amount, pot.winners.length);
+      const shares = splitPot(pot.amount, pot.winners, pot.id);
       pot.winners.forEach((wId, idx) => {
         chipsWonMap[wId] = (chipsWonMap[wId] || 0) + shares[idx];
       });
@@ -239,7 +266,7 @@ function autoEvaluateShowdown(
       // Still need to credit chips for these!
       if (pot.winners && pot.winners.length > 0) {
         pot.winners.forEach(w => globalWinners.add(w));
-        const shares = splitPot(pot.amount, pot.winners.length);
+        const shares = splitPot(pot.amount, pot.winners, pot.id);
         pot.winners.forEach((wId, i) => {
           playerChipsWon[wId] = (playerChipsWon[wId] || 0) + shares[i];
           const w = players.find(p => p.id === wId);
@@ -282,7 +309,7 @@ function autoEvaluateShowdown(
     potWinners.forEach(w => globalWinners.add(w));
 
     // Distribute chips
-    const shares = splitPot(pot.amount, potWinners.length);
+    const shares = splitPot(pot.amount, potWinners, pot.id);
     potWinners.forEach((wId, i) => {
       playerChipsWon[wId] = (playerChipsWon[wId] || 0) + shares[i];
       const w = players.find(p => p.id === wId);
@@ -2145,7 +2172,7 @@ export async function advanceStage(tableId: string, user: User) {
         // Solo 1 giocatore — vince automaticamente, carte non mostrate
         calcPots.forEach(pt => {
           if (pt.settled && pt.winners && pt.winners.length > 0) {
-            const shares = splitPot(pt.amount, pt.winners.length);
+            const shares = splitPot(pt.amount, pt.winners, pt.id);
             pt.winners.forEach((wid, i) => {
               const w = plyrsData.find(p => p.id === wid);
               if (w) {
@@ -2185,7 +2212,7 @@ export async function advanceStage(tableId: string, user: User) {
         if (allPotsSettled) {
           calcPots.forEach(pt => {
             if (pt.settled && pt.winners && pt.winners.length > 0) {
-              const shares = splitPot(pt.amount, pt.winners.length);
+              const shares = splitPot(pt.amount, pt.winners, pt.id);
               pt.winners.forEach((wid, i) => {
                 const w = plyrsData.find(p => p.id === wid);
                 if (w) {
@@ -2393,7 +2420,9 @@ export async function confirmWinners(
     if (currentPotIndex === -1) {
       // Fallback legacy: nessun pot strutturato disponibile, usa il pot totale grezzo
       const pot = hand.pot || 0;
-      const shares = splitPot(pot, winnerIds.length);
+      // Stesso seed del pot simulato costruito più sotto per le stats ("pot_legacy"),
+      // altrimenti le due ripartizioni divergerebbero.
+      const shares = splitPot(pot, winnerIds, "pot_legacy");
       winnerIds.forEach((wId, i) => {
         const w = players.find(p => p.id === wId);
         if (w) {
@@ -2429,7 +2458,7 @@ export async function confirmWinners(
       }
 
       const distributePot = (targetPot: Pot, wins: string[]) => {
-        const shares = splitPot(targetPot.amount, wins.length);
+        const shares = splitPot(targetPot.amount, wins, targetPot.id);
         wins.forEach((wId, i) => {
           const w = players.find(p => p.id === wId);
           if (w) {
