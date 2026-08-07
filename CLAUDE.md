@@ -50,8 +50,8 @@ client-side (`tableData.hostId !== user.uid` and similar in `firestoreApi.ts`).
 Every mutating API in `firestoreApi.ts` now takes a `user` and compares it against `hostId` —
 `startGame` and `endGame` were the last two without one, and gained the check (plus a `SUMMARY`
 guard on `endGame`) alongside `startNextHand`, `advanceStage`, `kickPlayer`, `addChips`,
-`confirmWinners` and `transferHost`. **`swapSeats` is still the exception**: a bare `writeBatch`
-with neither a host check nor a `state !== "IN_GAME"` guard.
+`confirmWinners`, `transferHost` and `swapPlayerSeats`. There is no longer an unguarded mutating
+API — `swapSeats`, the last one, was deleted as a duplicate of `swapPlayerSeats`.
 
 Because these checks are client-side, they constrain the app's own code paths, not a hand-crafted
 SDK call against the same project. Anything that must actually hold has to be enforced in the
@@ -115,8 +115,11 @@ Firestore transactions cannot run queries, and every read must precede every wri
 APIs in `firestoreApi.ts` follow the same shape, and new ones should too:
 
 1. `getDocs(query(players, orderBy("seatIndex")))` **outside** the transaction, purely to learn which
-   doc refs exist. This assumes seat order can't change mid-hand — an assumption **nothing enforces**:
-   `swapSeats` is a bare `writeBatch` with neither a host check nor a `state !== "IN_GAME"` guard.
+   doc refs exist. This assumes seat order can't change mid-hand. `swapPlayerSeats` — the only writer
+   of `seatIndex` on an existing player — now enforces that: it is transactional and rejects a swap
+   unless the current hand is over (`SHOWDOWN` with a winner assigned), mirroring the UI's
+   `disableEndGame`. Reordering *between* hands is a supported feature, so the guard is "no live
+   hand", not "LOBBY only".
 2. Inside `runTransaction`: `transaction.get()` the table, the hand, all player docs — *and* the
    `users/{id}` docs needed for stats (`getStatsCandidateIds()` exists to compute that set before any
    write).
@@ -204,7 +207,7 @@ re-render detection fails). Read the comments before refactoring that file.
   `kickConfirmModalUI`, …) assembled at the bottom of the component — native `confirm()`/`alert()`
   were deliberately removed, so follow that pattern for new prompts.
 - Almost all user-facing text goes through `react-i18next` (`locales/en.json`, `locales/it.json`; add
-  keys to **both** — the current baseline is 385 vs 384 keys, `it.json` is missing
+  keys to **both** — the current baseline is 387 vs 386 keys, `it.json` is missing
   `joinTable.gameInProgressWarning`). The documented exception is `components/ReloadPrompt.tsx`,
   which branches on `i18n.resolvedLanguage === 'it'` and inlines both translations, so its strings
   are invisible to anyone grepping the locale files.

@@ -218,8 +218,10 @@
     "minPlayersStart": "Servono almeno 2 giocatori attivi per iniziare.",
     "onlyHost": "Solo l'host può eseguire questa azione.",
     "gameAlreadyEnded": "Questa partita è già terminata.",
+    "seatChangeDuringHand": "Non puoi riordinare i posti mentre una mano è in corso.",
     "notInGame": "Il tavolo non è in stato di gioco.",
     "tableNotFound": "Tavolo inesistente.",
+    "playerNotFound": "Giocatore non trovato.",
     "noPrevHand": "Nessuna mano precedente trovata.",
     "prevHandNotFound": "Mano precedente non trovata.",
     "notShowdown": "La mano corrente non è ancora conclusa."
