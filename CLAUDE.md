@@ -158,10 +158,21 @@ ever writes — treat it as vestigial, not a fourth state.
 
 Pots: `calculatePotsCore()` derives cascading side pots from `handContributions`; a pot with ≤1
 eligible player auto-settles. `splitPot()` rounds shares down to a multiple of 5 and hands the
-remainder to a random winner, so chip totals stay integral. **It picks that winner with an internal
-`Math.random()` and is called more than once per settlement** (once to credit stacks, again from
-`getStatsCandidateIds`/`applyStatsUpdates`), so the rolls disagree and recorded stats can diverge
-from the chips actually paid. Compute the split once and thread the result through.
+remainder to one winner, so chip totals stay integral.
+
+**It is called more than once per settlement** — once to credit stacks, again from
+`computeChipsWonMap()` for `getStatsCandidateIds`/`applyStatsUpdates` — so the passes must agree or
+recorded stats drift from the chips actually paid. They agree by being *deterministic*, not by
+threading a result through: the recipient is an FNV-1a hash of `(pot.id, amount, sorted winners)`.
+Recomputing is deliberate — passing a precomputed split between those call sites would mean carrying
+it across the read-before-write transaction boundary.
+
+Two properties that look incidental and are not. The winners list is **sorted before hashing**, so
+the outcome doesn't depend on the order each caller happens to build it in. And `pot.id` is
+**qualified with the hand id** (`${handId}-pot-N`, from `calculatePotsCore`) — with per-hand ids like
+`pot-0` the seed never varied between hands, so an identical recurring split (same pot, same amount,
+same winners) handed the remainder to the same player every time. Any new seed component must keep
+both: stable within a settlement, varying across hands.
 
 ### Two card modes, one engine
 
