@@ -13,7 +13,7 @@ export default function Layout({ children }: Props) {
   const { i18n, t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, isRegisteredUser, claimUsername, logout, isRegistering } = useAuth();
+  const { user, isRegisteredUser, profileChecked, claimUsername, logout, isRegistering } = useAuth();
 
   // .app-layout is a fixed-height (100dvh) flex column — the page itself never
   // scrolls. The actual scrollable element is this <main>, so a route change
@@ -54,7 +54,11 @@ export default function Layout({ children }: Props) {
   }
 
   const showHomeBtn = location.pathname !== "/home" && location.pathname !== "/";
-  const showUsernameModal = user && !user.isAnonymous && !isRegisteredUser && !isRegistering;
+  // profileChecked gates the whole thing: !isRegisteredUser also means "profile not read
+  // yet", and on an in-session sign-in that gap is a visible render — which is what made
+  // this modal flash up for users who already have a perfectly valid username.
+  const showUsernameModal =
+    user && !user.isAnonymous && profileChecked && !isRegisteredUser && !isRegistering;
 
   return (
     <div className="app-layout" id="app-layout-root">

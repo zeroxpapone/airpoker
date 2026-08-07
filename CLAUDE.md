@@ -197,6 +197,15 @@ in-progress table session survives). Several non-obvious workarounds in there ar
 `linkedProviderIds` as separate state (Firebase mutates the `User` object in place, so identity-based
 re-render detection fails). Read the comments before refactoring that file.
 
+`isRegisteredUser: false` is **ambiguous on its own** — it means both "this user has no profile" and
+"the profile hasn't been read yet". `profileChecked` disambiguates, and anything that reacts to a
+*missing* profile must gate on it (`Layout`'s username modal, `ProfilePage`'s redirect). The gap is
+only observable on an **in-session** sign-in: `loading` goes true→false exactly once, on the first
+auth resolution, so on a page reload `App` holds a spinner until the profile read finishes, while a
+Google popup later in the session renders straight through the window where `onAuthStateChanged` has
+set `user` but not yet resolved the Firestore read. A read *failure* deliberately leaves
+`profileChecked` false, so an unanswered question never renders as "no profile".
+
 ### UI conventions
 
 - **No Tailwind** (the README is wrong). Styling is `frontend/src/styles/index.css` (~1.9k lines) with
