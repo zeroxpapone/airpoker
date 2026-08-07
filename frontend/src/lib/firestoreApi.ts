@@ -1097,7 +1097,8 @@ export async function forceFoldPlayer(
           id: p.id,
           isFolded: p.id === targetPlayerId ? true : !!p.data.isFolded
         })),
-        handContributions
+        handContributions,
+        handId
       );
 
       // Auto-settle all pots for the only remaining player
@@ -1739,7 +1740,8 @@ export async function playerAction(
       nextTurnIndex = -1;
       potsCalculatedFastForward = calculatePotsCore(
         players.map(p => ({ id: p.userId, isFolded: p.isFolded })),
-        handContributions
+        handContributions,
+        currentHandId
       );
     } else if (actingPlayers.length <= 1) {
       // Tutti gli altri sono in all-in o foldati: solo 1 o 0 possono ancora scommettere
@@ -1755,7 +1757,8 @@ export async function playerAction(
         nextTurnIndex = -1;
         potsCalculatedFastForward = calculatePotsCore(
           players.map(p => ({ id: p.userId, isFolded: p.isFolded })),
-          handContributions
+          handContributions,
+          currentHandId
         );
       } else {
         // Non va ancora a showdown: verifica se tutti hanno matched la puntata (O SONO IN ALL-IN!)
@@ -1830,7 +1833,8 @@ export async function playerAction(
               nextTurnIndex = -1;
               potsCalculatedFastForward = calculatePotsCore(
                 players.map(p => ({ id: p.userId, isFolded: p.isFolded })),
-                handContributions
+                handContributions,
+                currentHandId
               );
             } else {
               nextTurnIndex = -1;
@@ -1865,7 +1869,8 @@ export async function playerAction(
       // Durante il gioco: ricalcola live i pot per mostrare i side-pot nell'UI
       handUpdate.pots = calculatePotsCore(
         players.map(p => ({ id: p.userId, isFolded: p.isFolded })),
-        handContributions
+        handContributions,
+        currentHandId
       );
     }
 
@@ -2165,7 +2170,7 @@ export async function advanceStage(tableId: string, user: User) {
       const activePlayers = plyrsData.filter(p => !p.isFolded);
 
       // Calcoliamo i side pots da mettere nel DB
-      const calcPots = calculatePotsCore(plyrsData, hand.handContributions || {});
+      const calcPots = calculatePotsCore(plyrsData, hand.handContributions || {}, currentHandId);
       updateData.pots = calcPots;
 
       if (activePlayers.length <= 1) {
@@ -2269,7 +2274,16 @@ export async function advanceStage(tableId: string, user: User) {
   });
 }
 
-export function calculatePotsCore(players: {id: string, isFolded: boolean}[], contributions: Record<string, number>): Pot[] {
+/**
+ * `handId` entra solo nell'id dei pot, ma non è cosmetico: l'id è il seed con cui
+ * splitPot() sceglie il destinatario del resto. Con id ripetuti a ogni mano
+ * (`pot-0`, `pot-1`, ...) lo stesso identico split — stesso pot, stesso importo,
+ * stessi vincitori — assegnava il resto sempre allo stesso giocatore, mano dopo
+ * mano. Qualificando l'id con la mano il seed cambia a ogni mano, restando però
+ * identico tra le due chiamate di splitPot() della stessa assegnazione (accredito
+ * stack e pass delle stats), che è la proprietà da cui dipende la correttezza.
+ */
+export function calculatePotsCore(players: {id: string, isFolded: boolean}[], contributions: Record<string, number>, handId: string): Pot[] {
   // Discard amounts of 0
   const amounts = Object.values(contributions).filter(v => v > 0).sort((a,b) => a - b);
   const sortedAmounts = [...new Set(amounts)];
@@ -2295,7 +2309,7 @@ export function calculatePotsCore(players: {id: string, isFolded: boolean}[], co
     });
     
     pots.push({
-      id: `pot-${potIdx++}`,
+      id: `${handId}-pot-${potIdx++}`,
       amount: potSize,
       eligible,
       settled: eligible.length <= 1,
@@ -2404,7 +2418,8 @@ export async function confirmWinners(
     if (pots.length === 0 && hand.handContributions && Object.keys(hand.handContributions).length > 0) {
       pots = calculatePotsCore(
         players.map(p => ({ id: p.id, isFolded: p.data.isFolded })),
-        hand.handContributions
+        hand.handContributions,
+        currentHandId
       );
     }
 
