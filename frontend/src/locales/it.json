@@ -90,7 +90,8 @@
     "submitBtn": "Entra nel Tavolo",
     "hint": "Chiedi l'ID e la password al creatore del tavolo (se prevista), o scansiona direttamente il loro codice QR d'invito.",
     "scanQrBtn": "Scansiona QR Invito",
-    "cancelScanBtn": "Annulla Scansione"
+    "cancelScanBtn": "Annulla Scansione",
+    "gameInProgressWarning": "🟡 La partita è già in corso. Entrerai come spettatore e potrai partecipare dalla prossima mano."
   },
   "table": {
     "errorNotLoggedIn": "Devi effettuare il login per vedere questo tavolo.",
