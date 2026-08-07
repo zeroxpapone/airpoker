@@ -24,7 +24,7 @@ import { deleteAccount } from "../lib/firestoreApi";
 
 export default function ProfilePage() {
   const {
-    user, username, isRegisteredUser, photoURL, updatePhotoURL,
+    user, username, isRegisteredUser, profileChecked, photoURL, updatePhotoURL,
     linkedProviderIds, linkEmailPasswordToAccount, linkGoogleToAccount
   } = useAuth();
   const navigate = useNavigate();
@@ -96,11 +96,15 @@ export default function ProfilePage() {
   }, [searchParams]);
 
   useEffect(() => {
-    if (!isRegisteredUser) {
+    // Wait for the profile read before bouncing anyone: !isRegisteredUser is also true
+    // while the check is still in flight, which would eject a registered user who lands
+    // here right after signing in. The logged-out case is already handled by the route
+    // guard in App.tsx, so this only ever decides registered-vs-guest.
+    if (profileChecked && !isRegisteredUser) {
       navigate("/home");
       return;
     }
-  }, [isRegisteredUser, navigate]);
+  }, [profileChecked, isRegisteredUser, navigate]);
 
   // Fetch full profile and stats
   useEffect(() => {

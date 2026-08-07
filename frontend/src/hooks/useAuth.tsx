@@ -21,6 +21,11 @@ interface AuthContextValue {
   user: User | null;
   loading: boolean;
   isRegisteredUser: boolean;
+  // False until the signed-in user's Firestore profile has actually been read.
+  // `isRegisteredUser: false` on its own is ambiguous — it means both "no profile"
+  // and "haven't looked yet" — so anything that reacts to a *missing* profile must
+  // check this first. See the comment on the state declaration.
+  profileChecked: boolean;
   username: string | null;
   photoURL: string | null;
   login: (displayName: string) => Promise<void>;
@@ -116,6 +121,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [username, setUsername] = useState<string | null>(null);
   const [photoURL, setPhotoURL] = useState<string | null>(null);
   const [isRegisteredUser, setIsRegisteredUser] = useState(false);
+  // `loading` only ever goes true->false once, on the first auth resolution. A sign-in
+  // that happens *later in the same session* (Google popup from the login page) therefore
+  // renders with loading already false, unlike a page reload where <App> holds a spinner
+  // until the profile read has finished. Without a separate "have we looked yet?" flag,
+  // that difference is visible: onAuthStateChanged sets `user` synchronously but only
+  // learns whether a profile exists one await later, so for that gap an already-registered
+  // user looks exactly like a brand-new one.
+  const [profileChecked, setProfileChecked] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isRegistering, setIsRegistering] = useState(false);
   // onAuthStateChanged below subscribes exactly once (empty dep array — resubscribing
@@ -134,6 +147,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (firebaseUser) {
         setUser(firebaseUser);
         if (!firebaseUser.isAnonymous) {
+          // Batched with setUser above, so the first render that sees this user already
+          // knows the profile is unverified. Re-armed on every sign-in because the flag
+          // is per-user, not per-session: a previous user's "checked" verdict says
+          // nothing about this one.
+          setProfileChecked(false);
           // Fetch username & photoURL from Firestore
           try {
             const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
@@ -162,23 +180,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 setIsRegisteredUser(false);
               }
             }
+            // Reached only when the read actually resolved, so isRegisteredUser now
+            // reflects the stored profile either way.
+            setProfileChecked(true);
           } catch (e) {
             // A transient read failure (network blip, brief offline window) is not
             // reliable evidence the user isn't registered — leave existing state
             // alone rather than bouncing an already-registered user back to the
-            // "choose a username" prompt.
+            // "choose a username" prompt. profileChecked deliberately stays false
+            // for the same reason: an unanswered question must not read as "no".
             console.error("Errore nel recupero dello username:", e);
           }
         } else {
           setIsRegisteredUser(false);
           setUsername(firebaseUser.displayName);
           setPhotoURL(null);
+          // Guests have no profile to check; nothing is pending.
+          setProfileChecked(true);
         }
       } else {
         setUser(null);
         setIsRegisteredUser(false);
         setUsername(null);
         setPhotoURL(null);
+        setProfileChecked(false);
       }
       setLoading(false);
     });
@@ -258,6 +283,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       setUsername(finalUsername);
       setIsRegisteredUser(true);
+      setProfileChecked(true);
       setPhotoURL(null);
       setUser(u);
     } catch (err) {
@@ -303,6 +329,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const cred = await signInWithEmailAndPassword(auth, loginEmail, password);
     setUser(cred.user);
     setIsRegisteredUser(true);
+    setProfileChecked(true);
   }
 
   async function signInWithGoogle() {
@@ -329,6 +356,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsRegisteredUser(!!dbUsername);
     }
 
+    // Both branches above read the profile doc, so the verdict is settled either way.
+    // This also re-closes the window that onAuthStateChanged opened when the popup
+    // resolved: it fires the moment sign-in completes and races this function.
+    setProfileChecked(true);
     setUser(u);
   }
 
@@ -383,6 +414,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     
     setIsRegisteredUser(true);
+    setProfileChecked(true);
   }
 
   // Firebase's User object is mutable — linkWithCredential/linkWithPopup update
@@ -442,6 +474,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUsername(null);
     setPhotoURL(null);
     setIsRegisteredUser(false);
+    setProfileChecked(false);
   }
 
   async function claimUsername(desiredUsername: string) {
@@ -452,12 +485,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUsername(finalUsername);
     setPhotoURL(pUrl || null);
     setIsRegisteredUser(true);
+    setProfileChecked(true);
   }
 
   const value: AuthContextValue = {
     user,
     loading,
     isRegisteredUser,
+    profileChecked,
     username,
     photoURL,
     login,
