@@ -248,6 +248,14 @@ for hours with a wake lock held and would otherwise never see a deploy. `firebas
 `index.html` and `/sw.js` are `no-store`, hashed assets are immutable-cached. Don't add long-lived
 cache headers to those two.
 
+`vite.config.ts` splits vendors into `vendor-firestore` / `vendor-firebase` / `vendor-react` /
+`vendor-i18n` via `manualChunks`, which is a **caching** decision rather than a payload one: every
+chunk is needed to boot, so a cold load moves the same bytes either way. What it buys is that an
+ordinary deploy only re-hashes the app chunk (~158 kB gzip) instead of one ~363 kB blob, and with a
+15-minute update poll that difference lands often. If you add a vendor group, check the generated
+chunks' cross-imports stay **acyclic** — circular chunk dependencies are what turn a clean
+`vite build` into a "cannot access before initialization" at runtime.
+
 ### Ignore these
 
 `dataconnect/` and `frontend/src/dataconnect-generated/` are gitignored and unused — nothing imports
