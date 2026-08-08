@@ -47,6 +47,7 @@ export default function PlayerProfilePage() {
 
   const [targetUser, setTargetUser] = useState<TargetUser | null>(null);
   const [targetUserPresence, setTargetUserPresence] = useState<any>(null);
+  const [targetTableState, setTargetTableState] = useState<string | null>(null);
   const [friendStatus, setFriendStatus] = useState<"NONE" | "PENDING_SENT" | "PENDING_RECEIVED" | "ACCEPTED" | "SELF">("NONE");
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -123,7 +124,27 @@ export default function PlayerProfilePage() {
     return () => {
       if (unsubPresence) unsubPresence();
     };
+
   }, [targetUsername, user]);
+
+  // Presence says the friend is AT a table, not that the table can be joined: someone
+  // sitting on the finished-game recap still reports location "TABLE" with a tableId.
+  // Track the table's own state so the join button reflects reality.
+  useEffect(() => {
+    const presenceTableId = targetUserPresence?.tableId;
+    if (!presenceTableId) {
+      setTargetTableState(null);
+      return;
+    }
+
+    const unsub = onSnapshot(
+      doc(db, "tables", presenceTableId),
+      (snap) => setTargetTableState(snap.exists() ? (snap.data().state ?? null) : null),
+      () => setTargetTableState(null)
+    );
+
+    return () => unsub();
+  }, [targetUserPresence?.tableId]);
 
   // Listen to friend status
   useEffect(() => {
@@ -335,7 +356,9 @@ export default function PlayerProfilePage() {
         {friendStatus === "ACCEPTED" &&
          targetUserPresence?.status === "ONLINE" &&
          targetUserPresence?.location === "TABLE" &&
-         targetUserPresence?.tableId && (
+         targetUserPresence?.tableId &&
+         // Mirrors joinTable()'s own guard — anything else (SUMMARY) is not joinable.
+         (targetTableState === "LOBBY" || targetTableState === "IN_GAME") && (
            <button
              id="btn-player-profile-join-table"
              onClick={() => navigate(`/table/${targetUserPresence.tableId}`)}
