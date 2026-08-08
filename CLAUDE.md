@@ -227,8 +227,8 @@ set `user` but not yet resolved the Firestore read. A read *failure* deliberatel
   `kickConfirmModalUI`, …) assembled at the bottom of the component — native `confirm()`/`alert()`
   were deliberately removed, so follow that pattern for new prompts.
 - Almost all user-facing text goes through `react-i18next` (`locales/en.json`, `locales/it.json`; add
-  keys to **both** — the current baseline is 387 vs 386 keys, `it.json` is missing
-  `joinTable.gameInProgressWarning`). The documented exception is `components/ReloadPrompt.tsx`,
+  keys to **both** — the two files are now at parity, 387 keys each, so any difference is a
+  regression rather than a pre-existing gap). The documented exception is `components/ReloadPrompt.tsx`,
   which branches on `i18n.resolvedLanguage === 'it'` and inlines both translations, so its strings
   are invisible to anyone grepping the locale files.
 - User-visible errors thrown from `firestoreApi.ts` should be i18n keys — `throw new
