@@ -76,26 +76,28 @@ export default function HomePage() {
     const cachedId = localStorage.getItem("activeTableId");
     if (!cachedId) return;
 
-    // Verify the table is still in a joinable state before showing the banner
-    import("../lib/firebase").then(({ db }) => {
-      import("firebase/firestore").then(({ doc, getDoc }) => {
-        getDoc(doc(db, "tables", cachedId)).then((snap) => {
-          if (!snap.exists()) {
-            localStorage.removeItem("activeTableId");
-            return;
-          }
-          const state = snap.data()?.state;
-          if (state === "SUMMARY" || state === "ENDED") {
-            localStorage.removeItem("activeTableId");
-          } else {
-            setActiveTableId(cachedId);
-          }
-        }).catch(() => {
-          // On network issue or error, still show the banner
+    // Verify the table is still in a joinable state before showing the banner.
+    // `db`, `doc` and `getDoc` are already static imports at the top of this file, so
+    // the nested dynamic imports this replaced split nothing out — they only produced
+    // the "dynamically imported by ... but also statically imported by ..." build
+    // warnings and an extra layer of callbacks.
+    getDoc(doc(db, "tables", cachedId))
+      .then((snap) => {
+        if (!snap.exists()) {
+          localStorage.removeItem("activeTableId");
+          return;
+        }
+        const state = snap.data()?.state;
+        if (state === "SUMMARY" || state === "ENDED") {
+          localStorage.removeItem("activeTableId");
+        } else {
           setActiveTableId(cachedId);
-        });
+        }
+      })
+      .catch(() => {
+        // On network issue or error, still show the banner
+        setActiveTableId(cachedId);
       });
-    });
   }, []);
 
   // Main Dashboard Data States
