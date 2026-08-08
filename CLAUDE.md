@@ -132,15 +132,19 @@ phases. Adding a read after a write silently breaks the transaction at runtime.
 Operations that can't fit one transaction (e.g. `startNextHand` discovering the tournament is over)
 set a flag and call the follow-up (`endGame()`) after the transaction commits.
 
+`endGame()` follows the standard shape and is worth reading as the worked example of *why* it
+exists. Its `state === "SUMMARY"` guard alone was not enough: as a read-then-`writeBatch`, two
+clients closing the same table both read `IN_GAME` before either committed, both passed the guard,
+and both incremented `stats.sessionsPlayed`/`stats.timePlayedSeconds`. The guard only became real
+once the table read moved inside `runTransaction` — a concurrent commit now forces a retry, and the
+retry sees `SUMMARY` and aborts. A guard is only as strong as the read it sits on.
+`scripts/end-stale-tables.mjs` was made transactional in the same change and skips (rather than
+throwing) when it loses that race, so one table closing under it doesn't abort the whole sweep.
+It can read a query inside its transaction because `firebase-admin` allows that and the Web SDK
+does not — the one deliberate divergence between the two implementations.
+
 Known exceptions to the shape above — don't read them as the pattern:
 
-- `endGame()` is **not transactional at all**: it does `getDoc`/`getDocs` and then commits a
-  `writeBatch`. Its `state === "SUMMARY"` guard rejects a *sequential* re-end (the case that used to
-  silently double every player's `stats.sessionsPlayed`), but it does **not** close the concurrent
-  race: two clients that both read before either commits both see `IN_GAME`, both pass the guard,
-  and both increment `stats.sessionsPlayed`/`stats.timePlayedSeconds`. Making that safe needs the
-  read and the write in one transaction, not a stronger guard. `scripts/end-stale-tables.mjs`
-  mirrors the same read-then-batch shape, so the race exists server-side too.
 - `endGame()` and `confirmWinners()` call `getDocs(playersRef)` with **no `orderBy`**, so their
   `playerRefs` are *not* in seat order. Don't index them positionally.
 

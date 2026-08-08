@@ -10,6 +10,7 @@
 // Auth: expects GOOGLE_APPLICATION_CREDENTIALS to point at a service-account
 // JSON key with Firestore access (roles/datastore.user is sufficient).
 
+import { pathToFileURL } from "node:url";
 import { initializeApp, applicationDefault, cert } from "firebase-admin/app";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
 
@@ -33,32 +34,73 @@ function toMillis(value) {
   return null;
 }
 
-async function endStaleTable(db, tableSnap) {
+// Transactional for the same reason the client endGame() is: the outer query
+// selects IN_GAME tables, but the host can end one between that query and this
+// write. Read-then-batch let both paths read the pre-end state and both increment
+// stats.sessionsPlayed / stats.timePlayedSeconds. Re-reading the table inside the
+// transaction makes the read guarded — a concurrent commit forces a retry, and the
+// retry sees SUMMARY and skips.
+//
+// Returns the outcome so main() can log it without aborting the whole sweep: a
+// table someone else just closed is an expected race, not a failure.
+export async function endStaleTable(db, tableSnap) {
   const tableId = tableSnap.id;
-  const tableData = tableSnap.data();
+  const tableRef = db.collection("tables").doc(tableId);
+  let outcome;
+  let playerCount = 0;
 
-  const playersSnap = await db.collection("tables").doc(tableId).collection("players").get();
-  const userSnaps = {};
+  await db.runTransaction(async (t) => {
+    // Reset per attempt — the transaction body re-runs on contention, so nothing
+    // in here may accumulate or log; both are done once, by the caller, after it
+    // has actually committed.
+    outcome = "ended";
+    playerCount = 0;
 
-  const playersData = await Promise.all(
-    playersSnap.docs.map(async (d) => {
+    // ===== READS =====
+    const freshTable = await t.get(tableRef);
+    if (!freshTable.exists) {
+      outcome = "vanished";
+      return;
+    }
+    const tableData = freshTable.data();
+
+    // The state we selected on may no longer hold.
+    if (tableData.state !== "IN_GAME") {
+      outcome = "already-ended";
+      return;
+    }
+
+    // Unlike the Web SDK, firebase-admin can read a query inside a transaction, so
+    // the player set is read under the same guard rather than fetched beforehand.
+    const playersSnap = await t.get(tableRef.collection("players"));
+
+    const userIds = [
+      ...new Set(playersSnap.docs.map((d) => d.data().userId).filter(Boolean))
+    ];
+    const userSnaps = {};
+    if (userIds.length > 0) {
+      const snaps = await Promise.all(
+        userIds.map((id) => t.get(db.collection("users").doc(id)))
+      );
+      for (const s of snaps) {
+        if (s.exists) userSnaps[s.id] = s.data();
+      }
+    }
+
+    // ===== COMPUTE =====
+    const initialStack = Number(tableData.initialStack) || 0;
+
+    const playersData = playersSnap.docs.map((d) => {
       const p = d.data();
       const finalStack = Number(p.stack) || 0;
-      const initialStack = Number(tableData.initialStack) || 0;
       const totalBuyIn = Number(p.totalBuyIn) || initialStack;
 
-      const userSnap = await db.collection("users").doc(p.userId).get();
-      if (userSnap.exists) {
-        userSnaps[p.userId] = userSnap.data();
-      }
-
-      // Table is still IN_GAME at sweep time by construction, same as the
-      // `tableData.state === "IN_GAME"` check in the client endGame().
+      // Table is still IN_GAME here by the guard above, same as the client's
+      // `wasInGame` check in endGame().
       let elapsedSeconds = 0;
       if (p.satAt) {
         elapsedSeconds = Math.floor((Date.now() - p.satAt) / 1000);
       }
-      const sessionTimeSeated = (p.accumulatedTime || 0) + elapsedSeconds;
 
       return {
         ref: d.ref,
@@ -66,45 +108,52 @@ async function endStaleTable(db, tableSnap) {
         startingStack: initialStack,
         finalStack,
         netProfit: finalStack - totalBuyIn,
-        sessionTimeSeated
+        sessionTimeSeated: (p.accumulatedTime || 0) + elapsedSeconds
       };
-    })
-  );
+    });
 
-  const playerIds = playersData.map((p) => p.userId);
+    const playerIds = playersData.map((p) => p.userId);
+    playerCount = playerIds.length;
 
-  if (DRY_RUN) {
-    console.log(`[dry-run] Would end table ${tableId} (${playerIds.length} players)`);
-    return;
-  }
+    if (DRY_RUN) {
+      outcome = "dry-run";
+      return; // no writes — the transaction commits empty
+    }
 
-  const batch = db.batch();
+    // ===== WRITES =====
+    t.update(tableRef, {
+      state: "SUMMARY",
+      endedAt: FieldValue.serverTimestamp(),
+      endedByAutoSweep: true,
+      playerIds,
+      players: playersData.map(({ ref, ...rest }) => rest)
+    });
 
-  batch.update(db.collection("tables").doc(tableId), {
-    state: "SUMMARY",
-    endedAt: FieldValue.serverTimestamp(),
-    endedByAutoSweep: true,
-    playerIds,
-    players: playersData.map(({ ref, ...rest }) => rest)
+    for (const p of playersData) {
+      if (userSnaps[p.userId]) {
+        const currentStats = userSnaps[p.userId].stats || {};
+        const prevSeconds = currentStats.timePlayedSeconds || 0;
+        t.update(db.collection("users").doc(p.userId), {
+          "stats.sessionsPlayed": (currentStats.sessionsPlayed || 0) + 1,
+          "stats.timePlayedSeconds": prevSeconds + (p.sessionTimeSeated || 0)
+        });
+      }
+    }
+
+    for (const p of playersData) {
+      t.update(p.ref, { satAt: null, accumulatedTime: 0 });
+    }
   });
 
-  for (const p of playersData) {
-    if (userSnaps[p.userId]) {
-      const currentStats = userSnaps[p.userId].stats || {};
-      const prevSeconds = currentStats.timePlayedSeconds || 0;
-      batch.update(db.collection("users").doc(p.userId), {
-        "stats.sessionsPlayed": (currentStats.sessionsPlayed || 0) + 1,
-        "stats.timePlayedSeconds": prevSeconds + (p.sessionTimeSeated || 0)
-      });
-    }
+  if (outcome === "ended") {
+    console.log(`Ended stale table ${tableId} (${playerCount} players, idle since last hand)`);
+  } else if (outcome === "dry-run") {
+    console.log(`[dry-run] Would end table ${tableId} (${playerCount} players)`);
+  } else {
+    console.log(`Skipped table ${tableId}: ${outcome} before the sweep could close it`);
   }
 
-  for (const p of playersData) {
-    batch.update(p.ref, { satAt: null, accumulatedTime: 0 });
-  }
-
-  await batch.commit();
-  console.log(`Ended stale table ${tableId} (${playerIds.length} players, idle since last hand)`);
+  return outcome;
 }
 
 async function main() {
@@ -129,17 +178,25 @@ async function main() {
 
     const idleMs = now - referenceMs;
     if (idleMs >= STALE_THRESHOLD_MS) {
-      await endStaleTable(db, tableSnap);
-      endedCount++;
+      const outcome = await endStaleTable(db, tableSnap);
+      if (outcome === "ended") endedCount++;
     }
   }
 
   console.log(`Done. Ended ${endedCount} stale table(s).`);
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch((err) => {
-    console.error("Sweep failed:", err);
-    process.exit(1);
-  });
+// Only sweep when invoked as a script. Importing this module (e.g. to exercise
+// endStaleTable against a fake db — there is no Firestore emulator configured, and
+// the service-account key exists only as a CI secret) must not hit the real project.
+const invokedDirectly =
+  process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (invokedDirectly) {
+  main()
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error("Sweep failed:", err);
+      process.exit(1);
+    });
+}
