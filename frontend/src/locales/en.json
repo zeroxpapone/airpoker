@@ -211,6 +211,7 @@
     "virtualFlop": "Dealing the Flop...",
     "virtualTurn": "Dealing the Turn...",
     "virtualRiver": "Dealing the River...",
+    "reconnecting": "Reconnecting...",
     "joinTableTitle": "Join Table",
     "joinBtn": "Join"
   },

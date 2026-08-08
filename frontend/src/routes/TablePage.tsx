@@ -11,7 +11,9 @@ import {
   updateDoc,
   serverTimestamp,
   where,
-  setDoc
+  setDoc,
+  disableNetwork,
+  enableNetwork
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../hooks/useAuth";
@@ -199,6 +201,14 @@ export default function TablePage() {
   const [currentHand, setCurrentHand] = useState<ExtendedHandData | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  // Real-time sync status
+  const [isTableStale, setIsTableStale] = useState(false);
+  const [isPlayersStale, setIsPlayersStale] = useState(false);
+  const [isHandStale, setIsHandStale] = useState(false);
+  const tableStaleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const playersStaleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handStaleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isReconnecting, setIsReconnecting] = useState(false);
 
   // Join modal state (when not seated)
   const [showJoinModal, setShowJoinModal] = useState(false);
@@ -439,6 +449,19 @@ export default function TablePage() {
     const unsubTable = onSnapshot(
       tableRef,
       (snap) => {
+        // Clear stale flag and timer when we get fresh data
+        if (isTableStale) {
+          setIsTableStale(false);
+          if (tableStaleTimerRef.current) {
+            clearTimeout(tableStaleTimerRef.current);
+            tableStaleTimerRef.current = null;
+          }
+          // If we were reconnecting, check if we're back online
+          if (isReconnecting && !snap.metadata.fromCache) {
+            setIsReconnecting(false);
+          }
+        }
+
         if (!snap.exists()) {
           setNotFound(true);
           setLoading(false);
@@ -465,6 +488,26 @@ export default function TablePage() {
         });
 
         setLoading(false);
+
+        // Set stale timer if data is from cache
+        if (snap.metadata.fromCache && !isTableStale) {
+          setIsTableStale(true);
+          tableStaleTimerRef.current = setTimeout(() => {
+            // If still stale after 5 seconds, attempt reconnection
+            if (isTableStale) {
+              setIsReconnecting(true);
+              try {
+                disableNetwork(db);
+                setTimeout(() => {
+                  enableNetwork(db);
+                }, 1000);
+              } catch (e) {
+                console.warn("Network toggle failed:", e);
+                setIsReconnecting(false);
+              }
+            }
+          }, 5000);
+        }
       },
       (err) => {
         console.error("Errore nel listener del tavolo:", err);
@@ -483,6 +526,19 @@ export default function TablePage() {
     const unsubPlayers = onSnapshot(
       q,
       (snap) => {
+        // Clear stale flag and timer when we get fresh data
+        if (isPlayersStale) {
+          setIsPlayersStale(false);
+          if (playersStaleTimerRef.current) {
+            clearTimeout(playersStaleTimerRef.current);
+            playersStaleTimerRef.current = null;
+          }
+          // If we were reconnecting, check if we're back online
+          if (isReconnecting && !snap.metadata.fromCache) {
+            setIsReconnecting(false);
+          }
+        }
+
         const list: PlayerData[] = [];
         const activeUids: string[] = [];
 
@@ -521,7 +577,7 @@ export default function TablePage() {
                 const uData = userSnap.data();
                 setUserProfiles((prev) => ({
                   ...prev,
-                  [uid]: { 
+                  [uid]: {
                     username: uData.username || uData.displayName || "Giocatore",
                     photoURL: uData.photoURL || undefined
                   }
@@ -537,7 +593,7 @@ export default function TablePage() {
             });
           }
         });
-        
+
         // A player who has permanently quit still has a document here (so the final
         // recap and seat-index math stay correct), but they shouldn't count as
         // "currently in this game" for the home page's "return to your table" banner.
@@ -551,6 +607,26 @@ export default function TablePage() {
 
         setPlayers(list);
         setPlayersLoaded(true);
+
+        // Set stale timer if data is from cache
+        if (snap.metadata.fromCache && !isPlayersStale) {
+          setIsPlayersStale(true);
+          playersStaleTimerRef.current = setTimeout(() => {
+            // If still stale after 5 seconds, attempt reconnection
+            if (isPlayersStale) {
+              setIsReconnecting(true);
+              try {
+                disableNetwork(db);
+                setTimeout(() => {
+                  enableNetwork(db);
+                }, 1000);
+              } catch (e) {
+                console.warn("Network toggle failed:", e);
+                setIsReconnecting(false);
+              }
+            }
+          }, 5000);
+        }
       },
       (err) => {
         console.error("Errore nel listener dei giocatori:", err);
@@ -632,6 +708,19 @@ export default function TablePage() {
     const unsub = onSnapshot(
       handRef,
       (snap) => {
+        // Clear stale flag and timer when we get fresh data
+        if (isHandStale) {
+          setIsHandStale(false);
+          if (handStaleTimerRef.current) {
+            clearTimeout(handStaleTimerRef.current);
+            handStaleTimerRef.current = null;
+          }
+          // If we were reconnecting, check if we're back online
+          if (isReconnecting && !snap.metadata.fromCache) {
+            setIsReconnecting(false);
+          }
+        }
+
         if (!snap.exists()) {
           setCurrentHand(null);
           return;
@@ -664,6 +753,26 @@ export default function TablePage() {
           revealedPlayers: d.revealedPlayers || {}
         };
         setCurrentHand(hand);
+
+        // Set stale timer if data is from cache
+        if (snap.metadata.fromCache && !isHandStale) {
+          setIsHandStale(true);
+          handStaleTimerRef.current = setTimeout(() => {
+            // If still stale after 5 seconds, attempt reconnection
+            if (isHandStale) {
+              setIsReconnecting(true);
+              try {
+                disableNetwork(db);
+                setTimeout(() => {
+                  enableNetwork(db);
+                }, 1000);
+              } catch (e) {
+                console.warn("Network toggle failed:", e);
+                setIsReconnecting(false);
+              }
+            }
+          }, 5000);
+        }
       },
       (err) => {
         console.error("Errore nel listener della mano:", err);
@@ -1000,6 +1109,15 @@ export default function TablePage() {
             <p style={descStyle}>Caricamento dei dati del tavolo da gioco...</p>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  // Reconnecting banner
+  if (isReconnecting) {
+    return (
+      <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: "3rem", background: "rgba(255, 193, 7, 0.9)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000 }}>
+        <span style={{ color: "#000", fontWeight: 600 }}>{t("table.reconnecting") || "Reconnessione in corso..."}</span>
       </div>
     );
   }
