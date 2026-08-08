@@ -1170,89 +1170,114 @@ export async function forceFoldPlayer(
   });
 }
 
+/**
+ * Chiude la partita e scrive il recap sul documento del tavolo.
+ *
+ * Transazionale, e non solo per abitudine: lo `state === "SUMMARY"` da solo non
+ * bastava. Con il vecchio read-then-writeBatch due client che chiudevano lo stesso
+ * tavolo leggevano entrambi IN_GAME prima che uno dei due committasse, passavano
+ * entrambi il guard e incrementavano entrambi stats.sessionsPlayed e
+ * stats.timePlayedSeconds. Dentro runTransaction la lettura del tavolo è
+ * sorvegliata: se un altro client committa nel frattempo la transazione riparte,
+ * la seconda volta legge SUMMARY ed esce senza scrivere.
+ *
+ * `scripts/end-stale-tables.mjs` duplica questa logica lato server e ha la stessa
+ * corsa: è stato reso transazionale insieme a questo. Cambiando uno, cambiare l'altro.
+ */
 export async function endGame(tableId: string, user: User) {
   const tableRef = doc(db, "tables", tableId);
-  const tableSnap = await getDoc(tableRef);
-  if (!tableSnap.exists()) throw new Error("error.tableNotFound");
-  const tableData = tableSnap.data() as any;
 
-  if (tableData.hostId !== user.uid) {
-    throw new Error("error.onlyHost");
-  }
-
-  // Senza questo guard, ri-terminare un tavolo già in SUMMARY ri-incrementa
-  // stats.sessionsPlayed e stats.timePlayedSeconds di ogni giocatore.
-  if (tableData.state === "SUMMARY") {
-    throw new Error("error.gameAlreadyEnded");
-  }
-
+  // Fuori dalla transazione: le transazioni non possono eseguire query, quindi questa
+  // serve solo a sapere QUALI player doc esistono. I valori vengono riletti dentro.
   const playersSnap = await getDocs(collection(db, "tables", tableId, "players"));
-  const userSnaps: Record<string, any> = {};
+  const playerRefs = playersSnap.docs.map((d) => d.ref);
 
-  const playersData = await Promise.all(playersSnap.docs.map(async (d) => {
-    const p = d.data();
-    const finalStack = Number(p.stack) || 0;
+  await runTransaction(db, async (transaction) => {
+    // ===== LETTURA =====
+    const tableSnap = await transaction.get(tableRef);
+    if (!tableSnap.exists()) throw new Error("error.tableNotFound");
+    const tableData = tableSnap.data() as any;
+
+    if (tableData.hostId !== user.uid) {
+      throw new Error("error.onlyHost");
+    }
+
+    // Rivalutato a ogni retry: è questo, unito alla lettura sorvegliata del tavolo,
+    // a rendere la chiusura idempotente sotto concorrenza.
+    if (tableData.state === "SUMMARY") {
+      throw new Error("error.gameAlreadyEnded");
+    }
+
+    const playerSnaps = await Promise.all(playerRefs.map((r) => transaction.get(r)));
+    const livePlayers = playerSnaps.filter((s) => s.exists());
+
+    // Le stats si leggono qui, prima di qualsiasi scrittura. Dedup per userId: due
+    // player doc possono riferirsi allo stesso utente (collisione di seatIndex dopo
+    // leaveTable + joinTable), e rileggerlo due volte non aggiungerebbe nulla.
+    const userIds = Array.from(
+      new Set(livePlayers.map((s) => s.data()!.userId).filter(Boolean))
+    );
+    const userSnapList = await Promise.all(
+      userIds.map((id) => transaction.get(doc(db, "users", id)))
+    );
+    const userSnaps = new Map(userSnapList.map((s) => [s.id, s]));
+
+    // ===== CALCOLO =====
     const initialStack = Number(tableData.initialStack) || 0;
-    const totalBuyIn = Number(p.totalBuyIn) || initialStack;
+    const wasInGame = tableData.state === "IN_GAME";
 
-    // Check if player is registered in users collection (still needed for stats update)
-    const userDocRef = doc(db, "users", p.userId);
-    const userSnap = await getDoc(userDocRef);
+    const playersData = livePlayers.map((s) => {
+      const p = s.data()!;
+      const finalStack = Number(p.stack) || 0;
+      const totalBuyIn = Number(p.totalBuyIn) || initialStack;
 
-    if (userSnap.exists()) {
-      userSnaps[p.userId] = userSnap.data();
+      let elapsedSeconds = 0;
+      if (wasInGame && p.satAt) {
+        elapsedSeconds = Math.floor((Date.now() - p.satAt) / 1000);
+      }
+
+      return {
+        userId: p.userId,
+        startingStack: initialStack,
+        finalStack: finalStack,
+        netProfit: finalStack - totalBuyIn,
+        sessionTimeSeated: (p.accumulatedTime || 0) + elapsedSeconds
+      };
+    });
+
+    const playerIds = playersData.map((p) => p.userId);
+
+    // ===== SCRITTURA =====
+    // Il recap sta sul documento del tavolo — non esiste una collection di storico.
+    transaction.update(tableRef, {
+      state: "SUMMARY",
+      endedAt: serverTimestamp(),
+      playerIds,
+      players: playersData
+    });
+
+    // Aggiorna sessionsPlayed e timePlayedSeconds per ciascun utente registrato
+    for (const p of playersData) {
+      const userSnap = userSnaps.get(p.userId);
+      if (userSnap && userSnap.exists()) {
+        const currentStats = userSnap.data().stats || {};
+        transaction.update(doc(db, "users", p.userId), {
+          "stats.sessionsPlayed": (currentStats.sessionsPlayed || 0) + 1,
+          "stats.timePlayedSeconds":
+            (currentStats.timePlayedSeconds || 0) + (p.sessionTimeSeated || 0)
+        });
+      }
     }
 
-    // Calculate sitting time for this game session
-    let elapsedSeconds = 0;
-    if (tableData.state === "IN_GAME" && p.satAt) {
-      elapsedSeconds = Math.floor((Date.now() - p.satAt) / 1000);
-    }
-    const sessionTimeSeated = (p.accumulatedTime || 0) + elapsedSeconds;
-
-    return {
-      userId: p.userId,
-      startingStack: initialStack,
-      finalStack: finalStack,
-      netProfit: finalStack - totalBuyIn,
-      sessionTimeSeated
-    };
-  }));
-
-  const playerIds = playersData.map((p) => p.userId);
-
-  const batch = writeBatch(db);
-
-  // Write summary data directly on the table document — no separate table_history collection
-  batch.update(tableRef, {
-    state: "SUMMARY",
-    endedAt: serverTimestamp(),
-    playerIds,
-    players: playersData
-  });
-
-  // Aggiorna sessionsPlayed e timePlayedSeconds per ciascun utente registrato
-  for (const p of playersData) {
-    if (userSnaps[p.userId]) {
-      const userDocRef = doc(db, "users", p.userId);
-      const currentStats = userSnaps[p.userId].stats || {};
-      const prevSeconds = currentStats.timePlayedSeconds || 0;
-      batch.update(userDocRef, {
-        "stats.sessionsPlayed": (currentStats.sessionsPlayed || 0) + 1,
-        "stats.timePlayedSeconds": prevSeconds + (p.sessionTimeSeated || 0)
+    // Resetta i contatori temporanei sui player document del tavolo. Solo quelli
+    // ancora esistenti: transaction.update() su un doc cancellato fa fallire tutto.
+    for (const s of livePlayers) {
+      transaction.update(s.ref, {
+        satAt: null,
+        accumulatedTime: 0
       });
     }
-  }
-
-  // Resetta i contatori temporanei sui player document del tavolo
-  playersSnap.docs.forEach((docSnap) => {
-    batch.update(docSnap.ref, {
-      satAt: null,
-      accumulatedTime: 0
-    });
   });
-
-  await batch.commit();
 }
 
 /**
