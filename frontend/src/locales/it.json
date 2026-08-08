@@ -213,6 +213,7 @@
     "virtualFlop": "Girando il Flop...",
     "virtualTurn": "Girando il Turn...",
     "virtualRiver": "Girando il River...",
+    "reconnecting": "Riconnessione in corso...",
     "joinTableTitle": "Unisciti al Tavolo",
     "joinBtn": "Unisciti"
   },
