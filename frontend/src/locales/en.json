@@ -145,6 +145,8 @@
     "invested": "Invested",
     "finalStack": "Final",
     "backHome": "Back to home",
+    "summaryNotParticipantTitle": "Game already finished",
+    "summaryNotParticipantDesc": "This table's game has ended. Only the players who took part can view the recap.",
     "lobbyPlayersCount": "Players: {{count}}",
     "leaveLobby": "Leave table",
     "blindsShort": "Blinds:",
@@ -424,6 +426,7 @@
     "styleTAGDesc": "Plays few hands in a highly aggressive manner (Tight-Aggressive).",
     "styleLAGDesc": "Plays many hands in a highly aggressive manner (Loose-Aggressive).",
     "styleROCKDesc": "Plays very few hands in a passive manner (Tight-Passive).",
+    "noStyleDataDesc": "Play a few hands to see your playing style.",
     "styleFISHDesc": "Plays too many hands in a passive manner (Loose-Passive)."
   }
 }

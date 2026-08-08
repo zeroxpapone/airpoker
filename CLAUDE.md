@@ -20,7 +20,7 @@ npm run lint       # eslint flat config (typescript-eslint + react-hooks + react
 into a Firebase init error.
 
 `npx tsc -b` is the real gate and passes clean; **`npm run lint` does not** — `main` currently
-carries ~134 pre-existing errors (122 of them `@typescript-eslint/no-explicit-any`, since Firestore
+carries 133 pre-existing errors (121 of them `@typescript-eslint/no-explicit-any`, since Firestore
 snapshot data is read as `any` throughout). Nothing in CI runs it. Compare against the baseline
 rather than treating a non-zero exit as your own regression.
 
@@ -202,6 +202,14 @@ itself is computed in `components/AdvancedStats.tsx`. It is divided by `vpipElig
 deliberately, **not** by `handsPlayed`/`stagePreflopCount`, because those accumulated before VPIP
 tracking existed and would skew the ratio for months. Keep new ratio metrics on their own
 matched-baseline denominators, and increment them where the event actually happens.
+
+**Never substitute a simulated value for a missing one.** `AdvancedStats.tsx` used to fall back to
+numbers derived from `winRate` whenever a counter was still zero, which on a fresh account evaluated
+to the constants VPIP 22% / aggression 35% — and those two then classified the player as "LAG" and
+plotted a marker on the radar. Playtime had the same problem (`sessionsPlayed * 0.8` rendered as
+measured hours). A metric with no data now renders as `—` and the style verdict is withheld until
+*both* axes are real, because a fabricated number is indistinguishable from a measured one once it
+reaches the screen.
 
 ### Auth
 

@@ -145,6 +145,8 @@
     "invested": "Investito",
     "finalStack": "Finale",
     "backHome": "Torna alla home",
+    "summaryNotParticipantTitle": "Partita già terminata",
+    "summaryNotParticipantDesc": "La partita di questo tavolo è finita. Solo i giocatori che vi hanno partecipato possono vederne il riepilogo.",
     "lobbyPlayersCount": "Giocatori: {{count}}",
     "leaveLobby": "Esci dal tavolo",
     "blindsShort": "Bui:",
@@ -424,6 +426,7 @@
     "styleTAGDesc": "Gioca poche mani in modo molto aggressivo (Tight-Aggressive).",
     "styleLAGDesc": "Gioca molte mani in modo molto aggressivo (Loose-Aggressive).",
     "styleROCKDesc": "Gioca pochissime mani in modo passivo (Tight-Passive).",
+    "noStyleDataDesc": "Gioca qualche mano per scoprire il tuo stile di gioco.",
     "styleFISHDesc": "Gioca troppe mani in modo passivo (Loose-Passive)."
   }
 }

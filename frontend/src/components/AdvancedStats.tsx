@@ -35,56 +35,64 @@ export default function AdvancedStats({ stats }: AdvancedStatsProps) {
 
   const totalHands = stats.handsPlayed || 0;
   const winRate = totalHands > 0 ? Math.round((stats.handsWon / totalHands) * 100) : 0;
-  
-  // VPIP (Tight vs Loose) simulation/calculation
-  const sessions = stats.sessionsPlayed || 1;
-  const estimatedVpip = Math.max(12, Math.min(75, Math.round(22 + (winRate > 0 ? (winRate - 30) * 0.25 : 0))));
+
+  // Every metric below is shown only when its own counter has actually recorded
+  // something. These used to fall back to a "simulated" value derived from winRate,
+  // which for an account that had never played evaluated to a constant — VPIP 22%,
+  // aggression 35% — and those two constants then classified the player as "LAG" on
+  // the radar. A profile that has never played a hand must read as empty, not as an
+  // average player: invented numbers here are indistinguishable from measured ones.
+  const NO_DATA = "—";
+
   // vpipEligibleHands (not handsPlayed/stagePreflopCount) is the right denominator
   // and "do we have real data" signal. handsPlayed/stagePreflopCount have been
   // accumulating since long before vpipCount tracking was fixed, so dividing
   // vpipCount by either of them would produce an artificially low ratio for
   // months until enough new hands dilute out the pre-fix history.
   // vpipEligibleHands started at the same zero baseline as vpipCount, so their
-  // ratio is meaningful immediately, and a genuine 0% VPIP player isn't wrongly
-  // shown a simulated value just because vpipCount itself happens to be 0.
-  const hasRealVpipData = (stats.vpipEligibleHands || 0) > 0;
-  const vpip = hasRealVpipData
+  // ratio is meaningful immediately, and a genuine 0% VPIP player is a real 0%.
+  const hasVpipData = (stats.vpipEligibleHands || 0) > 0;
+  const vpip = hasVpipData
     ? Math.round(((stats.vpipCount || 0) / stats.vpipEligibleHands!) * 100)
-    : estimatedVpip;
+    : null;
 
   // Aggression Frequency (Aggressive vs Passive)
   const totalActions = stats.totalActions || 0;
   const aggActions = stats.aggressiveActions || 0;
-  const aggFreq = totalActions > 0
-    ? Math.round((aggActions / totalActions) * 100)
-    : Math.max(10, Math.min(85, Math.round(35 + (winRate > 0 ? (winRate - 30) * 0.35 : 0))));
+  const hasAggData = totalActions > 0;
+  const aggFreq = hasAggData ? Math.round((aggActions / totalActions) * 100) : null;
 
-  // Determine active profile type
-  const isLoose = vpip >= 22;
-  const isAggressive = aggFreq >= 35;
+  // The style verdict needs BOTH axes — one alone places the marker on a guess.
+  const hasStyleData = vpip !== null && aggFreq !== null;
 
-  const playerType = isLoose 
-    ? (isAggressive ? "LAG" : "FISH") 
-    : (isAggressive ? "TAG" : "ROCK");
+  const isLoose = (vpip ?? 0) >= 22;
+  const isAggressive = (aggFreq ?? 0) >= 35;
 
-  const playerTypeDesc = isLoose 
-    ? (isAggressive ? t("stats.styleLAGDesc") : t("stats.styleFISHDesc")) 
-    : (isAggressive ? t("stats.styleTAGDesc") : t("stats.styleROCKDesc"));
+  const playerType = hasStyleData
+    ? (isLoose ? (isAggressive ? "LAG" : "FISH") : (isAggressive ? "TAG" : "ROCK"))
+    : null;
+
+  const playerTypeDesc = hasStyleData
+    ? (isLoose
+        ? (isAggressive ? t("stats.styleLAGDesc") : t("stats.styleFISHDesc"))
+        : (isAggressive ? t("stats.styleTAGDesc") : t("stats.styleROCKDesc")))
+    : t("stats.noStyleDataDesc");
 
   // Calculate Marker Coordinate in 200x200 SVG Viewport
   // Center is (100, 100)
   // X axis: Tight (left, X=30) to Loose (right, X=170) -> map VPIP 10% to 50%
-  const xOffset = ((vpip - 22) / 20) * 55;
+  const xOffset = (((vpip ?? 22) - 22) / 20) * 55;
   const markerX = Math.max(30, Math.min(170, 100 + xOffset));
 
   // Y axis: Aggressive (top, Y=30) to Passive (bottom, Y=170) -> map aggFreq 15% to 55%
-  const yOffset = ((aggFreq - 35) / 20) * 55;
+  const yOffset = (((aggFreq ?? 35) - 35) / 20) * 55;
   const markerY = Math.max(30, Math.min(170, 100 - yOffset));
 
-  // Calculate actual time in hours, falling back on session-based estimate if not populated yet
+  // Real seconds or nothing. The old fallback multiplied sessionsPlayed by an
+  // invented 0.8h-per-session and rendered the product as measured playtime.
   const timePlayedHours = stats.timePlayedSeconds !== undefined
     ? (stats.timePlayedSeconds / 3600).toFixed(1)
-    : (sessions * 0.8).toFixed(1);
+    : null;
 
   return (
     <div className="stats-detailed-container" style={{ display: "flex", flexDirection: "column", gap: "1rem", marginTop: "1rem", width: "100%" }} id="advanced-stats-root">
@@ -95,7 +103,7 @@ export default function AdvancedStats({ stats }: AdvancedStatsProps) {
           {t("stats.playerStyle") || "Stile di Gioco"}
         </span>
         <h2 className="radar-chart-title" style={{ marginTop: "0.2rem", fontSize: "1.8rem", fontWeight: 800 }}>
-          {playerType}
+          {playerType ?? NO_DATA}
         </h2>
         <p className="radar-chart-subtitle" style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "0.3rem", lineHeight: 1.4 }}>
           {playerTypeDesc}
@@ -134,23 +142,28 @@ export default function AdvancedStats({ stats }: AdvancedStatsProps) {
               {t("stats.axisTight") || "TIGHT"}
             </text>
 
-            {/* Dynamic Player Shape */}
-            <polygon 
-              points={`100,${Math.min(100, markerY)} ${Math.max(100, markerX)},100 100,${Math.max(100, markerY)} ${Math.min(100, markerX)},100`} 
-              fill="rgba(59, 130, 246, 0.15)" 
-              stroke="var(--color-primary)" 
-              strokeWidth="1.5" 
-            />
+            {/* Dynamic Player Shape — only once both axes are measured. Plotting a
+                marker without data would put a confident dot on a guessed position. */}
+            {hasStyleData && (
+              <>
+                <polygon
+                  points={`100,${Math.min(100, markerY)} ${Math.max(100, markerX)},100 100,${Math.max(100, markerY)} ${Math.min(100, markerX)},100`}
+                  fill="rgba(59, 130, 246, 0.15)"
+                  stroke="var(--color-primary)"
+                  strokeWidth="1.5"
+                />
 
-            {/* Active Position Indicator */}
-            <defs>
-              <radialGradient id="markerGlow" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stopColor="var(--color-primary)" stopOpacity="1" />
-                <stop offset="100%" stopColor="var(--color-primary)" stopOpacity="0" />
-              </radialGradient>
-            </defs>
-            <circle cx={markerX} cy={markerY} r="10" fill="url(#markerGlow)" />
-            <circle cx={markerX} cy={markerY} r="4" fill="#fff" stroke="var(--color-primary)" strokeWidth="2" />
+                {/* Active Position Indicator */}
+                <defs>
+                  <radialGradient id="markerGlow" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor="var(--color-primary)" stopOpacity="1" />
+                    <stop offset="100%" stopColor="var(--color-primary)" stopOpacity="0" />
+                  </radialGradient>
+                </defs>
+                <circle cx={markerX} cy={markerY} r="10" fill="url(#markerGlow)" />
+                <circle cx={markerX} cy={markerY} r="4" fill="#fff" stroke="var(--color-primary)" strokeWidth="2" />
+              </>
+            )}
           </svg>
         </div>
       </div>
@@ -166,7 +179,9 @@ export default function AdvancedStats({ stats }: AdvancedStatsProps) {
             </div>
             <span className="stats-detailed-label">{t("stats.aggressionFreq") || "Aggression freq."}</span>
           </div>
-          <span className="stats-detailed-value" style={{ fontWeight: 800 }}>{aggFreq}%</span>
+          <span className="stats-detailed-value" style={{ fontWeight: 800 }}>
+            {aggFreq === null ? NO_DATA : `${aggFreq}%`}
+          </span>
         </div>
 
         {/* Time Played */}
@@ -177,7 +192,9 @@ export default function AdvancedStats({ stats }: AdvancedStatsProps) {
             </div>
             <span className="stats-detailed-label">{t("stats.timePlayed") || "Tempo di gioco"}</span>
           </div>
-          <span className="stats-detailed-value" style={{ fontWeight: 800 }}>{timePlayedHours}h</span>
+          <span className="stats-detailed-value" style={{ fontWeight: 800 }}>
+            {timePlayedHours === null ? NO_DATA : `${timePlayedHours}h`}
+          </span>
         </div>
 
         {/* Street Frequencies */}

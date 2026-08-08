@@ -1033,6 +1033,30 @@ export default function TablePage() {
     ? players.find((p) => p.userId === myUid) || null
     : null;
 
+  // A finished table's recap lists every player's final stack and net profit, so it
+  // is only for the people who were actually at that table. Nothing else gated this:
+  // joinTable() refuses a SUMMARY table and auto-join skips one, but neither runs on
+  // this path — the friend-profile "join" button and any shared link navigate straight
+  // here, and presence saying location === "TABLE" does not mean the viewer ever played.
+  // playersLoaded is required so a genuine participant isn't bounced while the players
+  // subcollection is still on its first fetch.
+  if (inSummary && playersLoaded && !myPlayer) {
+    return (
+      <div style={fullScreenContainerStyle}>
+        <div className="glass-panel" style={panelContainerStyle}>
+          <div style={{ color: "#f59e0b" }}><ShieldAlert size={44} /></div>
+          <div>
+            <h3 style={titleStyle}>{t("table.summaryNotParticipantTitle")}</h3>
+            <p style={descStyle}>{t("table.summaryNotParticipantDesc")}</p>
+          </div>
+          <button onClick={() => navigate("/home")} className="poker-btn-primary" style={btnStyle}>
+            {t("table.backHome")}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
 
   const isMyTurn =
     inGame &&
