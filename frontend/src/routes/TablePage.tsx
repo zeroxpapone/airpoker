@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
 import { useTranslation } from "react-i18next";
@@ -157,6 +157,26 @@ interface ExtendedHandData extends HandData {
   revealedPlayers?: Record<string, boolean>;
 }
 
+// How long a listener may keep serving from cache before we treat the stream as
+// dead and force a resubscribe. Single source of truth — each listener used to
+// inline its own copy.
+const STALE_THRESHOLD_MS = 5000;
+// Pause between disableNetwork and enableNetwork, so the client actually tears
+// the old stream down instead of reusing it.
+const RECONNECT_BACKOFF_MS = 1000;
+// Upper bound on how long the "reconnecting" banner may stay up without a fresh
+// snapshot arriving to lift it.
+const RECONNECT_FAILSAFE_MS = 15000;
+
+// Module scope so it is referentially stable and can be used freely inside
+// useCallback/useEffect without widening any dependency array.
+function clearStaleTimer(timerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>) {
+  if (timerRef.current) {
+    clearTimeout(timerRef.current);
+    timerRef.current = null;
+  }
+}
+
 export default function TablePage() {
   useWakeLock();
   const { t } = useTranslation();
@@ -201,14 +221,87 @@ export default function TablePage() {
   const [currentHand, setCurrentHand] = useState<ExtendedHandData | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
-  // Real-time sync status
-  const [isTableStale, setIsTableStale] = useState(false);
-  const [isPlayersStale, setIsPlayersStale] = useState(false);
-  const [isHandStale, setIsHandStale] = useState(false);
+  // Real-time sync status. State drives the UI; refs mirror the same flag so
+  // setTimeout callbacks always read the *current* value rather than the value
+  // captured when the listener was set up — without the ref the reconnect
+  // branches below silently dead-code themselves.
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const isReconnectingRef = useRef(false);
   const tableStaleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const playersStaleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handStaleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [isReconnecting, setIsReconnecting] = useState(false);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectFailsafeRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Per-listener "are we currently cache-only" flags, read from setTimeout
+  // callbacks. They are intentionally ref-only: nothing in the UI distinguishes
+  // which listener stalled, only whether we're recovering overall.
+  const isTableStaleRef = useRef(false);
+  const isPlayersStaleRef = useRef(false);
+  const isHandStaleRef = useRef(false);
+
+  // Stable across renders: the listener effects below hold these for their
+  // whole lifetime, so an unstable identity would either resubscribe on every
+  // render or (worse) have to be omitted from the dependency array.
+  const setReconnectingFlag = useCallback((v: boolean) => {
+    isReconnectingRef.current = v;
+    setIsReconnecting(v);
+    // Recovery is over (either a fresh snapshot landed or the toggle failed):
+    // drop the failsafe so it can't clear a *later* reconnection attempt early.
+    if (!v) clearStaleTimer(reconnectFailsafeRef);
+  }, []);
+
+  // Force a clean Firestore resubscribe. Used by all three listeners once a
+  // stream has been cache-serving for too long. Both network calls return
+  // promises, so failures surface via .catch — a try/catch around them would
+  // never fire.
+  const attemptReconnect = useCallback(() => {
+    // All three listeners go cache-only together, so all three timers fire at
+    // roughly the same moment. Without this guard they'd interleave three
+    // disable/enable cycles and keep knocking the transport back down.
+    if (isReconnectingRef.current) return;
+    setReconnectingFlag(true);
+
+    // Reset every stale window. The toggle below is global, so all three
+    // listeners are being retried; clearing the flags lets the next cache-only
+    // snapshot arm a fresh grace period instead of the listeners latching
+    // stale forever after one unsuccessful attempt.
+    isTableStaleRef.current = false;
+    isPlayersStaleRef.current = false;
+    isHandStaleRef.current = false;
+    clearStaleTimer(tableStaleTimerRef);
+    clearStaleTimer(playersStaleTimerRef);
+    clearStaleTimer(handStaleTimerRef);
+
+    disableNetwork(db)
+      .then(() => {
+        reconnectTimerRef.current = setTimeout(() => {
+          enableNetwork(db).catch((e) => {
+            console.warn("enableNetwork failed:", e);
+            setReconnectingFlag(false);
+          });
+        }, RECONNECT_BACKOFF_MS);
+      })
+      .catch((e) => {
+        console.warn("disableNetwork failed:", e);
+        setReconnectingFlag(false);
+      });
+
+    // The banner is normally lifted by the first non-cache snapshot. If the
+    // network is genuinely down no such snapshot arrives, so drop it anyway
+    // rather than pinning it over the table indefinitely.
+    clearStaleTimer(reconnectFailsafeRef);
+    reconnectFailsafeRef.current = setTimeout(() => {
+      setReconnectingFlag(false);
+    }, RECONNECT_FAILSAFE_MS);
+  }, [setReconnectingFlag]);
+
+  // Clear any in-flight reconnection timers when the page unmounts.
+  useEffect(() => {
+    return () => {
+      clearStaleTimer(reconnectTimerRef);
+      clearStaleTimer(reconnectFailsafeRef);
+    };
+  }, []);
 
   // Join modal state (when not seated)
   const [showJoinModal, setShowJoinModal] = useState(false);
@@ -449,17 +542,13 @@ export default function TablePage() {
     const unsubTable = onSnapshot(
       tableRef,
       (snap) => {
-        // Clear stale flag and timer when we get fresh data
-        if (isTableStale) {
-          setIsTableStale(false);
-          if (tableStaleTimerRef.current) {
-            clearTimeout(tableStaleTimerRef.current);
-            tableStaleTimerRef.current = null;
-          }
-          // If we were reconnecting, check if we're back online
-          if (isReconnecting && !snap.metadata.fromCache) {
-            setIsReconnecting(false);
-          }
+        // Server-backed snapshot — the stream is alive. Keyed off the metadata
+        // rather than the stale flag: after a failed reconnect the flag is
+        // still set, and gating on it would strand the overlay.
+        if (!snap.metadata.fromCache) {
+          isTableStaleRef.current = false;
+          clearStaleTimer(tableStaleTimerRef);
+          if (isReconnectingRef.current) setReconnectingFlag(false);
         }
 
         if (!snap.exists()) {
@@ -489,24 +578,15 @@ export default function TablePage() {
 
         setLoading(false);
 
-        // Set stale timer if data is from cache
-        if (snap.metadata.fromCache && !isTableStale) {
-          setIsTableStale(true);
+        // Cache-served snapshot — start a grace window. If still cache-only when
+        // it fires, force a clean resubscribe.
+        if (snap.metadata.fromCache && !isTableStaleRef.current) {
+          isTableStaleRef.current = true;
           tableStaleTimerRef.current = setTimeout(() => {
-            // If still stale after 5 seconds, attempt reconnection
-            if (isTableStale) {
-              setIsReconnecting(true);
-              try {
-                disableNetwork(db);
-                setTimeout(() => {
-                  enableNetwork(db);
-                }, 1000);
-              } catch (e) {
-                console.warn("Network toggle failed:", e);
-                setIsReconnecting(false);
-              }
+            if (isTableStaleRef.current) {
+              attemptReconnect();
             }
-          }, 5000);
+          }, STALE_THRESHOLD_MS);
         }
       },
       (err) => {
@@ -526,17 +606,11 @@ export default function TablePage() {
     const unsubPlayers = onSnapshot(
       q,
       (snap) => {
-        // Clear stale flag and timer when we get fresh data
-        if (isPlayersStale) {
-          setIsPlayersStale(false);
-          if (playersStaleTimerRef.current) {
-            clearTimeout(playersStaleTimerRef.current);
-            playersStaleTimerRef.current = null;
-          }
-          // If we were reconnecting, check if we're back online
-          if (isReconnecting && !snap.metadata.fromCache) {
-            setIsReconnecting(false);
-          }
+        // Server-backed snapshot — see the note on the table listener above.
+        if (!snap.metadata.fromCache) {
+          isPlayersStaleRef.current = false;
+          clearStaleTimer(playersStaleTimerRef);
+          if (isReconnectingRef.current) setReconnectingFlag(false);
         }
 
         const list: PlayerData[] = [];
@@ -608,24 +682,15 @@ export default function TablePage() {
         setPlayers(list);
         setPlayersLoaded(true);
 
-        // Set stale timer if data is from cache
-        if (snap.metadata.fromCache && !isPlayersStale) {
-          setIsPlayersStale(true);
+        // Cache-served snapshot — start a grace window. If still cache-only when
+        // it fires, force a clean resubscribe.
+        if (snap.metadata.fromCache && !isPlayersStaleRef.current) {
+          isPlayersStaleRef.current = true;
           playersStaleTimerRef.current = setTimeout(() => {
-            // If still stale after 5 seconds, attempt reconnection
-            if (isPlayersStale) {
-              setIsReconnecting(true);
-              try {
-                disableNetwork(db);
-                setTimeout(() => {
-                  enableNetwork(db);
-                }, 1000);
-              } catch (e) {
-                console.warn("Network toggle failed:", e);
-                setIsReconnecting(false);
-              }
+            if (isPlayersStaleRef.current) {
+              attemptReconnect();
             }
-          }, 5000);
+          }, STALE_THRESHOLD_MS);
         }
       },
       (err) => {
@@ -639,10 +704,16 @@ export default function TablePage() {
     return () => {
       unsubTable();
       unsubPlayers();
+      // Clear pending stale timers so they don't fire against an unmounted
+      // component or race with the next effect run.
+      clearStaleTimer(tableStaleTimerRef);
+      clearStaleTimer(playersStaleTimerRef);
+      isTableStaleRef.current = false;
+      isPlayersStaleRef.current = false;
       // Clean up all active user profile listeners
       Object.values(unsubUserDocs).forEach((unsub) => unsub());
     };
-  }, [tableId, refreshKey]);
+  }, [tableId, refreshKey, attemptReconnect, setReconnectingFlag]);
 
   // Auto-join with password or show join modal for spectators
   const [searchParams] = useSearchParams();
@@ -708,17 +779,11 @@ export default function TablePage() {
     const unsub = onSnapshot(
       handRef,
       (snap) => {
-        // Clear stale flag and timer when we get fresh data
-        if (isHandStale) {
-          setIsHandStale(false);
-          if (handStaleTimerRef.current) {
-            clearTimeout(handStaleTimerRef.current);
-            handStaleTimerRef.current = null;
-          }
-          // If we were reconnecting, check if we're back online
-          if (isReconnecting && !snap.metadata.fromCache) {
-            setIsReconnecting(false);
-          }
+        // Server-backed snapshot — see the note on the table listener above.
+        if (!snap.metadata.fromCache) {
+          isHandStaleRef.current = false;
+          clearStaleTimer(handStaleTimerRef);
+          if (isReconnectingRef.current) setReconnectingFlag(false);
         }
 
         if (!snap.exists()) {
@@ -754,24 +819,15 @@ export default function TablePage() {
         };
         setCurrentHand(hand);
 
-        // Set stale timer if data is from cache
-        if (snap.metadata.fromCache && !isHandStale) {
-          setIsHandStale(true);
+        // Cache-served snapshot — start a grace window. If still cache-only when
+        // it fires, force a clean resubscribe.
+        if (snap.metadata.fromCache && !isHandStaleRef.current) {
+          isHandStaleRef.current = true;
           handStaleTimerRef.current = setTimeout(() => {
-            // If still stale after 5 seconds, attempt reconnection
-            if (isHandStale) {
-              setIsReconnecting(true);
-              try {
-                disableNetwork(db);
-                setTimeout(() => {
-                  enableNetwork(db);
-                }, 1000);
-              } catch (e) {
-                console.warn("Network toggle failed:", e);
-                setIsReconnecting(false);
-              }
+            if (isHandStaleRef.current) {
+              attemptReconnect();
             }
-          }, 5000);
+          }, STALE_THRESHOLD_MS);
         }
       },
       (err) => {
@@ -784,8 +840,10 @@ export default function TablePage() {
 
     return () => {
       unsub();
+      clearStaleTimer(handStaleTimerRef);
+      isHandStaleRef.current = false;
     };
-  }, [tableId, table?.currentHandId, refreshKey]);
+  }, [tableId, table?.currentHandId, refreshKey, attemptReconnect, setReconnectingFlag]);
 
   // Reset selezione vincitori quando cambia mano
   useEffect(() => {
@@ -1113,14 +1171,14 @@ export default function TablePage() {
     );
   }
 
-  // Reconnecting banner
-  if (isReconnecting) {
-    return (
-      <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: "3rem", background: "rgba(255, 193, 7, 0.9)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000 }}>
-        <span style={{ color: "#000", fontWeight: 600 }}>{t("table.reconnecting") || "Reconnessione in corso..."}</span>
-      </div>
-    );
-  }
+  // Reconnecting overlay is rendered inside the main fragment below so the
+  // table remains visible — the whole point of the indicator is to tell the
+  // player the screen may be stale while they continue to see it.
+  const reconnectingBanner = isReconnecting ? (
+    <div role="status" aria-live="polite" style={{ position: "fixed", top: 0, left: 0, right: 0, height: "2.75rem", background: "rgba(255, 193, 7, 0.92)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000, boxShadow: "0 2px 8px rgba(0,0,0,0.25)" }}>
+      <span style={{ color: "#000", fontWeight: 600 }}>{t("table.reconnecting") || "Riconnessione in corso..."}</span>
+    </div>
+  ) : null;
 
   if (notFound || !table) {
     return (
@@ -3751,6 +3809,7 @@ async function handleConfirmWinners(potId: string) {
           to { transform: scale(1); opacity: 1; }
         }
       `}</style>
+      {reconnectingBanner}
       {inLobby && renderLobby()}
       {inGame && renderGame()}
       {inSummary && renderSummary()}
