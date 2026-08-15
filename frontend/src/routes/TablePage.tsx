@@ -11,9 +11,7 @@ import {
   updateDoc,
   serverTimestamp,
   where,
-  setDoc,
-  disableNetwork,
-  enableNetwork
+  setDoc
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../hooks/useAuth";
@@ -56,6 +54,12 @@ interface TableData {
   levelStartedAt?: any;
   isVirtualCards?: boolean;
   gameStartedAt?: any;
+  // Written onto the table doc by endGame() as part of the SUMMARY recap (and by
+  // scripts/end-stale-tables.mjs, which mirrors it). Absent while the table is
+  // still LOBBY/IN_GAME. HomePage queries history off this with array-contains,
+  // and the SUMMARY privacy gate below uses it to decide participation without
+  // waiting on the players subcollection.
+  playerIds?: string[];
 }
 
 
@@ -161,9 +165,6 @@ interface ExtendedHandData extends HandData {
 // dead and force a resubscribe. Single source of truth — each listener used to
 // inline its own copy.
 const STALE_THRESHOLD_MS = 5000;
-// Pause between disableNetwork and enableNetwork, so the client actually tears
-// the old stream down instead of reusing it.
-const RECONNECT_BACKOFF_MS = 1000;
 // Upper bound on how long the "reconnecting" banner may stay up without a fresh
 // snapshot arriving to lift it.
 const RECONNECT_FAILSAFE_MS = 15000;
@@ -230,7 +231,6 @@ export default function TablePage() {
   const tableStaleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const playersStaleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handStaleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectFailsafeRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Per-listener "are we currently cache-only" flags, read from setTimeout
   // callbacks. They are intentionally ref-only: nothing in the UI distinguishes
@@ -251,20 +251,26 @@ export default function TablePage() {
   }, []);
 
   // Force a clean Firestore resubscribe. Used by all three listeners once a
-  // stream has been cache-serving for too long. Both network calls return
-  // promises, so failures surface via .catch — a try/catch around them would
-  // never fire.
+  // stream has been cache-serving for too long. Bumping refreshKey re-runs the
+  // each listener's effect with a fresh onSnapshot subscription — the same
+  // recovery that the visibility-change handler at the top of the file uses.
+  //
+  // This used to call disableNetwork(db)/enableNetwork(db) instead, which is
+  // global to the SDK and tears down every other open listener (HomePage's
+  // return-to-table banner, PlayerProfilePage's join-button state, the wake
+  // lock's presence heartbeat) and blocks in-flight writes for the duration.
+  // Local resubscription has the same effect on the table's three listeners
+  // without touching the rest of the client's transport.
   const attemptReconnect = useCallback(() => {
     // All three listeners go cache-only together, so all three timers fire at
     // roughly the same moment. Without this guard they'd interleave three
-    // disable/enable cycles and keep knocking the transport back down.
+    // resubscribes and keep re-arming the failsafe to no effect.
     if (isReconnectingRef.current) return;
     setReconnectingFlag(true);
 
-    // Reset every stale window. The toggle below is global, so all three
-    // listeners are being retried; clearing the flags lets the next cache-only
-    // snapshot arm a fresh grace period instead of the listeners latching
-    // stale forever after one unsuccessful attempt.
+    // Reset every stale window. The listeners are being retried; clearing the
+    // flags lets the next cache-only snapshot arm a fresh grace period instead
+    // of the listeners latching stale forever after one unsuccessful attempt.
     isTableStaleRef.current = false;
     isPlayersStaleRef.current = false;
     isHandStaleRef.current = false;
@@ -272,33 +278,26 @@ export default function TablePage() {
     clearStaleTimer(playersStaleTimerRef);
     clearStaleTimer(handStaleTimerRef);
 
-    disableNetwork(db)
-      .then(() => {
-        reconnectTimerRef.current = setTimeout(() => {
-          enableNetwork(db).catch((e) => {
-            console.warn("enableNetwork failed:", e);
-            setReconnectingFlag(false);
-          });
-        }, RECONNECT_BACKOFF_MS);
-      })
-      .catch((e) => {
-        console.warn("disableNetwork failed:", e);
-        setReconnectingFlag(false);
-      });
+    // Bumping refreshKey re-runs both the table+players and the currentHand
+    // listener effects, which unsubscribe their existing onSnapshot and start a
+    // fresh one. If the new stream is still cache-only when its grace window
+    // fires, attemptReconnect runs again — but isReconnectingRef blocks it
+    // during this window, so the loop terminates after one cycle.
+    setRefreshKey((prev) => prev + 1);
 
-    // The banner is normally lifted by the first non-cache snapshot. If the
-    // network is genuinely down no such snapshot arrives, so drop it anyway
-    // rather than pinning it over the table indefinitely.
+    // The banner is normally lifted by the first non-cache snapshot on the
+    // freshly-subscribed stream. If the network is genuinely down no such
+    // snapshot arrives, so drop it anyway rather than pinning it over the
+    // table indefinitely.
     clearStaleTimer(reconnectFailsafeRef);
     reconnectFailsafeRef.current = setTimeout(() => {
       setReconnectingFlag(false);
     }, RECONNECT_FAILSAFE_MS);
   }, [setReconnectingFlag]);
 
-  // Clear any in-flight reconnection timers when the page unmounts.
+  // Clear any in-flight failsafe timer when the page unmounts.
   useEffect(() => {
     return () => {
-      clearStaleTimer(reconnectTimerRef);
       clearStaleTimer(reconnectFailsafeRef);
     };
   }, []);
@@ -1214,9 +1213,20 @@ export default function TablePage() {
   // joinTable() refuses a SUMMARY table and auto-join skips one, but neither runs on
   // this path — the friend-profile "join" button and any shared link navigate straight
   // here, and presence saying location === "TABLE" does not mean the viewer ever played.
-  // playersLoaded is required so a genuine participant isn't bounced while the players
-  // subcollection is still on its first fetch.
-  if (inSummary && playersLoaded && !myPlayer) {
+  //
+  // Earlier this also required playersLoaded, which leaked the recap for a few hundred
+  // ms to anyone with a shared link: the table snapshot painted playerIds/players[]
+  // before the players subcollection's first fetch resolved. table.playerIds is itself
+  // authored by endGame (the recap is written onto the table doc, not a subcollection),
+  // so it's available on the very first table snapshot — check membership against it
+  // directly, and fall back to the players subcollection only if a legacy recap somehow
+  // lacks the array so a genuine participant isn't bounced.
+  const summaryParticipant = myUid
+    ? Array.isArray(table.playerIds)
+      ? table.playerIds.includes(myUid)
+      : playersLoaded && !!myPlayer
+    : false;
+  if (inSummary && !summaryParticipant) {
     return (
       <div style={fullScreenContainerStyle}>
         <div className="glass-panel" style={panelContainerStyle}>
