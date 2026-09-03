@@ -1604,6 +1604,11 @@ export async function playerAction(
     throw new Error("Nessun giocatore al tavolo");
   }
 
+  // Prefetch ALL player /users/{userId} docs in the first batch.
+  // If orderedPlayerDocIds was provided, use it directly; else use the doc IDs from playerRefs.
+  const playerUserIds = orderedPlayerDocIds ?? playerRefs.map(r => r.id);
+  const playerUserDocRefs = playerUserIds.map((id) => doc(db, "users", id));
+
   await runTransaction(db, async (transaction) => {
     // ===== LETTURA =====
     const userDocRef = doc(db, "users", user.uid);
@@ -1612,18 +1617,21 @@ export async function playerAction(
     let handSnap: any;
     let userDocSnap: any;
     let playerSnaps: any[];
+    let playerUserSnaps: any[] = [];
 
     if (handRef) {
-      const [tSnap, hSnap, uSnap, ...plSnaps] = await Promise.all([
+      const [tSnap, hSnap, uSnap, ...rest] = await Promise.all([
         transaction.get(tableRef),
         transaction.get(handRef),
         transaction.get(userDocRef),
-        ...playerRefs.map((r) => transaction.get(r))
+        ...playerRefs.map((r) => transaction.get(r)),
+        ...playerUserDocRefs.map((r) => transaction.get(r))
       ]);
       tableSnap = tSnap;
       handSnap = hSnap;
       userDocSnap = uSnap;
-      playerSnaps = plSnaps;
+      playerSnaps = rest.slice(0, playerRefs.length);
+      playerUserSnaps = rest.slice(playerRefs.length);
     } else {
       tableSnap = await transaction.get(tableRef);
       if (!tableSnap.exists()) throw new Error("Tavolo inesistente");
@@ -1631,14 +1639,16 @@ export async function playerAction(
       const currentHandId: string | null = tableData.currentHandId ?? null;
       if (!currentHandId) throw new Error("Nessuna mano corrente impostata");
       handRef = doc(db, "tables", tableId, "hands", currentHandId);
-      const [hSnap, uSnap, ...plSnaps] = await Promise.all([
+      const [hSnap, uSnap, ...rest] = await Promise.all([
         transaction.get(handRef),
         transaction.get(userDocRef),
-        ...playerRefs.map((r) => transaction.get(r))
+        ...playerRefs.map((r) => transaction.get(r)),
+        ...playerUserDocRefs.map((r) => transaction.get(r))
       ]);
       handSnap = hSnap;
       userDocSnap = uSnap;
-      playerSnaps = plSnaps;
+      playerSnaps = rest.slice(0, playerRefs.length);
+      playerUserSnaps = rest.slice(playerRefs.length);
     }
 
     if (!tableSnap.exists()) {
@@ -2056,8 +2066,7 @@ export async function playerAction(
       }
     }
 
-    // ===== LETTURA (2): documenti /users/{id} necessari per le statistiche =====
-    // Devono essere letti PRIMA di qualsiasi scrittura (regola delle transazioni Firestore).
+    // Prepare stats data using pre-fetched user docs (no second read round-trip).
     let statsHand: HandData | null = null;
     let statsUserSnaps: Map<string, any> | null = null;
     if (handUpdate.confirmedAt) {
@@ -2069,8 +2078,10 @@ export async function playerAction(
         handResults: handUpdate.handResults || handData.handResults
       };
       const candidateIds = getStatsCandidateIds(statsHand, players.map(p => ({ id: p.userId })));
-      const snaps = await Promise.all(candidateIds.map((id) => transaction.get(doc(db, "users", id))));
-      statsUserSnaps = new Map(candidateIds.map((id, i) => [id, snaps[i]]));
+      // Build a map of already-fetched user docs keyed by userId.
+      const allUserSnapsMap = new Map(playerUserIds.map((id, idx) => [id, playerUserSnaps[idx]]));
+      // Filter to candidates that were prefetched (all are, since playerUserIds covers all players).
+      statsUserSnaps = new Map(candidateIds.map((id) => [id, allUserSnapsMap.get(id)]));
     }
 
     // ===== SCRITTURA =====
@@ -2181,22 +2192,29 @@ export async function advanceStage(
           )
         ).docs.map((d) => d.ref);
 
+  // Prefetch ALL player /users/{userId} docs in the first batch.
+  const playerUserIds = orderedPlayerDocIds ?? playerRefs.map(r => r.id);
+  const playerUserDocRefs = playerUserIds.map((id) => doc(db, "users", id));
+
   await runTransaction(db, async (transaction) => {
     // ===== LETTURA =====
     let handRef = knownHandId ? doc(db, "tables", tableId, "hands", knownHandId) : null;
     let tableSnap: any;
     let handSnap: any;
     let playerSnaps: any[];
+    let playerUserSnaps: any[] = [];
 
     if (handRef) {
-      const [tSnap, hSnap, ...plSnaps] = await Promise.all([
+      const [tSnap, hSnap, ...rest] = await Promise.all([
         transaction.get(tableRef),
         transaction.get(handRef),
-        ...playerRefs.map((r) => transaction.get(r))
+        ...playerRefs.map((r) => transaction.get(r)),
+        ...playerUserDocRefs.map((r) => transaction.get(r))
       ]);
       tableSnap = tSnap;
       handSnap = hSnap;
-      playerSnaps = plSnaps;
+      playerSnaps = rest.slice(0, playerRefs.length);
+      playerUserSnaps = rest.slice(playerRefs.length);
     } else {
       tableSnap = await transaction.get(tableRef);
       if (!tableSnap.exists()) throw new Error("Tavolo inesistente.");
@@ -2204,12 +2222,14 @@ export async function advanceStage(
       const currentHandId = tableData.currentHandId;
       if (!currentHandId) throw new Error("Nessuna mano corrente.");
       handRef = doc(db, "tables", tableId, "hands", currentHandId);
-      const [hSnap, ...plSnaps] = await Promise.all([
+      const [hSnap, ...rest] = await Promise.all([
         transaction.get(handRef),
-        ...playerRefs.map((r) => transaction.get(r))
+        ...playerRefs.map((r) => transaction.get(r)),
+        ...playerUserDocRefs.map((r) => transaction.get(r))
       ]);
       handSnap = hSnap;
-      playerSnaps = plSnaps;
+      playerSnaps = rest.slice(0, playerRefs.length);
+      playerUserSnaps = rest.slice(playerRefs.length);
     }
 
     if (!tableSnap.exists()) throw new Error("Tavolo inesistente.");
@@ -2394,12 +2414,12 @@ export async function advanceStage(
       }
     }
 
-    // ===== LETTURA (2): documenti /users/{id} necessari per le statistiche =====
+    // Build stats user snapshots from pre-fetched docs (no second read round-trip).
     let statsUserSnaps: Map<string, any> | null = null;
     if (statsHand && statsPlayers) {
       const candidateIds = getStatsCandidateIds(statsHand, statsPlayers);
-      const snaps = await Promise.all(candidateIds.map((id) => transaction.get(doc(db, "users", id))));
-      statsUserSnaps = new Map(candidateIds.map((id, i) => [id, snaps[i]]));
+      const allUserSnapsMap = new Map(playerUserIds.map((id, idx) => [id, playerUserSnaps[idx]]));
+      statsUserSnaps = new Map(candidateIds.map((id) => [id, allUserSnapsMap.get(id)]));
     }
 
     // ===== SCRITTURA =====

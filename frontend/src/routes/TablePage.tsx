@@ -2631,7 +2631,7 @@ async function handleConfirmWinners(potId: string) {
                       fontSize: "0.9rem",
                       textAlign: "center",
                       boxShadow: isMyTurn && (canCheck || canCall) && !isFlipping ? undefined : "none",
-                      transition: "all 0.2s",
+                      transition: "all 0.05s",
                       opacity: actionLoading ? 0.7 : 1
                     }}
                   >
@@ -3862,7 +3862,7 @@ const smallButtonStyle: React.CSSProperties = {
   color: "var(--text-main)",
   fontSize: "0.8rem",
   fontWeight: 600,
-  transition: "all 0.2s"
+  transition: "all 0.05s"
 };
 
 
@@ -3878,7 +3878,7 @@ const pillActionButton: React.CSSProperties = {
   minWidth: "80px",
   textAlign: "center",
   boxShadow: "0 2px 5px rgba(0,0,0,0.3)",
-  transition: "all 0.2s"
+  transition: "all 0.05s"
 };
 
 const quickBetButtonStyle: React.CSSProperties = {
@@ -3892,5 +3892,5 @@ const quickBetButtonStyle: React.CSSProperties = {
   fontSize: "0.85rem",
   fontWeight: 600,
   boxShadow: "0 2px 4px rgba(0,0,0,0.3)",
-  transition: "all 0.2s"
+  transition: "all 0.05s"
 };
