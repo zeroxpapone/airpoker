@@ -1285,20 +1285,58 @@ export async function endGame(tableId: string, user: User) {
  * Avvia una nuova mano dopo che la precedente è terminata (showdown completato).
  * Ruota dealer, SB e BB di uno rispetto alla mano precedente.
  */
-export async function startNextHand(tableId: string, user: User) {
+export async function startNextHand(
+  tableId: string,
+  user: User,
+  orderedPlayerDocIds?: string[],
+  knownPrevHandId?: string
+) {
   const tableRef = doc(db, "tables", tableId);
 
   // Prendiamo i giocatori ordinati per seatIndex (fuori dalla transazione, solo per sapere quali documenti leggere)
-  const playersRef = collection(db, "tables", tableId, "players");
-  const orderedPlayersSnap = await getDocs(query(playersRef, orderBy("seatIndex", "asc")));
-  const playerRefs = orderedPlayersSnap.docs.map((d) => d.ref);
+  const playerRefs =
+    orderedPlayerDocIds && orderedPlayerDocIds.length > 0
+      ? orderedPlayerDocIds.map((id) => doc(db, "tables", tableId, "players", id))
+      : (
+          await getDocs(
+            query(collection(db, "tables", tableId, "players"), orderBy("seatIndex", "asc"))
+          )
+        ).docs.map((d) => d.ref);
 
   // Se il torneo termina per mancanza di giocatori attivi, endGame() viene invocata
   // FUORI dalla transazione (è una funzione a sé, con le proprie letture/scritture).
   let shouldEndTournament = false;
 
   await runTransaction(db, async (transaction) => {
-    const tableSnap = await transaction.get(tableRef);
+    let prevHandRef = knownPrevHandId ? doc(db, "tables", tableId, "hands", knownPrevHandId) : null;
+    let tableSnap: any;
+    let prevHandSnap: any;
+    let playerSnaps: any[];
+
+    if (prevHandRef) {
+      const [tSnap, pSnap, ...plSnaps] = await Promise.all([
+        transaction.get(tableRef),
+        transaction.get(prevHandRef),
+        ...playerRefs.map((r) => transaction.get(r))
+      ]);
+      tableSnap = tSnap;
+      prevHandSnap = pSnap;
+      playerSnaps = plSnaps;
+    } else {
+      tableSnap = await transaction.get(tableRef);
+      if (!tableSnap.exists()) throw new Error("error.tableNotFound");
+      const tableData = tableSnap.data() as any;
+      const prevHandId: string | null = tableData.currentHandId ?? null;
+      if (!prevHandId) throw new Error("error.noPrevHand");
+      prevHandRef = doc(db, "tables", tableId, "hands", prevHandId);
+      const [pSnap, ...plSnaps] = await Promise.all([
+        transaction.get(prevHandRef),
+        ...playerRefs.map((r) => transaction.get(r))
+      ]);
+      prevHandSnap = pSnap;
+      playerSnaps = plSnaps;
+    }
+
     if (!tableSnap.exists()) throw new Error("error.tableNotFound");
     const tableData = tableSnap.data() as any;
 
@@ -1313,8 +1351,11 @@ export async function startNextHand(tableId: string, user: User) {
     const prevHandId: string | null = tableData.currentHandId ?? null;
     if (!prevHandId) throw new Error("error.noPrevHand");
 
-    const prevHandRef = doc(db, "tables", tableId, "hands", prevHandId);
-    const prevHandSnap = await transaction.get(prevHandRef);
+    if (prevHandRef.id !== prevHandId) {
+      prevHandRef = doc(db, "tables", tableId, "hands", prevHandId);
+      prevHandSnap = await transaction.get(prevHandRef);
+    }
+
     if (!prevHandSnap.exists()) throw new Error("error.prevHandNotFound");
 
     const prevHand = prevHandSnap.data() as any as HandData;
@@ -1361,7 +1402,6 @@ export async function startNextHand(tableId: string, user: User) {
       }
     }
 
-    const playerSnaps = await Promise.all(playerRefs.map((r) => transaction.get(r)));
     const players = playerSnaps.map((d) => {
       const data = d.data() as any;
       let isSittingOut = !!data.isSittingOut;
@@ -1540,7 +1580,9 @@ export async function playerAction(
   tableId: string,
   user: User | null,
   action: PlayerActionType,
-  amount?: number
+  amount?: number,
+  orderedPlayerDocIds?: string[],
+  knownHandId?: string
 ) {
   if (!user) throw new Error("User non presente per playerAction");
 
@@ -1549,9 +1591,14 @@ export async function playerAction(
   // L'ordine dei posti non cambia durante una mano: lo leggiamo una volta sola,
   // fuori dalla transazione, solo per sapere QUALI documenti player leggere/scrivere
   // (le transazioni Firestore non supportano query, solo letture per singolo documento).
-  const playersRef = collection(db, "tables", tableId, "players");
-  const orderedPlayersSnap = await getDocs(query(playersRef, orderBy("seatIndex", "asc")));
-  const playerRefs = orderedPlayersSnap.docs.map((d) => d.ref);
+  const playerRefs =
+    orderedPlayerDocIds && orderedPlayerDocIds.length > 0
+      ? orderedPlayerDocIds.map((id) => doc(db, "tables", tableId, "players", id))
+      : (
+          await getDocs(
+            query(collection(db, "tables", tableId, "players"), orderBy("seatIndex", "asc"))
+          )
+        ).docs.map((d) => d.ref);
 
   if (playerRefs.length === 0) {
     throw new Error("Nessun giocatore al tavolo");
@@ -1559,7 +1606,41 @@ export async function playerAction(
 
   await runTransaction(db, async (transaction) => {
     // ===== LETTURA =====
-    const tableSnap = await transaction.get(tableRef);
+    const userDocRef = doc(db, "users", user.uid);
+    let handRef = knownHandId ? doc(db, "tables", tableId, "hands", knownHandId) : null;
+    let tableSnap: any;
+    let handSnap: any;
+    let userDocSnap: any;
+    let playerSnaps: any[];
+
+    if (handRef) {
+      const [tSnap, hSnap, uSnap, ...plSnaps] = await Promise.all([
+        transaction.get(tableRef),
+        transaction.get(handRef),
+        transaction.get(userDocRef),
+        ...playerRefs.map((r) => transaction.get(r))
+      ]);
+      tableSnap = tSnap;
+      handSnap = hSnap;
+      userDocSnap = uSnap;
+      playerSnaps = plSnaps;
+    } else {
+      tableSnap = await transaction.get(tableRef);
+      if (!tableSnap.exists()) throw new Error("Tavolo inesistente");
+      const tableData = tableSnap.data() as any;
+      const currentHandId: string | null = tableData.currentHandId ?? null;
+      if (!currentHandId) throw new Error("Nessuna mano corrente impostata");
+      handRef = doc(db, "tables", tableId, "hands", currentHandId);
+      const [hSnap, uSnap, ...plSnaps] = await Promise.all([
+        transaction.get(handRef),
+        transaction.get(userDocRef),
+        ...playerRefs.map((r) => transaction.get(r))
+      ]);
+      handSnap = hSnap;
+      userDocSnap = uSnap;
+      playerSnaps = plSnaps;
+    }
+
     if (!tableSnap.exists()) {
       throw new Error("Tavolo inesistente");
     }
@@ -1574,8 +1655,10 @@ export async function playerAction(
       throw new Error("Nessuna mano corrente impostata");
     }
 
-    const handRef = doc(db, "tables", tableId, "hands", currentHandId);
-    const handSnap = await transaction.get(handRef);
+    if (handRef.id !== currentHandId) {
+      handRef = doc(db, "tables", tableId, "hands", currentHandId);
+      handSnap = await transaction.get(handRef);
+    }
 
     if (!handSnap.exists()) {
       throw new Error("La mano corrente non esiste");
@@ -1588,8 +1671,6 @@ export async function playerAction(
     if (handData.currentTurnIndex == null || handData.currentTurnIndex < 0) {
       throw new Error("Non è il turno di nessuno al momento");
     }
-
-    const playerSnaps = await Promise.all(playerRefs.map((r) => transaction.get(r)));
 
     const players = playerSnaps.map((d) => {
       const data = d.data() as any;
@@ -1992,10 +2073,6 @@ export async function playerAction(
       statsUserSnaps = new Map(candidateIds.map((id, i) => [id, snaps[i]]));
     }
 
-    // Aggiorna le statistiche delle azioni dell'utente registrato
-    const userDocRef = doc(db, "users", user.uid);
-    const userDocSnap = await transaction.get(userDocRef);
-
     // ===== SCRITTURA =====
 
     // Aggiorna i player (stack + isFolded + isAllIn) in un solo passaggio
@@ -2087,16 +2164,54 @@ export async function playerAction(
  * IMPORTANTE: Post-flop, la prima mossa è SEMPRE dello SB (o del primo giocatore
  * attivo dopo lo SB se lo SB ha foldato).
  */
-export async function advanceStage(tableId: string, user: User) {
+export async function advanceStage(
+  tableId: string,
+  user: User,
+  orderedPlayerDocIds?: string[],
+  knownHandId?: string
+) {
   const tableRef = doc(db, "tables", tableId);
 
-  const playersRef = collection(db, "tables", tableId, "players");
-  const orderedPlayersSnap = await getDocs(query(playersRef, orderBy("seatIndex", "asc")));
-  const playerRefs = orderedPlayersSnap.docs.map((d) => d.ref);
+  const playerRefs =
+    orderedPlayerDocIds && orderedPlayerDocIds.length > 0
+      ? orderedPlayerDocIds.map((id) => doc(db, "tables", tableId, "players", id))
+      : (
+          await getDocs(
+            query(collection(db, "tables", tableId, "players"), orderBy("seatIndex", "asc"))
+          )
+        ).docs.map((d) => d.ref);
 
   await runTransaction(db, async (transaction) => {
     // ===== LETTURA =====
-    const tableSnap = await transaction.get(tableRef);
+    let handRef = knownHandId ? doc(db, "tables", tableId, "hands", knownHandId) : null;
+    let tableSnap: any;
+    let handSnap: any;
+    let playerSnaps: any[];
+
+    if (handRef) {
+      const [tSnap, hSnap, ...plSnaps] = await Promise.all([
+        transaction.get(tableRef),
+        transaction.get(handRef),
+        ...playerRefs.map((r) => transaction.get(r))
+      ]);
+      tableSnap = tSnap;
+      handSnap = hSnap;
+      playerSnaps = plSnaps;
+    } else {
+      tableSnap = await transaction.get(tableRef);
+      if (!tableSnap.exists()) throw new Error("Tavolo inesistente.");
+      const tableData = tableSnap.data() as any;
+      const currentHandId = tableData.currentHandId;
+      if (!currentHandId) throw new Error("Nessuna mano corrente.");
+      handRef = doc(db, "tables", tableId, "hands", currentHandId);
+      const [hSnap, ...plSnaps] = await Promise.all([
+        transaction.get(handRef),
+        ...playerRefs.map((r) => transaction.get(r))
+      ]);
+      handSnap = hSnap;
+      playerSnaps = plSnaps;
+    }
+
     if (!tableSnap.exists()) throw new Error("Tavolo inesistente.");
     const tableData = tableSnap.data() as any;
 
@@ -2107,13 +2222,15 @@ export async function advanceStage(tableId: string, user: User) {
     const currentHandId = tableData.currentHandId;
     if (!currentHandId) throw new Error("Nessuna mano corrente.");
 
-    const handRef = doc(db, "tables", tableId, "hands", currentHandId);
-    const handSnap = await transaction.get(handRef);
+    if (handRef.id !== currentHandId) {
+      handRef = doc(db, "tables", tableId, "hands", currentHandId);
+      handSnap = await transaction.get(handRef);
+    }
+
     if (!handSnap.exists()) throw new Error("Mano non trovata.");
 
     const hand = handSnap.data() as any as HandData;
 
-    const playerSnaps = await Promise.all(playerRefs.map((r) => transaction.get(r)));
     const plyrsData = playerSnaps.map((d) => {
       const dd = d.data() as any;
       return {
