@@ -921,8 +921,10 @@ export default function TablePage() {
     setPrevFlipStage(newStage);
 
     let duration = 0;
-    if (newStage === "FLOP") duration = 2100;
-    else if (newStage === "TURN" || newStage === "RIVER") duration = 1600;
+    if (table?.isVirtualCards || currentHand?.isVirtualCards) {
+      if (newStage === "FLOP") duration = 2100;
+      else if (newStage === "TURN" || newStage === "RIVER") duration = 1600;
+    }
 
     if (duration > 0 && !isFlipping) {
       setIsFlipping(true);
@@ -962,8 +964,10 @@ export default function TablePage() {
     if (!isFlipping || !currentHand?.stage) return;
 
     let duration = 0;
-    if (currentHand.stage === "FLOP") duration = 2100;
-    else if (currentHand.stage === "TURN" || currentHand.stage === "RIVER") duration = 1600;
+    if (table?.isVirtualCards || currentHand?.isVirtualCards) {
+      if (currentHand.stage === "FLOP") duration = 2100;
+      else if (currentHand.stage === "TURN" || currentHand.stage === "RIVER") duration = 1600;
+    }
 
     if (duration <= 0) {
       setIsFlipping(false);
@@ -974,7 +978,7 @@ export default function TablePage() {
       setIsFlipping(false);
     }, duration);
     return () => clearTimeout(timer);
-  }, [isFlipping, currentHand?.stage]);
+  }, [isFlipping, currentHand?.stage, table?.isVirtualCards, currentHand?.isVirtualCards]);
 
   // Local variables for pre-action hooks
   const localMyUid = user?.uid || null;
@@ -1435,7 +1439,8 @@ async function handleRevealOwnCards() {
 async function handleAdvanceStage() {
   if (!user || !tableId) return;
   try {
-    await advanceStage(tableId, user);
+    const orderedPlayerDocIds = players.map((p) => p.id);
+    await advanceStage(tableId, user, orderedPlayerDocIds, currentHand?.id);
   } catch (err) {
     console.error(err);
     setActionError((err as any)?.message || "Errore nell'avanzare la mano.");
@@ -1446,13 +1451,14 @@ async function handleNextHand() {
   if (!user || !tableId) return;
   if (!isHost) return;
   if (!currentHand) return;
-  
+
   // ✅ Controlla sia winnerId che winnerIds
   const hasWinners = currentHand.winnerId || (currentHand.winnerIds && currentHand.winnerIds.length > 0);
   if (!hasWinners) return;
 
   try {
-    await startNextHand(tableId, user);
+    const orderedPlayerDocIds = players.map((p) => p.id);
+    await startNextHand(tableId, user, orderedPlayerDocIds, currentHand.id);
   } catch (err) {
     console.error(err);
     setActionError(
@@ -1500,7 +1506,8 @@ async function confirmEndGameAction() {
 
     try {
       setActionLoading(true);
-      await playerAction(tableId, user, type, amount);
+      const orderedPlayerDocIds = players.map((p) => p.id);
+      await playerAction(tableId, user, type, amount, orderedPlayerDocIds, currentHand.id);
     } catch (err: any) {
       console.error(err);
       setActionError(err?.message || "Errore durante l'azione.");
@@ -1591,8 +1598,8 @@ async function confirmEndGameAction() {
       setActionError(t("table.betMultipleOf5"));
       return;
     }
-    await doAction("BET", betAmount);
     setShowBetPanel(false);
+    await doAction("BET", betAmount);
   }
 
   function renderRoleBadgesAbsolute(index: number, isOnRightSide: boolean) {
@@ -2597,7 +2604,8 @@ async function handleConfirmWinners(potId: string) {
                       backgroundColor: isMyTurn && !isFlipping ? undefined : "#ef444433",
                       color: isMyTurn && !isFlipping ? undefined : "rgba(248, 250, 252, 0.4)",
                       boxShadow: isMyTurn && !isFlipping ? undefined : "none",
-                      cursor: isMyTurn && !actionLoading && !isFlipping ? "pointer" : "default"
+                      cursor: isMyTurn && !actionLoading && !isFlipping ? "pointer" : "default",
+                      opacity: actionLoading ? 0.7 : 1
                     }}
                   >
                     Fold
@@ -2623,7 +2631,8 @@ async function handleConfirmWinners(potId: string) {
                       fontSize: "0.9rem",
                       textAlign: "center",
                       boxShadow: isMyTurn && (canCheck || canCall) && !isFlipping ? undefined : "none",
-                      transition: "all 0.2s"
+                      transition: "all 0.05s",
+                      opacity: actionLoading ? 0.7 : 1
                     }}
                   >
                     {!isMyTurn
@@ -2648,7 +2657,8 @@ async function handleConfirmWinners(potId: string) {
                       backgroundColor: isMyTurn && canBetOrRaise && !isFlipping ? undefined : "#22c55e33",
                       color: isMyTurn && canBetOrRaise && !isFlipping ? undefined : "rgba(248, 250, 252, 0.4)",
                       boxShadow: isMyTurn && canBetOrRaise && !isFlipping ? undefined : "none",
-                      cursor: isMyTurn && canBetOrRaise && !actionLoading && !isFlipping ? "pointer" : "default"
+                      cursor: isMyTurn && canBetOrRaise && !actionLoading && !isFlipping ? "pointer" : "default",
+                      opacity: actionLoading ? 0.7 : 1
                     }}
                   >
                     {currentBet === 0 && myRoundBet === 0 ? t("table.bet") : t("table.raise")}
@@ -3852,7 +3862,7 @@ const smallButtonStyle: React.CSSProperties = {
   color: "var(--text-main)",
   fontSize: "0.8rem",
   fontWeight: 600,
-  transition: "all 0.2s"
+  transition: "all 0.05s"
 };
 
 
@@ -3868,7 +3878,7 @@ const pillActionButton: React.CSSProperties = {
   minWidth: "80px",
   textAlign: "center",
   boxShadow: "0 2px 5px rgba(0,0,0,0.3)",
-  transition: "all 0.2s"
+  transition: "all 0.05s"
 };
 
 const quickBetButtonStyle: React.CSSProperties = {
@@ -3882,5 +3892,5 @@ const quickBetButtonStyle: React.CSSProperties = {
   fontSize: "0.85rem",
   fontWeight: 600,
   boxShadow: "0 2px 4px rgba(0,0,0,0.3)",
-  transition: "all 0.2s"
+  transition: "all 0.05s"
 };
